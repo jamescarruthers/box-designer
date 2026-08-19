@@ -81,8 +81,9 @@ To look at the drawing rather than assert about it:
 
 ```
 npx vite build && npx vite preview --port 5011 &
-node tools/shoot-app.mjs http://localhost:5011 ./out
-node tools/shoot-scenario.mjs ./out
+node tools/shoot-app.mjs http://localhost:5011 ./out   # the three modes
+node tools/shoot-scenario.mjs ./out                   # fillets, cladding, doublers, explode
+node tools/shoot-responsive.mjs ./out                 # the 1320 px and 1000 px breakpoints
 ```
 
 ## Known gaps
