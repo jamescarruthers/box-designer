@@ -169,7 +169,11 @@ export function buildSheet(sol, edges, opts = {}) {
   const L = layout(sol.E);
   const s = L.scale;
 
-  const geo = {
+  // §11 The seam: anything that produces { view, ext, lines, arcs } can supply
+  // the views. The analytic engine does by default; the OCCT path passes its
+  // own, and the frame, title block, scale, dimensions and hatching are the
+  // same either way.
+  const geo = opts.geometry ?? {
     front: buildOrthoView("front", sol, edges),
     end: buildOrthoView("end", sol, edges),
     plan: buildOrthoView("plan", sol, edges),

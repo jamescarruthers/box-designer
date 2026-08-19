@@ -23,6 +23,17 @@ mainBuild:
     - symbol: gp_Pln
     - symbol: gp_Trsf
 
+    # Base classes. Without these embind reports unbound types at the first
+    # call: MakeBox.Shape() comes from BRepBuilderAPI_MakeShape, and the
+    # HLRBRep_Algo handle needs Standard_Transient.
+    - symbol: Standard_Transient
+    - symbol: BRepBuilderAPI_Command
+    - symbol: BRepBuilderAPI_MakeShape
+    - symbol: BRepBuilderAPI_ModifyShape
+    - symbol: BRepFilletAPI_LocalOperation
+    - symbol: GeomAbs_Shape
+    - symbol: TopAbs_Orientation
+
     # Topology
     - symbol: TopoDS
     - symbol: TopoDS_Shape
@@ -34,6 +45,7 @@ mainBuild:
     - symbol: TopExp_Explorer
     - symbol: TopTools_IndexedMapOfShape
     - symbol: TopTools_ListOfShape
+    - symbol: TopTools_IndexedDataMapOfShapeListOfShape
     - symbol: TopLoc_Location
 
     # Solids
@@ -66,6 +78,9 @@ mainBuild:
     # Discretisation: triangles for three.js, polylines for the SVG
     - symbol: BRepMesh_IncrementalMesh
     - symbol: Poly_Triangulation
+    - symbol: Poly_Array1OfTriangle
+    - symbol: Poly_Triangle
+    - symbol: TColgp_Array1OfPnt
     - symbol: BRepAdaptor_Curve
     - symbol: GCPnts_TangentialDeflection
     - symbol: GCPnts_QuasiUniformDeflection
