@@ -18,6 +18,7 @@ import { viewGeometry, hiddenLineRemoval, isoGeometry, VIEW_AXES, ISO_VIEW } fro
 import { buildIsometric } from "../src/drawing/iso.js";
 import { mergeViewLines, describe as describeLines } from "../src/occt/merge.js";
 import { triangulate, meshPanels } from "../src/occt/mesh.js";
+import { edgeSegments } from "../src/occt/edges.js";
 import { viewLines, segEnds } from "../src/drawing/hlr.js";
 import { panelPositions, inwardCount } from "../src/three/panelGeometry.js";
 
@@ -253,6 +254,40 @@ describe("§4 triangles for the 3D view", () => {
     // Angle is what drives the tessellation of a fillet, not chord height:
     // at R12 the linear deflection is slack long before the angular one is.
     expect(solid({ angular: 0.05 }).triangles).toBeGreaterThan(solid({ angular: 1.2 }).triangles);
+  }, 120000);
+});
+
+describe("§4 the edge overlay comes from the topology", () => {
+  const sol = carcass();
+  const owners = () => edgeOwners(sol.env, sol.panels);
+  const solidFor = (edges) => {
+    const i = sol.panels.findIndex((p) => p.face === "front");
+    return panelSolid(oc, sol.panels[i], panelBevels(i, sol.panels[i], edges, owners()));
+  };
+
+  it("gives a plain panel its twelve edges, no more", () => {
+    expect(edgeSegments(oc, solidFor(noEdges()), sol.E).segments).toBe(12);
+  }, 120000);
+
+  it("keeps the tangent boundary a fillet leaves, which dihedral angle cannot find", () => {
+    const cont = fullLengthEdges(sol.env, sol.panels, owners());
+    const filleted = edgeSegments(oc, solidFor(applicableEdges(uniformEdges("fillet", 12), cont)), sol.E);
+    expect(filleted.segments).toBeGreaterThan(12);
+  }, 120000);
+
+  it("hands back positions three floats to a point, two points to a segment", () => {
+    const e = edgeSegments(oc, solidFor(noEdges()), sol.E);
+    expect(e.positions).toBeInstanceOf(Float32Array);
+    expect(e.positions.length).toBe(e.segments * 6);
+  }, 120000);
+
+  it("ships the edges alongside the mesh for every panel", () => {
+    const meshed = meshPanels(oc, sol.panels, () => ({}), sol.E);
+    expect(meshed).toHaveLength(sol.panels.length);
+    for (const m of meshed) {
+      expect(m.edges.segments).toBe(12);
+      expect(m.positions.length).toBeGreaterThan(0);
+    }
   }, 120000);
 });
 

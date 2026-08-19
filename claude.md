@@ -240,6 +240,18 @@ Explode offsets move each panel along its face normal, scaled by layer:
 cladding 1.5, shell 1.0, doubler 0.45. In three coordinates the normal is
 `(x → s, z → s, y → −s)`; the sign flip on depth matters.
 
+**Edges are not creases.** `EdgesGeometry` finds edges by dihedral angle, and
+the 24° threshold is there to suppress a fillet's tessellation facets. But a
+fillet meets the flat face it was cut from *tangentially* — zero dihedral — so
+that boundary is suppressed too, and the wireframe comes out with a hole at
+every round-over: the offset face has no outline.
+
+Both engines therefore supply the edges explicitly. The kernel takes them from
+the B-Rep topology, which is exactly right and costs nothing. The analytic path
+adds the ring loops that are genuinely edges — the outer face, the inner face,
+and the depth at which each bevel becomes tangent to its side — on top of the
+creases `EdgesGeometry` does find.
+
 ### Render styles
 
 Named after Fusion 360's visual styles:

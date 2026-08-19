@@ -7,6 +7,7 @@
 
 import { toThree } from "../three/panelGeometry.js";
 import { panelSolid } from "./solids.js";
+import { edgeSegments } from "./edges.js";
 
 /** Chord height for the mesh, in millimetres. Small enough that R12 reads round. */
 export const LINEAR_DEFLECTION = 0.25;
@@ -65,7 +66,15 @@ export function triangulate(oc, shape, E, {
   return { positions, triangles: tris.length, flipped, centroid };
 }
 
-/** Every panel, meshed. Indices line up with `sol.panels`. */
+/**
+ * Every panel, meshed, with its real edges alongside. Indices line up with
+ * `sol.panels`. The edges come from the topology, not from the triangles — see
+ * edges.js for why that matters at a fillet.
+ */
 export function meshPanels(oc, panels, bevelsFor, E, opts = {}) {
-  return panels.map((panel, i) => triangulate(oc, panelSolid(oc, panel, bevelsFor(i, panel)), E, opts));
+  return panels.map((panel, i) => {
+    const solid = panelSolid(oc, panel, bevelsFor(i, panel));
+    const mesh = triangulate(oc, solid, E, opts);
+    return { ...mesh, edges: edgeSegments(oc, solid, E, opts) };
+  });
 }

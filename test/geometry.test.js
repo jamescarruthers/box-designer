@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { solve, panelBlank } from "../src/model/solver.js";
 import { uniformEdges, edgeOwners, panelBevels, insetAt, bevelDepths } from "../src/model/bevel.js";
-import { panelSolid, panelPositions, inwardCount, ringAt, toThree, explodeOffset } from "../src/three/panelGeometry.js";
+import { panelSolid, panelPositions, inwardCount, ringAt, toThree, explodeOffset, panelEdgeLoops } from "../src/three/panelGeometry.js";
 import { EDGES } from "../src/model/constants.js";
 
 const R = 12;
@@ -81,6 +81,45 @@ describe("§9.3 triangle orientation", () => {
     const before = sidePanel("none").sol.panels.map((p) => panelBlank(p));
     expect(sidePanel("fillet").sol.panels.map((p) => panelBlank(p))).toEqual(before);
     expect(sidePanel("chamfer").sol.panels.map((p) => panelBlank(p))).toEqual(before);
+  });
+});
+
+describe("§4 the edges a fillet leaves behind", () => {
+  // EdgesGeometry finds creases by dihedral angle, so it cannot see where a
+  // fillet runs tangentially into the flat face it was cut from. Without these
+  // loops the wireframe has a hole at every round-over and the offset face has
+  // no outline at all.
+  const loops = (type) => {
+    const { panel, bevels, E } = sidePanel(type);
+    return { positions: panelEdgeLoops(panel, bevels, E), panel, bevels };
+  };
+  const segmentsOf = (positions) => positions.length / 6;
+
+  it("draws the outer and inner faces of a square panel, and nothing else", () => {
+    expect(segmentsOf(loops("none").positions)).toBe(8);      // two loops of four
+  });
+
+  it("adds the depth at which the bevel becomes tangent to its side", () => {
+    expect(segmentsOf(loops("fillet").positions)).toBe(12);   // outer, tangent, inner
+    expect(segmentsOf(loops("chamfer").positions)).toBe(12);
+  });
+
+  it("insets the outer loop by R and leaves the inner one full size", () => {
+    const { panel, bevels } = loops("fillet");
+    const outer = ringAt(panel, bevels, 0);
+    expect(panel.box.z[1] - panel.box.z[0] - (outer.z[1] - outer.z[0])).toBeCloseTo(2 * R, 9);
+    const tangent = ringAt(panel, bevels, R);
+    expect(tangent.z).toEqual(panel.box.z);
+  });
+
+  it("collapses to two loops when the radius fills the thickness", () => {
+    const sol = solve({ envelope: { x: 300, y: 240, z: 400 }, thickness: 18,
+      order: ["left", "right", "top", "bottom", "front", "back"] });
+    const owners = edgeOwners(sol.env, sol.panels);
+    const i = sol.panels.findIndex((p) => p.face === "left");
+    const edges = uniformEdges("fillet", 18);   // exactly the panel thickness
+    const positions = panelEdgeLoops(sol.panels[i], panelBevels(i, sol.panels[i], edges, owners), sol.E);
+    expect(segmentsOf(positions)).toBe(8);      // the tangent depth is the inner face
   });
 });
 
