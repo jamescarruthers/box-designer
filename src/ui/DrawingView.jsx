@@ -38,7 +38,9 @@ function engineNote(engine, showing, kernel) {
   if (kernel.status === "loading") return "fetching the kernel, 3.5 MB…";
   if (kernel.status === "refreshing") return "redrawing…";
   if (kernel.status === "failed") return "kernel unavailable — showing the analytic sheet";
-  if (showing === "kernel") return `B-Rep, ${kernel.ms} ms${kernel.threaded ? ", threaded" : ", single-threaded"}`;
+  // No thread claim here: HLRBRep has no parallel mode, so the sheet is serial
+  // whether or not the page is cross-origin isolated.
+  if (showing === "kernel") return `B-Rep, ${kernel.ms} ms`;
   return "";
 }
 

@@ -13,7 +13,8 @@ import {
   noEdges, uniformEdges, edgeOwners, fullLengthEdges, applicableEdges, panelBevels,
 } from "../src/model/bevel.js";
 import { PROMINENCE_PRESETS } from "../src/model/constants.js";
-import { assembly, volumeOf, panelSolid, edgesOf } from "../src/occt/solids.js";
+import { assembly, volumeOf, panelSolid, edgesOf, cutFittings, portTube } from "../src/occt/solids.js";
+import { newFitting, fittingOwners, portOuterRadius } from "../src/model/fittings.js";
 import { viewGeometry, hiddenLineRemoval, isoGeometry, VIEW_AXES, ISO_VIEW } from "../src/occt/hlr.js";
 import { buildIsometric } from "../src/drawing/iso.js";
 import { mergeViewLines, describe as describeLines } from "../src/occt/merge.js";
@@ -202,6 +203,72 @@ describe("§6.6 the isometric, from the kernel", () => {
     const ys = iso.lines.flatMap((l) => [l.a[1], l.b[1]]);
     expect(Math.min(...xs)).toBeCloseTo(0, 6);
     expect(Math.min(...ys)).toBeCloseTo(0, 6);
+  }, 120000);
+});
+
+const facesOf = (shape) => {
+  let n = 0;
+  const e = new oc.TopExp_Explorer_2(shape, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+  while (e.More()) { n++; e.Next(); }
+  return n;
+};
+
+describe("§12 fittings, cut for real", () => {
+  const sol = carcass();
+  const panel = () => fittingOwners(sol.panels, ["front"]).front;
+  const vol = (shape) => volumeOf(oc, shape);
+  const solid = (fittings) => panelSolid(oc, panel(), {}, fittings);
+
+  it("removes exactly the cylinder a driver's cutout describes", () => {
+    const p = panel();
+    const t = p.box.y[1] - p.box.y[0];
+    const f = { ...newFitting("driver", "front", { a: 118, b: 240 }), bolts: 0 };
+    const removed = vol(solid([])) - vol(solid([f]));
+    expect(removed).toBeCloseTo(Math.PI * (f.cutout / 2) ** 2 * t, 3);
+  }, 120000);
+
+  it("removes the bolt holes as well as the cutout", () => {
+    const p = panel();
+    const t = p.box.y[1] - p.box.y[0];
+    const f = newFitting("driver", "front", { a: 118, b: 240 });
+    const removed = vol(solid([])) - vol(solid([f]));
+    const expected = Math.PI * t * ((f.cutout / 2) ** 2 + f.bolts * (f.boltHole / 2) ** 2);
+    expect(removed).toBeCloseTo(expected, 3);
+  }, 120000);
+
+  it("cuts a port as a single bore", () => {
+    const p = panel();
+    const t = p.box.y[1] - p.box.y[0];
+    const f = newFitting("port", "front", { a: 118, b: 100 });
+    expect(vol(solid([])) - vol(solid([f]))).toBeCloseTo(Math.PI * (f.diameter / 2) ** 2 * t, 3);
+  }, 120000);
+
+  it("leaves the panel one solid, with a cylindrical wall per hole", () => {
+    const f = { ...newFitting("driver", "front", { a: 118, b: 240 }), bolts: 3 };
+    const before = facesOf(solid([])), after = facesOf(solid([f]));
+    expect(before).toBe(6);
+    expect(after).toBe(6 + 4);        // one cylindrical wall for the cutout and each bolt
+  }, 120000);
+
+  it("makes a port tube an annulus of the right volume", () => {
+    const f = newFitting("port", "front", { a: 118, b: 100 });
+    const t = portTube(oc, panel(), f);
+    const expected = Math.PI * f.length * (portOuterRadius(f) ** 2 - (f.diameter / 2) ** 2);
+    expect(vol(t)).toBeCloseTo(expected, 3);
+  }, 120000);
+
+  it("stands the tube off the panel's inner face, into the cavity", () => {
+    const p = panel();
+    const f = newFitting("port", "front", { a: 118, b: 100 });
+    const box = new oc.Bnd_Box_1();
+    oc.BRepBndLib.Add(portTube(oc, p, f), box, true);
+    // The front panel's inner face is at y = box.y[1]; the tube runs from there back.
+    expect(box.CornerMin().Y()).toBeCloseTo(p.box.y[1], 3);
+    expect(box.CornerMax().Y()).toBeCloseTo(p.box.y[1] + f.length, 3);
+  }, 120000);
+
+  it("cuts nothing when there are no fittings", () => {
+    expect(vol(cutFittings(oc, panelSolid(oc, panel(), {}), panel(), []))).toBeCloseTo(vol(solid([])), 6);
   }, 120000);
 });
 

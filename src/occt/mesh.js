@@ -6,7 +6,7 @@
 // same solid.
 
 import { toThree } from "../three/panelGeometry.js";
-import { panelSolid } from "./solids.js";
+import { panelSolid, portTube } from "./solids.js";
 import { edgeSegments } from "./edges.js";
 
 /** Chord height for the mesh, in millimetres. Small enough that R12 reads round. */
@@ -25,9 +25,12 @@ const dot = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
  * the test is exact, and it costs nothing next to the meshing.
  */
 export function triangulate(oc, shape, E, {
-  linear = LINEAR_DEFLECTION, angular = ANGULAR_DEFLECTION,
+  linear = LINEAR_DEFLECTION, angular = ANGULAR_DEFLECTION, parallel = true,
 } = {}) {
-  new oc.BRepMesh_IncrementalMesh_2(shape, linear, false, angular, false);
+  // BRepMesh is the only step in the pipeline that takes threads — HLRBRep has
+  // no parallel mode — so this argument is the whole of what the pool is for.
+  // Worth 18-22% of the mesh step on four cores; see tools/spike/threads.mjs.
+  new oc.BRepMesh_IncrementalMesh_2(shape, linear, false, angular, parallel);
 
   const tris = [];
   const explorer = new oc.TopExp_Explorer_2(shape, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
@@ -72,9 +75,17 @@ export function triangulate(oc, shape, E, {
  * edges.js for why that matters at a fillet.
  */
 export function meshPanels(oc, panels, bevelsFor, E, opts = {}) {
+  const fittingsFor = opts.fittingsFor ?? (() => []);
   return panels.map((panel, i) => {
-    const solid = panelSolid(oc, panel, bevelsFor(i, panel));
+    const on = fittingsFor(i, panel);
+    const solid = panelSolid(oc, panel, bevelsFor(i, panel), on);
     const mesh = triangulate(oc, solid, E, opts);
-    return { ...mesh, edges: edgeSegments(oc, solid, E, opts) };
+    // §12 A port's tube is a separate body standing off the panel, so it meshes
+    // separately and rides along with its panel for selection and exploding.
+    const tubes = on.filter((f) => f.type === "port").map((f) => {
+      const t = portTube(oc, panel, f);
+      return { ...triangulate(oc, t, E, opts), edges: edgeSegments(oc, t, E, opts), fitting: f };
+    });
+    return { ...mesh, edges: edgeSegments(oc, solid, E, opts), tubes };
   });
 }

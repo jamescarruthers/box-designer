@@ -193,6 +193,17 @@ export default function Viewport({ derived, style, colourByFace, explode, select
 
       // The kernel supplies real B-Rep edges; EdgesGeometry can only infer them
       // from dihedral angle, which loses the tangent boundary at every fillet.
+      // §12 Port tubes: separate bodies, coloured and exploded with their panel.
+      for (const tube of solids?.[index]?.tubes ?? []) {
+        const tg = new THREE.BufferGeometry();
+        tg.setAttribute("position", new THREE.BufferAttribute(tube.positions, 3));
+        tg.computeVertexNormals();
+        const tm = new THREE.Mesh(tg, mat.clone());
+        tm.userData.offsetOf = index;
+        tm.visible = showFaces;
+        root.add(tm);
+      }
+
       const kernelEdges = solids?.[index]?.edges;
       const edgeGeometry = () => {
         const g = new THREE.BufferGeometry();
