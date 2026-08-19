@@ -145,6 +145,52 @@ describe("the app", () => {
     expect(readout(container, "Envelope")).toContain("500");
   });
 
+  it("adds a cladding side from the dropdown, inheriting the project sheet", () => {
+    const { container } = render(<App />);
+    expect(container.querySelectorAll(".stack-list li")).toHaveLength(0);
+
+    fireEvent.change(screen.getByLabelText("Add cladding"), { target: { value: "front" } });
+    const row = container.querySelector(".stack-list li");
+    expect(row.textContent).toContain("Front");
+    expect(screen.getByLabelText("Cladding Front thickness").value).toBe("18");
+    expect(screen.getByLabelText("Cladding Front material").value).toBe("birch");
+
+    // ...and the box grows by the cladding, since the basis is internal.
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    expect([...container.querySelectorAll("table.cuts tbody tr")]
+      .some((r) => r.textContent.includes("Cladding"))).toBe(true);
+  });
+
+  it("changes an added panel to another sheet and separates it in the layouts", () => {
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByLabelText("Add cladding"), { target: { value: "front" } });
+    fireEvent.change(screen.getByLabelText("Cladding Front material"), { target: { value: "valchromat" } });
+    // Valchromat is 19 mm as standard.
+    expect(screen.getByLabelText("Cladding Front thickness").value).toBe("19");
+
+    fireEvent.change(screen.getByLabelText("Cladding Front thickness"), { target: { value: "25" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    const cells = [...container.querySelectorAll("table.cuts tbody tr")].map((r) => r.textContent);
+    expect(cells.some((t) => t.includes("Valchromat") && t.includes("25"))).toBe(true);
+    expect(container.querySelectorAll(".sheet")).toHaveLength(2);
+    expect(container.querySelector(".by-material")).toBeTruthy();
+  });
+
+  it("removes an added side", () => {
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByLabelText("Add doublers"), { target: { value: "back" } });
+    expect(container.querySelectorAll(".stack-list li")).toHaveLength(1);
+    fireEvent.click(screen.getByLabelText("Remove Doublers Back"));
+    expect(container.querySelectorAll(".stack-list li")).toHaveLength(0);
+  });
+
+  it("moves the carcass to a new sheet's standard thickness", () => {
+    render(<App />);
+    expect(screen.getByLabelText("Thickness").value).toBe("18");
+    fireEvent.change(screen.getByLabelText("Sheet"), { target: { value: "valchromat" } });
+    expect(screen.getByLabelText("Thickness").value).toBe("19");
+  });
+
   it("reports the volume closure as exact", () => {
     const { container } = render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));

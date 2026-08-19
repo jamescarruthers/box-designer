@@ -8,7 +8,10 @@ import { panelColour, FACE_COLOUR } from "../src/three/palette.js";
 const sol = solve({ envelope: { x: 300, y: 240, z: 420 }, thickness: 18, cladding: { front: 6 },
   order: ["front", "back", "left", "right", "top", "bottom"] });
 const owners = edgeOwners(sol.env, sol.panels);
-const rows = buildCutList(sol, noEdges(), owners, { material: "Birch ply", grainLocked: false });
+
+const birch = { materialId: "birch", material: "Birch ply", colour: "#e0c48c", grained: true };
+const specFor = () => birch;
+const rows = buildCutList(sol, noEdges(), owners, { specFor, grainLocked: false });
 
 describe("§5 cut list", () => {
   it("sorts by layer, then by area descending, and numbers after sorting", () => {
@@ -26,7 +29,7 @@ describe("§5 cut list", () => {
   });
 
   it("records edge work as a note, never as a smaller panel", () => {
-    const bevelled = buildCutList(sol, uniformEdges("fillet", 10), owners, { material: "Birch ply", grainLocked: false });
+    const bevelled = buildCutList(sol, uniformEdges("fillet", 10), owners, { specFor, grainLocked: false });
     expect(bevelled.map((r) => [r.length, r.width])).toEqual(rows.map((r) => [r.length, r.width]));
     expect(bevelled.some((r) => r.edgeWork.includes("R10"))).toBe(true);
   });
@@ -90,7 +93,7 @@ describe("§5 nesting", () => {
   });
 
   it("opens a new sheet only when a part will not fit the current one", () => {
-    const many = Array.from({ length: 12 }, (_, i) => ({ id: `X${i}`, length: 1200, width: 600, thickness: 18 }));
+    const many = Array.from({ length: 12 }, (_, i) => ({ id: `X${i}`, materialId: "mdf", length: 1200, width: 600, thickness: 18 }));
     const sheets = nest(many, { stock: [2440, 1220], kerf: 0 });
     expect(sheets.length).toBe(3);      // four 1200 × 600 parts per 2440 × 1220 sheet
   });
