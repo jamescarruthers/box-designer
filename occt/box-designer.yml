@@ -122,5 +122,18 @@ mainBuild:
     - -sLLD_REPORT_UNDEFINED
     - --no-entry
     # Threading, per battlesquid's POC. Needs COOP/COEP at serve time.
+    #
+    # Four, and not more. Only BRepMesh takes an isInParallel flag; HLRBRep has
+    # no parallel mode, and HLR is the dominant cost of the sheet, so no thread
+    # count reaches the expensive half of the pipeline. Measured on four cores
+    # with tools/spike/threads.mjs, six filleted panels, median of five:
+    # parallel meshing saves 18-22% of the mesh step, and batching the panels
+    # into one compound adds nothing on top — beyond about four workers there
+    # are no faces left to hand out. The pool size is fixed at link time, so it
+    # cannot adapt; four matches the common floor for hardwareConcurrency.
+    #
+    # Do not set it to 0 or 1 while -pthread is on: if OCCT asks for a thread
+    # synchronously with an empty pool, emscripten has to spawn one mid-call,
+    # which can deadlock on the main thread.
     - -pthread
     - -sPTHREAD_POOL_SIZE=4
