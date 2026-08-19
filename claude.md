@@ -169,6 +169,23 @@ Full-length external edges take a chamfer or a fillet, set globally or per edge.
 - A bevel attaches to a panel only where that panel is the outermost material at
   that edge. Clad a face and the bevel moves from the shell panel to the
   cladding panel.
+- **Only full-length edges can be cut.** An edge is full length when one panel
+  runs its whole length. Where the outermost material changes partway along —
+  the left panel in the middle, the front and back panels at its ends — a
+  fillet would die into the side of the next panel, so that edge stays square
+  and the user is told which ones and why.
+
+  The owner is found at the edge's midpoint, so the test is exact: the edge is
+  full length precisely when the owner spans the envelope along the axis the
+  edge runs. Panel bounds are copied from the envelope's where no inset applies,
+  so this is an equality, not a tolerance.
+
+  **A closed box never has twelve.** The two most prominent faces each own their
+  four boundary edges, and the four edges behind them are always broken. Eight
+  is the maximum, reached exactly when ranks 0 and 1 are opposite faces;
+  otherwise it is five or six. Verified over all 720 prominence orders. This is
+  the sharpest consequence of prominence being a joinery choice: it decides
+  which edges you can put a router on.
 
 Depth profile, `d` measured inward from the outer face:
 
@@ -430,7 +447,10 @@ steps, which it does not. This was the single most confusing bug in the
 prototype.
 
 Each edge therefore appears as a corner in exactly one view and as a tangent line
-(chamfers) in the other two.
+(chamfers) in the other two — but only the edges that survive the full-length
+test of §3 appear at all. Under front & back wrap the front elevation's four
+corners are precisely the four broken edges, so that view carries no arc while
+the end view and plan carry four each.
 
 Dimensioning: one note when every edge shares a treatment — `ALL EXTERNAL EDGES
 R12` — and leadered labels otherwise, once per distinct treatment per view.
@@ -573,6 +593,7 @@ active state. Real material colours in the 3D view.
 | Any panel with a non-positive planar dimension | error |
 | Bevel deeper than the thinner wall | error |
 | Bevel deeper than the outer skin | warning |
+| Bevel asked for on an edge no single panel runs the length of | warning, and the edge is left square |
 | Volume closure non-zero | error — a bug, not user input |
 
 ---
@@ -592,9 +613,13 @@ These are why the geometry is right. Write them first.
    check the outer one is inset by `R` while the inner is full width.
 4. **HLR fixtures.** The end-view table in §6.3. Add a sides-wrap case, where the
    outline is assembled from four panels and must merge into four segments.
-5. **Bevel line counts.** On one box: no bevel → 74 lines, 0 arcs; fillet →
-   74 lines, 12 arcs; chamfer → 98 lines, 0 arcs. The fillet must add arcs
-   without adding lines.
+5. **Bevel line counts.** Count what the sheet actually draws, which is the
+   treatments left after the full-length test — counting the unfiltered request
+   tests a code path the app never takes. On a 236 × 286 × 356 box, 18 mm, 6 mm
+   cladding, baffle prominence, six of the twelve edges survive: no bevel →
+   74 lines, 0 arcs; fillet → 74 lines, 6 arcs; chamfer → 87 lines, 0 arcs.
+   The fillet must add arcs without adding lines, and the chamfer must add one
+   diagonal per cut edge plus its tangent lines.
 6. **Render and look.** Render the drawing SVG to PNG and inspect it. This caught
    the reversed plan, a collided cutting-plane symbol and an unescaped en dash —
    none of which any assertion would have found.

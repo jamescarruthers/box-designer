@@ -2,7 +2,7 @@
 
 import { FACES, MATERIALS, PROMINENCE_PRESETS, DEFAULT_KERF, rankFromOrder, materialById } from "../model/constants.js";
 import { solve, wallOf, fillFaces, skinOf, DEFAULT_RATIO } from "../model/solver.js";
-import { uniformEdges, edgeOwners, noEdges } from "../model/bevel.js";
+import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, partialEdgeIssues } from "../model/bevel.js";
 import { validate } from "../model/validate.js";
 import { buildCutList, cutListTotals } from "../cutlist/cutlist.js";
 import { nest } from "../cutlist/nest.js";
@@ -136,8 +136,11 @@ export function derive(design) {
   sol.skin = skinOf(cladding, thickness);
   sol.wall = wall;
 
-  const edges = edgeMap(design);
+  // A bevel can only be cut along an edge one panel runs the whole length of.
+  const requestedEdges = edgeMap(design);
   const owners = edgeOwners(sol.env, sol.panels);
+  const fullLength = fullLengthEdges(sol.env, sol.panels, owners);
+  const edges = applicableEdges(requestedEdges, fullLength);
   const material = materialById(design.material);
 
   const specFor = (panel) => {
@@ -153,7 +156,7 @@ export function derive(design) {
     grainLocked: design.grainLocked,
   });
   const totals = cutListTotals(rows, sheets, sol.closure, sol.closureExact);
-  const messages = validate(sol, edges);
+  const messages = [...validate(sol, edges), ...partialEdgeIssues(requestedEdges, fullLength)];
   const sectionAt = design.sectionAt ?? sol.E.x / 2;
 
   // The title block names the carcass; anything else appears in the cut list.
@@ -163,7 +166,7 @@ export function derive(design) {
 
   const sheet = buildSheet(sol, edges, { title: design.title, material: materialNote, sectionAt });
 
-  return { sol, edges, owners, material, rows, sheets, totals, messages, sheet, sectionAt, specFor };
+  return { sol, edges, requestedEdges, fullLength, owners, material, rows, sheets, totals, messages, sheet, sectionAt, specFor };
 }
 
 export const setIn = (obj, path, value) => {

@@ -46,6 +46,7 @@ function Segmented({ value, options, onChange, ariaLabel }) {
 
 export default function Controls({ design, set, derived, colourByFace }) {
   const s = design.start;
+  const cuttable = Object.values(derived.fullLength).filter(Boolean).length;
   return (
     <div className="controls">
       <StockThicknesses />
@@ -126,6 +127,7 @@ export default function Controls({ design, set, derived, colourByFace }) {
       </Group>
 
       <Group title="Edge treatment" note="Cut from the outer face after assembly. Blank sizes are unchanged.">
+        <p className="note">{cuttable} of 12 edges run the full length of one panel. The rest stay square: a bevel would stop against the side of the next panel.</p>
         <Segmented ariaLabel="Treatment" value={design.edge.type}
           onChange={(v) => set(setIn(design, ["edge", "type"], v))}
           options={[{ id: "none", name: "Square" }, { id: "chamfer", name: "Chamfer" }, { id: "fillet", name: "Fillet" }]} />
@@ -140,16 +142,19 @@ export default function Controls({ design, set, derived, colourByFace }) {
           <div className="edge-grid">
             {EDGES.map((k) => {
               const cur = design.edge.by[k] ?? { type: "none", radius: design.edge.radius };
+              const ok = derived.fullLength[k];
               return (
-                <div className="edge-row" key={k}>
-                  <span className="edge-key">{k.replace("|", " / ")}<em>runs {edgeAxis(k)}</em></span>
-                  <select value={cur.type}
+                <div className={ok ? "edge-row" : "edge-row blocked"} key={k}>
+                  <span className="edge-key">{k.replace("|", " / ")}
+                    <em>{ok ? `runs ${edgeAxis(k)}` : "broken by other panels"}</em></span>
+                  <select value={cur.type} disabled={!ok} aria-label={`${k} treatment`}
                     onChange={(e) => set(setIn(design, ["edge", "by", k], { ...cur, type: e.target.value }))}>
                     <option value="none">Square</option>
                     <option value="chamfer">Chamfer</option>
                     <option value="fillet">Fillet</option>
                   </select>
-                  <input type="number" min="0" step="0.5" value={cur.radius}
+                  <input type="number" min="0" step="0.5" value={cur.radius} disabled={!ok}
+                    aria-label={`${k} radius`}
                     onChange={(e) => set(setIn(design, ["edge", "by", k], { ...cur, radius: Number(e.target.value) || 0 }))} />
                 </div>
               );

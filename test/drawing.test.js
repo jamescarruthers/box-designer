@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { solve } from "../src/model/solver.js";
-import { uniformEdges, noEdges } from "../src/model/bevel.js";
+import { uniformEdges, noEdges, edgeOwners, fullLengthEdges, applicableEdges } from "../src/model/bevel.js";
 import { buildOrthoView, classifyEdges, FACE_SIDE } from "../src/drawing/views.js";
 import { buildSection, HATCH } from "../src/drawing/section.js";
 import { buildIsometric, isoProject, ISO_Z } from "../src/drawing/iso.js";
@@ -23,14 +23,34 @@ const tally = (vs) => ({
 
 describe("§9.5 bevel line counts", () => {
   const sol = box();
+  // As the sheet draws them: only the edges one panel runs the whole length of.
+  const cont = fullLengthEdges(sol.env, sol.panels, edgeOwners(sol.env, sol.panels));
+  const cut = (type) => applicableEdges(type === "none" ? noEdges() : uniformEdges(type, 12), cont);
+  const CONTINUOUS = 6;
+
+  it("cuts six of the twelve edges on this box", () => {
+    expect(Object.values(cont).filter(Boolean)).toHaveLength(CONTINUOUS);
+  });
   it("no bevel → 74 lines, 0 arcs", () => {
-    expect(tally(allViews(sol, noEdges()))).toEqual({ lines: 74, arcs: 0 });
+    expect(tally(allViews(sol, cut("none")))).toEqual({ lines: 74, arcs: 0 });
   });
-  it("fillet → 74 lines, 12 arcs: arcs without extra lines", () => {
+  it("fillet → 74 lines, one arc per cut edge: arcs without extra lines", () => {
+    expect(tally(allViews(sol, cut("fillet")))).toEqual({ lines: 74, arcs: CONTINUOUS });
+  });
+  it("chamfer → 87 lines, 0 arcs", () => {
+    expect(tally(allViews(sol, cut("chamfer")))).toEqual({ lines: 87, arcs: 0 });
+  });
+  it("a chamfer adds a diagonal per cut edge, plus its tangent lines", () => {
+    const plain = tally(allViews(sol, cut("none"))).lines;
+    const chamfered = allViews(sol, cut("chamfer"));
+    const corners = chamfered.reduce((a, v) => a + v.lines.filter((l) => l.kind === "chamfer-corner").length, 0);
+    const tangents = chamfered.reduce((a, v) => a + v.lines.filter((l) => l.kind === "chamfer-tangent").length, 0);
+    expect(corners).toBe(CONTINUOUS);
+    expect(tally(chamfered).lines).toBe(plain + corners + tangents);
+  });
+  it("with every edge forced, still adds no line for a fillet", () => {
+    // classifyEdges in isolation: twelve corners, twelve arcs, no extra lines.
     expect(tally(allViews(sol, uniformEdges("fillet", 12)))).toEqual({ lines: 74, arcs: 12 });
-  });
-  it("chamfer → 98 lines, 0 arcs", () => {
-    expect(tally(allViews(sol, uniformEdges("chamfer", 12)))).toEqual({ lines: 98, arcs: 0 });
   });
 });
 

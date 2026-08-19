@@ -57,6 +57,51 @@ export function edgeOwners(env, panels) {
 }
 
 /**
+ * §3 An edge treatment can only be cut where one panel runs the edge's whole
+ * length. Where the outermost material changes partway along — the left panel
+ * in the middle, the front and back panels at its ends — a fillet would die
+ * into the side of the next panel, so that edge stays square.
+ *
+ * The owner is found at the edge's midpoint, so the edge is full length exactly
+ * when the owner spans the envelope along the axis the edge runs. Panel bounds
+ * are copied from the envelope's when no inset applies, so this is exact.
+ */
+export function fullLengthEdges(env, panels, owners) {
+  const out = {};
+  for (const key of EDGES) {
+    const i = owners[key];
+    if (i == null) { out[key] = false; continue; }
+    const a = edgeAxis(key);
+    const b = panels[i].box[a];
+    out[key] = b[0] === env[a][0] && b[1] === env[a][1];
+  }
+  return out;
+}
+
+/** The requested treatments, with the ones that cannot be cut left square. */
+export function applicableEdges(edges, full) {
+  return Object.fromEntries(EDGES.map((k) => {
+    const t = edges[k];
+    return [k, t && full[k] ? t : { type: "none", radius: 0 }];
+  }));
+}
+
+/** §8 Tell the user which requested treatments were dropped, and why. */
+export function partialEdgeIssues(edges, full) {
+  const dropped = EDGES.filter((k) => {
+    const t = edges[k];
+    return t && t.type !== "none" && t.radius > 0 && !full[k];
+  });
+  if (!dropped.length) return [];
+  return [{
+    level: "warning",
+    text: `Left square: ${dropped.map((k) => k.replace("|", "/")).join(", ")}. ` +
+      "No single panel runs the whole length of these edges, so a bevel would " +
+      "stop against the side of the next panel. Reorder prominence to change which edges are continuous.",
+  }];
+}
+
+/**
  * Per-panel bevels: for each of a panel's four planar sides, the treatment of
  * the envelope edge it lies on, when this panel owns that edge.
  * Returns { [sideFace]: {type, radius} }.
