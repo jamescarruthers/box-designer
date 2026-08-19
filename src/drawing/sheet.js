@@ -2,6 +2,7 @@
 
 import { buildOrthoView } from "./views.js";
 import { PROJECTIONS } from "./hlr.js";
+import { fittingGeometry } from "./fittings.js";
 import { buildSection, cuttingPlaneOnPlan, HATCH } from "./section.js";
 import { buildIsometric } from "./iso.js";
 import { EDGES } from "../model/constants.js";
@@ -94,6 +95,24 @@ const strokeAttrs = (visible) => visible
   ? `fill="none" stroke="var(--ink)" stroke-width="${LW.visible}" stroke-linecap="square"`
   : `fill="none" stroke="var(--ink)" stroke-width="${LW.hidden}" stroke-dasharray="${HIDDEN_DASH}" stroke-linecap="butt"`;
 
+/** §10 Circles are cut lines; the bolt circle is a chain line, not a cut. */
+function drawFittings(g, place) {
+  const out = [];
+  for (const c of g.boltCircles ?? []) {
+    const p = place(c.at);
+    out.push(`<circle cx="${n2(p[0])}" cy="${n2(p[1])}" r="${n2(c.r * place.scale)}" fill="none" ` +
+      `stroke="var(--ink-2)" stroke-width="${LW.dim}" stroke-dasharray="${CUT_DASH}"/>`);
+  }
+  for (const c of g.circles ?? []) {
+    const p = place(c.at);
+    const attrs = c.visible
+      ? `fill="none" stroke="var(--ink)" stroke-width="${LW.visible}"`
+      : `fill="none" stroke="var(--ink)" stroke-width="${LW.hidden}" stroke-dasharray="${HIDDEN_DASH}"`;
+    out.push(`<circle cx="${n2(p[0])}" cy="${n2(p[1])}" r="${n2(c.r * place.scale)}" ${attrs}/>`);
+  }
+  return out;
+}
+
 function drawGeometry(g, place) {
   const out = [];
   for (const l of g.lines) {
@@ -181,6 +200,21 @@ export function buildSheet(sol, edges, opts = {}) {
     iso: buildIsometric(sol),
   };
 
+  // §10 Fittings. The bolt circle is an annotation either way — it is a
+  // setting-out circle, not something the router follows. The cut circles are
+  // added only when the geometry does not already contain the holes: the
+  // analytic engine sees boxes and cannot know about them, while the kernel
+  // cuts them for real and its HLR emits them itself.
+  const fittings = opts.fittings ?? [];
+  const fittingPanels = opts.fittingPanels ?? {};
+  for (const key of ["front", "end", "plan"]) {
+    geo[key] = withFittings(
+      geo[key],
+      fittingGeometry(key, fittings, sol.panels, fittingPanels, sol.E),
+      opts.holesInGeometry === true,
+    );
+  }
+
   const body = [];
 
   // Frame and filing margin.
@@ -194,6 +228,7 @@ export function buildSheet(sol, edges, opts = {}) {
     body.push(`<g data-view="${key}">`);
     if (key === "section") body.push(...hatching(geo.section, place));
     body.push(...drawGeometry(geo[key], place));
+    body.push(...drawFittings(geo[key], place));
     // The plan carries the cutting-plane symbol, so its label drops clear of it.
     body.push(label(cell, VIEW_TITLE[key], null, key === "plan" ? 15 : 7));
     body.push(`</g>`);
@@ -233,6 +268,12 @@ export function buildSheet(sol, edges, opts = {}) {
   ].join("");
 
   return { svg, scale: s, isoScale, layout: L, geometry: geo, sectionAt: cx };
+}
+
+/** Fold the fitting geometry into a view, so the sheet renders one thing. */
+function withFittings(view, f, holesInGeometry) {
+  if (holesInGeometry) return { ...view, circles: [], boltCircles: f.boltCircles };
+  return { ...view, lines: [...view.lines, ...f.lines], circles: f.circles, boltCircles: f.boltCircles };
 }
 
 function defs() {

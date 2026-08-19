@@ -40,6 +40,12 @@ mainBuild:
     - symbol: BRepAlgoAPI_BooleanOperation
     - symbol: BRepAlgoAPI_BuilderAlgo
     - symbol: BRepMesh_DiscretRoot
+    # MakeCylinder's base. Without it the constructor exists but throws
+    # "unbound types: BRepPrimAPI_MakeOneAxis" the moment it is called.
+    - symbol: BRepPrimAPI_MakeOneAxis
+    - symbol: BRepPrimAPI_MakeSweep
+    # Every boolean constructor takes one, and it has no default binding.
+    - symbol: Message_ProgressRange
     - symbol: HLRBRep_InternalAlgo
     - symbol: NCollection_BaseList
     - symbol: NCollection_BaseMap
@@ -67,6 +73,8 @@ mainBuild:
 
     # Solids
     - symbol: BRepPrimAPI_MakeBox
+    # Driver cutouts, bolt holes and port tubes are all cylinders cut out of a panel.
+    - symbol: BRepPrimAPI_MakeCylinder
     - symbol: BRepPrimAPI_MakeHalfSpace
     - symbol: BRepBuilderAPI_MakeFace
     - symbol: BRepBuilderAPI_Transform

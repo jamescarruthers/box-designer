@@ -117,6 +117,12 @@ is `./`, so it works under a project-site path without further configuration.
 
 Enable it once in the repository: **Settings → Pages → Source: GitHub Actions**.
 
+**Drivers and ports.** A driver is a cutout with a bolt circle — count and hole
+diameter configurable, defaulting to five 5 mm holes on a 147 PCD. A port is a
+bore with a tube standing off into the cavity. Both are cut into the outermost
+panel of their face, drawn on the part templates and in all three views, and
+validated for clearance, overlap and edge distance.
+
 ## Known gaps
 
 No cutouts, no rebates or dados, the isometric ignores edge treatments, bevels

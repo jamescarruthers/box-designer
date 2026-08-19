@@ -417,6 +417,15 @@ export declare class GProp_GProps {
     constructor(SystemLocation: gp_Pnt);
   }
 
+export declare class BRepPrimAPI_MakeOneAxis extends BRepBuilderAPI_MakeShape {
+  OneAxis(): Standard_Address;
+  Build(theRange: Message_ProgressRange): void;
+  Face(): TopoDS_Face;
+  Shell(): TopoDS_Shell;
+  Solid(): TopoDS_Solid;
+  delete(): void;
+}
+
 export declare class BRepPrimAPI_MakeBox extends BRepBuilderAPI_MakeShape {
   Init_1(theDX: Standard_Real, theDY: Standard_Real, theDZ: Standard_Real): void;
   Init_2(thePnt: gp_Pnt, theDX: Standard_Real, theDY: Standard_Real, theDZ: Standard_Real): void;
@@ -455,6 +464,12 @@ export declare class BRepPrimAPI_MakeBox extends BRepBuilderAPI_MakeShape {
     constructor(Axes: gp_Ax2, dx: Standard_Real, dy: Standard_Real, dz: Standard_Real);
   }
 
+export declare class BRepPrimAPI_MakeSweep extends BRepBuilderAPI_MakeShape {
+  FirstShape(): TopoDS_Shape;
+  LastShape(): TopoDS_Shape;
+  delete(): void;
+}
+
 export declare class BRepPrimAPI_MakeHalfSpace extends BRepBuilderAPI_MakeShape {
   Solid(): TopoDS_Solid;
   delete(): void;
@@ -466,6 +481,28 @@ export declare class BRepPrimAPI_MakeHalfSpace extends BRepBuilderAPI_MakeShape 
 
   export declare class BRepPrimAPI_MakeHalfSpace_2 extends BRepPrimAPI_MakeHalfSpace {
     constructor(Shell: TopoDS_Shell, RefPnt: gp_Pnt);
+  }
+
+export declare class BRepPrimAPI_MakeCylinder extends BRepPrimAPI_MakeOneAxis {
+  OneAxis(): Standard_Address;
+  Cylinder(): BRepPrim_Cylinder;
+  delete(): void;
+}
+
+  export declare class BRepPrimAPI_MakeCylinder_1 extends BRepPrimAPI_MakeCylinder {
+    constructor(R: Standard_Real, H: Standard_Real);
+  }
+
+  export declare class BRepPrimAPI_MakeCylinder_2 extends BRepPrimAPI_MakeCylinder {
+    constructor(R: Standard_Real, H: Standard_Real, Angle: Standard_Real);
+  }
+
+  export declare class BRepPrimAPI_MakeCylinder_3 extends BRepPrimAPI_MakeCylinder {
+    constructor(Axes: gp_Ax2, R: Standard_Real, H: Standard_Real);
+  }
+
+  export declare class BRepPrimAPI_MakeCylinder_4 extends BRepPrimAPI_MakeCylinder {
+    constructor(Axes: gp_Ax2, R: Standard_Real, H: Standard_Real, Angle: Standard_Real);
   }
 
 export declare class gp_Trsf {
@@ -1207,6 +1244,22 @@ export declare class BRepGProp {
   static VolumePropertiesGK_2(S: TopoDS_Shape, VProps: GProp_GProps, thePln: gp_Pln, Eps: Standard_Real, OnlyClosed: Standard_Boolean, IsUseSpan: Standard_Boolean, CGFlag: Standard_Boolean, IFlag: Standard_Boolean, SkipShared: Standard_Boolean): Standard_Real;
   delete(): void;
 }
+
+export declare class Message_ProgressRange {
+  UserBreak(): Standard_Boolean;
+  More(): Standard_Boolean;
+  IsActive(): Standard_Boolean;
+  Close(): void;
+  delete(): void;
+}
+
+  export declare class Message_ProgressRange_1 extends Message_ProgressRange {
+    constructor();
+  }
+
+  export declare class Message_ProgressRange_2 extends Message_ProgressRange {
+    constructor(theOther: Message_ProgressRange);
+  }
 
 export declare class BRepAlgoAPI_Algo extends BRepBuilderAPI_MakeShape {
   Shape(): TopoDS_Shape;
@@ -2343,15 +2396,22 @@ export type OpenCascadeInstance = {FS: typeof FS} & {
   GProp_GProps: typeof GProp_GProps;
   GProp_GProps_1: typeof GProp_GProps_1;
   GProp_GProps_2: typeof GProp_GProps_2;
+  BRepPrimAPI_MakeOneAxis: typeof BRepPrimAPI_MakeOneAxis;
   BRepPrimAPI_MakeBox: typeof BRepPrimAPI_MakeBox;
   BRepPrimAPI_MakeBox_1: typeof BRepPrimAPI_MakeBox_1;
   BRepPrimAPI_MakeBox_2: typeof BRepPrimAPI_MakeBox_2;
   BRepPrimAPI_MakeBox_3: typeof BRepPrimAPI_MakeBox_3;
   BRepPrimAPI_MakeBox_4: typeof BRepPrimAPI_MakeBox_4;
   BRepPrimAPI_MakeBox_5: typeof BRepPrimAPI_MakeBox_5;
+  BRepPrimAPI_MakeSweep: typeof BRepPrimAPI_MakeSweep;
   BRepPrimAPI_MakeHalfSpace: typeof BRepPrimAPI_MakeHalfSpace;
   BRepPrimAPI_MakeHalfSpace_1: typeof BRepPrimAPI_MakeHalfSpace_1;
   BRepPrimAPI_MakeHalfSpace_2: typeof BRepPrimAPI_MakeHalfSpace_2;
+  BRepPrimAPI_MakeCylinder: typeof BRepPrimAPI_MakeCylinder;
+  BRepPrimAPI_MakeCylinder_1: typeof BRepPrimAPI_MakeCylinder_1;
+  BRepPrimAPI_MakeCylinder_2: typeof BRepPrimAPI_MakeCylinder_2;
+  BRepPrimAPI_MakeCylinder_3: typeof BRepPrimAPI_MakeCylinder_3;
+  BRepPrimAPI_MakeCylinder_4: typeof BRepPrimAPI_MakeCylinder_4;
   gp_Trsf: typeof gp_Trsf;
   gp_Trsf_1: typeof gp_Trsf_1;
   gp_Trsf_2: typeof gp_Trsf_2;
@@ -2419,6 +2479,9 @@ export type OpenCascadeInstance = {FS: typeof FS} & {
   Standard_Transient_1: typeof Standard_Transient_1;
   Standard_Transient_2: typeof Standard_Transient_2;
   BRepGProp: typeof BRepGProp;
+  Message_ProgressRange: typeof Message_ProgressRange;
+  Message_ProgressRange_1: typeof Message_ProgressRange_1;
+  Message_ProgressRange_2: typeof Message_ProgressRange_2;
   BRepAlgoAPI_Algo: typeof BRepAlgoAPI_Algo;
   BRepAlgoAPI_Fuse: typeof BRepAlgoAPI_Fuse;
   BRepAlgoAPI_Fuse_1: typeof BRepAlgoAPI_Fuse_1;

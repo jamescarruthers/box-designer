@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { FACES, FACE_LABEL, MATERIALS, PROMINENCE_PRESETS, EDGES, edgeAxis, materialById } from "../model/constants.js";
 import { panelColour } from "../three/palette.js";
 import { setIn, freeFaces, addPanel, removePanel, editPanel, setProjectMaterial, setProjectThickness } from "./design.js";
+import { newFitting, describeFitting, faceAxes, FITTING_DEFAULTS } from "../model/fittings.js";
 import { fmt } from "../cutlist/cutlist.js";
 
 function Group({ title, note, children }) {
@@ -16,12 +17,12 @@ function Group({ title, note, children }) {
   );
 }
 
-function Num({ label, value, onChange, step = 1, min = 0, suffix, list }) {
+function Num({ label, value, onChange, step = 1, min = 0, suffix, list, aria }) {
   return (
     <label className="field">
       <span>{label}</span>
       <span className="input-wrap">
-        <input type="number" aria-label={label} value={value} step={step} min={min} list={list}
+        <input type="number" aria-label={aria ?? label} value={value} step={step} min={min} list={list}
           onChange={(e) => onChange(e.target.value === "" ? 0 : Number(e.target.value))} />
         {suffix ? <em>{suffix}</em> : null}
       </span>
@@ -124,6 +125,10 @@ export default function Controls({ design, set, derived, colourByFace }) {
       <Group title="Reinforcement" note="Cladding lies outside the carcass and grows the box. A doubler lies inside and eats the cavity. Each panel starts as the project sheet and can then be changed.">
         <LayerStack design={design} set={set} layer="cladding" title="Cladding" colourByFace={colourByFace} />
         <LayerStack design={design} set={set} layer="doubler" title="Doublers" colourByFace={colourByFace} />
+      </Group>
+
+      <Group title="Fittings" note="Drivers and ports are cut into the outermost panel of their face. Position is measured from the panel's own low corner, so it reads straight off the face-on view.">
+        <Fittings design={design} set={set} derived={derived} />
       </Group>
 
       <Group title="Edge treatment" note="Cut from the outer face after assembly. Blank sizes are unchanged.">
@@ -275,6 +280,78 @@ function LayerStack({ design, set, layer, title, colourByFace }) {
     </div>
   );
 }
+
+/** §10 Drivers and ports: a hole with a bolt circle, and a hole with a tube. */
+function Fittings({ design, set, derived }) {
+  const list = design.fittings ?? [];
+  const put = (next) => set({ ...design, fittings: next });
+  const edit = (i, patch) => put(list.map((f, j) => (j === i ? { ...f, ...patch } : f)));
+
+  const add = (type) => {
+    const face = "front";
+    const panel = derived.sol.panels.find((p) => p.face === face) ?? derived.sol.panels[0];
+    const [p, q] = faceAxes(panel.face);
+    const at = {
+      a: (panel.box[p][0] + panel.box[p][1]) / 2,
+      b: (panel.box[q][0] + panel.box[q][1]) / 2,
+    };
+    put([...list, newFitting(type, panel.face, at)]);
+  };
+
+  return (
+    <div className="stack">
+      <div className="stack-head">
+        <h3>{list.length ? `${list.length} fitted` : "None"}</h3>
+        <select className="add" value="" aria-label="Add a fitting"
+          onChange={(e) => { if (e.target.value) add(e.target.value); }}>
+          <option value="">Add…</option>
+          <option value="driver">Driver</option>
+          <option value="port">Port</option>
+        </select>
+      </div>
+
+      {list.map((f, i) => {
+        const [p, q] = faceAxes(f.face);
+        return (
+          <div className="fitting" key={f.id}>
+            <div className="fitting-head">
+              <select value={f.face} aria-label={`Fitting ${i + 1} face`}
+                onChange={(e) => edit(i, { face: e.target.value })}>
+                {FACES.map((x) => <option key={x} value={x}>{FACE_LABEL[x]}</option>)}
+              </select>
+              <span className="kind">{f.type === "port" ? "Port" : "Driver"}</span>
+              <button type="button" className="drop" aria-label={`Remove fitting ${i + 1}`}
+                onClick={() => put(list.filter((_, j) => j !== i))}>×</button>
+            </div>
+            <div className="fitting-grid">
+              <Num label={`At ${p}`} aria={`Fitting ${i + 1} at ${p}`} suffix="mm" value={round(f.at.a)}
+                onChange={(v) => edit(i, { at: { ...f.at, a: v } })} />
+              <Num label={`At ${q}`} aria={`Fitting ${i + 1} at ${q}`} suffix="mm" value={round(f.at.b)}
+                onChange={(v) => edit(i, { at: { ...f.at, b: v } })} />
+              {f.type === "driver" ? (
+                <>
+                  <Num label="Cutout ⌀" aria={`Fitting ${i + 1} cutout`} suffix="mm" step={0.5} value={f.cutout} onChange={(v) => edit(i, { cutout: v })} />
+                  <Num label="PCD" aria={`Fitting ${i + 1} pcd`} suffix="mm" step={0.5} value={f.pcd} onChange={(v) => edit(i, { pcd: v })} />
+                  <Num label="Bolts" aria={`Fitting ${i + 1} bolts`} value={f.bolts} min={2} onChange={(v) => edit(i, { bolts: Math.max(2, Math.round(v)) })} />
+                  <Num label="Bolt ⌀" aria={`Fitting ${i + 1} boltHole`} suffix="mm" step={0.5} value={f.boltHole} onChange={(v) => edit(i, { boltHole: v })} />
+                </>
+              ) : (
+                <>
+                  <Num label="Bore ⌀" aria={`Fitting ${i + 1} diameter`} suffix="mm" step={0.5} value={f.diameter} onChange={(v) => edit(i, { diameter: v })} />
+                  <Num label="Length" aria={`Fitting ${i + 1} length`} suffix="mm" value={f.length} onChange={(v) => edit(i, { length: v })} />
+                  <Num label="Wall" aria={`Fitting ${i + 1} wall`} suffix="mm" step={0.5} value={f.wall} onChange={(v) => edit(i, { wall: v })} />
+                </>
+              )}
+            </div>
+            <p className="note">{describeFitting(f)}</p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const round = (v) => Math.round(v * 10) / 10;
 
 /** The thicknesses each material is sold in, offered on every thickness input. */
 function StockThicknesses() {

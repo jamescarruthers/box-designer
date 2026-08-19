@@ -308,11 +308,11 @@ table.cuts .edgework { color: var(--ink-3); }
 .stack-list input[type="number"] { padding-right: 4px; appearance: textfield; -moz-appearance: textfield; }
 .stack-list input[type="number"]::-webkit-outer-spin-button,
 .stack-list input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.stack-list .drop {
+.drop {
   background: transparent; border: 0; color: var(--ink-3); cursor: pointer;
   padding: 0; line-height: 1; font-size: 14px;
 }
-.stack-list .drop:hover { color: var(--accent); }
+.drop:hover { color: var(--accent); }
 
 .by-material { width: 100%; border-collapse: collapse; border-top: 1px solid var(--line); background: var(--bg-2); }
 .by-material th, .by-material td { padding: 3px 11px; font-weight: 400; }
@@ -348,3 +348,15 @@ table.cuts .edgework { color: var(--ink-3); }
   background: rgb(20 24 29 / 0.9); border: 1px solid var(--line-2);
   padding: 4px 10px; border-radius: 3px; color: var(--ink-3); font-size: 10.5px; font-style: italic;
 }
+
+.parts .fittings { color: var(--ink-3); }
+.fitting-note { display: block; font-style: normal; color: var(--ink-2); }
+
+.fitting { background: var(--bg-3); border-radius: 2px; padding: 5px 6px; margin-top: 5px; }
+.fitting-head { display: grid; grid-template-columns: 1fr auto 16px; gap: 6px; align-items: center; margin-bottom: 5px; }
+.fitting-head select { padding: 2px 5px; font-size: 10.5px; }
+.fitting-head .kind { color: var(--ink-3); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
+.fitting-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.fitting-grid .field { grid-template-columns: 52px 1fr; gap: 4px; }
+.fitting-grid .field > span:first-child { font-size: 10px; }
+.fitting .note { margin: 5px 0 0; font-size: 9.5px; }

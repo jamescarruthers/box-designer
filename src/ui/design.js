@@ -4,6 +4,7 @@ import { FACES, MATERIALS, PROMINENCE_PRESETS, DEFAULT_KERF, rankFromOrder, mate
 import { solve, wallOf, fillFaces, skinOf, DEFAULT_RATIO } from "../model/solver.js";
 import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, partialEdgeIssues } from "../model/bevel.js";
 import { validate } from "../model/validate.js";
+import { fittingOwners, fittingIssues, fittingNote } from "../model/fittings.js";
 import { buildCutList, cutListTotals } from "../cutlist/cutlist.js";
 import { nest } from "../cutlist/nest.js";
 import { buildSheet } from "../drawing/sheet.js";
@@ -33,6 +34,8 @@ export const DEFAULT_DESIGN = {
   cladding: {},
   doubler: {},
   edge: { type: "none", radius: 12, perEdge: false, by: {} },
+  // §10's biggest gap: the holes that make a box a speaker.
+  fittings: [],
   sectionAt: null,
 };
 
@@ -149,14 +152,27 @@ export function derive(design) {
     return { materialId: m.id, material: m.name, colour: m.colour, grained: m.grained };
   };
 
-  const rows = buildCutList(sol, edges, owners, { specFor, grainLocked: design.grainLocked });
+  // A fitting is cut into the outermost panel of its face — the one a driver bolts to.
+  const fittings = design.fittings ?? [];
+  const fittingPanels = fittingOwners(sol.panels, [...new Set(fittings.map((f) => f.face))]);
+  const fittingsOn = (panel) => fittings.filter((f) => fittingPanels[f.face] === panel);
+
+  const rows = buildCutList(sol, edges, owners, { specFor, grainLocked: design.grainLocked })
+    .map((r) => {
+      const on = fittingsOn(r.panel);
+      return on.length ? { ...r, fittings: on, fittingNote: fittingNote(on) } : { ...r, fittings: [], fittingNote: "" };
+    });
   const sheets = nest(rows, {
     stockFor: (id) => stockFor(design, id),
     kerf: design.kerf,
     grainLocked: design.grainLocked,
   });
   const totals = cutListTotals(rows, sheets, sol.closure, sol.closureExact);
-  const messages = [...validate(sol, edges), ...partialEdgeIssues(requestedEdges, fullLength)];
+  const messages = [
+    ...validate(sol, edges),
+    ...partialEdgeIssues(requestedEdges, fullLength),
+    ...fittingIssues(fittings, sol.panels, fittingPanels, sol.cavity),
+  ];
   const sectionAt = design.sectionAt ?? sol.E.x / 2;
 
   // The title block names the carcass; anything else appears in the cut list.
@@ -164,9 +180,13 @@ export function derive(design) {
   const materialNote = `${material.name.toUpperCase()} ${design.thickness}` +
     (others.length ? ` +${others.length}` : "");
 
-  const sheet = buildSheet(sol, edges, { title: design.title, material: materialNote, sectionAt });
+  const sheet = buildSheet(sol, edges, {
+    title: design.title, material: materialNote, sectionAt,
+    fittings, fittingPanels,
+  });
 
-  return { sol, edges, requestedEdges, fullLength, owners, material, rows, sheets, totals, messages, sheet, sectionAt, specFor };
+  return { sol, edges, requestedEdges, fullLength, owners, material, rows, sheets, totals, messages,
+    sheet, sectionAt, specFor, fittings, fittingPanels, fittingsOn };
 }
 
 export const setIn = (obj, path, value) => {
