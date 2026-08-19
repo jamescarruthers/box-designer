@@ -1,3 +1,27 @@
+export declare class Handle_Poly_Triangulation {
+  Nullify(): void;
+  IsNull(): boolean;
+  reset(thePtr: Poly_Triangulation): void;
+  get(): Poly_Triangulation;
+  delete(): void;
+}
+
+  export declare class Handle_Poly_Triangulation_1 extends Handle_Poly_Triangulation {
+    constructor();
+  }
+
+  export declare class Handle_Poly_Triangulation_2 extends Handle_Poly_Triangulation {
+    constructor(thePtr: Poly_Triangulation);
+  }
+
+  export declare class Handle_Poly_Triangulation_3 extends Handle_Poly_Triangulation {
+    constructor(theHandle: Handle_Poly_Triangulation);
+  }
+
+  export declare class Handle_Poly_Triangulation_4 extends Handle_Poly_Triangulation {
+    constructor(theHandle: Handle_Poly_Triangulation);
+  }
+
 export declare class Poly_Triangulation extends Standard_Transient {
   static get_type_name(): Standard_Character;
   static get_type_descriptor(): Handle_Standard_Type;
@@ -80,6 +104,81 @@ export declare class Poly_Triangulation extends Standard_Transient {
   export declare class Poly_Triangulation_5 extends Poly_Triangulation {
     constructor(theTriangulation: Handle_Poly_Triangulation);
   }
+
+export declare class Poly_Array1OfTriangle {
+  begin(): any;
+  end(): any;
+  cbegin(): any;
+  cend(): any;
+  Init(theValue: Poly_Triangle): void;
+  Size(): Standard_Integer;
+  Length(): Standard_Integer;
+  IsEmpty(): Standard_Boolean;
+  Lower(): Standard_Integer;
+  Upper(): Standard_Integer;
+  IsDeletable(): Standard_Boolean;
+  IsAllocated(): Standard_Boolean;
+  Assign(theOther: Poly_Array1OfTriangle): Poly_Array1OfTriangle;
+  Move(theOther: Poly_Array1OfTriangle): Poly_Array1OfTriangle;
+  First(): Poly_Triangle;
+  ChangeFirst(): Poly_Triangle;
+  Last(): Poly_Triangle;
+  ChangeLast(): Poly_Triangle;
+  Value(theIndex: Standard_Integer): Poly_Triangle;
+  ChangeValue(theIndex: Standard_Integer): Poly_Triangle;
+  SetValue(theIndex: Standard_Integer, theItem: Poly_Triangle): void;
+  Resize(theLower: Standard_Integer, theUpper: Standard_Integer, theToCopyData: Standard_Boolean): void;
+  delete(): void;
+}
+
+  export declare class Poly_Array1OfTriangle_1 extends Poly_Array1OfTriangle {
+    constructor();
+  }
+
+  export declare class Poly_Array1OfTriangle_2 extends Poly_Array1OfTriangle {
+    constructor(theLower: Standard_Integer, theUpper: Standard_Integer);
+  }
+
+  export declare class Poly_Array1OfTriangle_3 extends Poly_Array1OfTriangle {
+    constructor(theOther: Poly_Array1OfTriangle);
+  }
+
+  export declare class Poly_Array1OfTriangle_4 extends Poly_Array1OfTriangle {
+    constructor(theOther: Poly_Array1OfTriangle);
+  }
+
+  export declare class Poly_Array1OfTriangle_5 extends Poly_Array1OfTriangle {
+    constructor(theBegin: Poly_Triangle, theLower: Standard_Integer, theUpper: Standard_Integer);
+  }
+
+export declare class Poly_Triangle {
+  Set_1(theN1: Graphic3d_ZLayerId, theN2: Graphic3d_ZLayerId, theN3: Graphic3d_ZLayerId): void;
+  Set_2(theIndex: Graphic3d_ZLayerId, theNode: Graphic3d_ZLayerId): void;
+  Get(theN1: Graphic3d_ZLayerId, theN2: Graphic3d_ZLayerId, theN3: Graphic3d_ZLayerId): void;
+  Value(theIndex: Graphic3d_ZLayerId): Graphic3d_ZLayerId;
+  ChangeValue(theIndex: Graphic3d_ZLayerId): Graphic3d_ZLayerId;
+  delete(): void;
+}
+
+  export declare class Poly_Triangle_1 extends Poly_Triangle {
+    constructor();
+  }
+
+  export declare class Poly_Triangle_2 extends Poly_Triangle {
+    constructor(theN1: Graphic3d_ZLayerId, theN2: Graphic3d_ZLayerId, theN3: Graphic3d_ZLayerId);
+  }
+
+export declare class TopoDS_Builder {
+  constructor();
+  MakeWire(W: TopoDS_Wire): void;
+  MakeShell(S: TopoDS_Shell): void;
+  MakeSolid(S: TopoDS_Solid): void;
+  MakeCompSolid(C: TopoDS_CompSolid): void;
+  MakeCompound(C: TopoDS_Compound): void;
+  Add(S: TopoDS_Shape, C: TopoDS_Shape): void;
+  Remove(S: TopoDS_Shape, C: TopoDS_Shape): void;
+  delete(): void;
+}
 
 export declare class TopoDS {
   constructor();
@@ -199,6 +298,68 @@ export declare class TopLoc_Location {
   export declare class TopLoc_Location_3 extends TopLoc_Location {
     constructor(D: Handle_TopLoc_Datum3D);
   }
+
+export declare class TColgp_Array1OfPnt {
+  begin(): any;
+  end(): any;
+  cbegin(): any;
+  cend(): any;
+  Init(theValue: gp_Pnt): void;
+  Size(): Standard_Integer;
+  Length(): Standard_Integer;
+  IsEmpty(): Standard_Boolean;
+  Lower(): Standard_Integer;
+  Upper(): Standard_Integer;
+  IsDeletable(): Standard_Boolean;
+  IsAllocated(): Standard_Boolean;
+  Assign(theOther: TColgp_Array1OfPnt): TColgp_Array1OfPnt;
+  Move(theOther: TColgp_Array1OfPnt): TColgp_Array1OfPnt;
+  First(): gp_Pnt;
+  ChangeFirst(): gp_Pnt;
+  Last(): gp_Pnt;
+  ChangeLast(): gp_Pnt;
+  Value(theIndex: Standard_Integer): gp_Pnt;
+  ChangeValue(theIndex: Standard_Integer): gp_Pnt;
+  SetValue(theIndex: Standard_Integer, theItem: gp_Pnt): void;
+  Resize(theLower: Standard_Integer, theUpper: Standard_Integer, theToCopyData: Standard_Boolean): void;
+  delete(): void;
+}
+
+  export declare class TColgp_Array1OfPnt_1 extends TColgp_Array1OfPnt {
+    constructor();
+  }
+
+  export declare class TColgp_Array1OfPnt_2 extends TColgp_Array1OfPnt {
+    constructor(theLower: Standard_Integer, theUpper: Standard_Integer);
+  }
+
+  export declare class TColgp_Array1OfPnt_3 extends TColgp_Array1OfPnt {
+    constructor(theOther: TColgp_Array1OfPnt);
+  }
+
+  export declare class TColgp_Array1OfPnt_4 extends TColgp_Array1OfPnt {
+    constructor(theOther: TColgp_Array1OfPnt);
+  }
+
+  export declare class TColgp_Array1OfPnt_5 extends TColgp_Array1OfPnt {
+    constructor(theBegin: gp_Pnt, theLower: Standard_Integer, theUpper: Standard_Integer);
+  }
+
+export declare class NCollection_BaseList {
+  Extent(): Graphic3d_ZLayerId;
+  IsEmpty(): Standard_Boolean;
+  Allocator(): Handle_NCollection_BaseAllocator;
+  delete(): void;
+}
+
+export declare class NCollection_BaseMap {
+  NbBuckets(): Graphic3d_ZLayerId;
+  Extent(): Graphic3d_ZLayerId;
+  IsEmpty(): Standard_Boolean;
+  Statistics(S: Standard_OStream): void;
+  Allocator(): Handle_NCollection_BaseAllocator;
+  delete(): void;
+}
 
 export declare class TopExp_Explorer {
   Init(S: TopoDS_Shape, ToFind: TopAbs_ShapeEnum, ToAvoid: TopAbs_ShapeEnum): void;
@@ -750,6 +911,44 @@ export declare class gp_Dir {
     constructor(theXv: Standard_Real, theYv: Standard_Real, theZv: Standard_Real);
   }
 
+export declare class Adaptor3d_Curve extends Standard_Transient {
+  constructor();
+  static get_type_name(): Standard_Character;
+  static get_type_descriptor(): Handle_Standard_Type;
+  DynamicType(): Handle_Standard_Type;
+  ShallowCopy(): Handle_Adaptor3d_Curve;
+  FirstParameter(): Standard_Real;
+  LastParameter(): Standard_Real;
+  Continuity(): GeomAbs_Shape;
+  NbIntervals(S: GeomAbs_Shape): Graphic3d_ZLayerId;
+  Intervals(T: IntTools_CArray1OfReal, S: GeomAbs_Shape): void;
+  Trim(First: Standard_Real, Last: Standard_Real, Tol: Standard_Real): Handle_Adaptor3d_Curve;
+  IsClosed(): Standard_Boolean;
+  IsPeriodic(): Standard_Boolean;
+  Period(): Standard_Real;
+  Value(U: Standard_Real): gp_Pnt;
+  D0(U: Standard_Real, P: gp_Pnt): void;
+  D1(U: Standard_Real, P: gp_Pnt, V: gp_Vec): void;
+  D2(U: Standard_Real, P: gp_Pnt, V1: gp_Vec, V2: gp_Vec): void;
+  D3(U: Standard_Real, P: gp_Pnt, V1: gp_Vec, V2: gp_Vec, V3: gp_Vec): void;
+  DN(U: Standard_Real, N: Graphic3d_ZLayerId): gp_Vec;
+  Resolution(R3d: Standard_Real): Standard_Real;
+  GetType(): GeomAbs_CurveType;
+  Line(): gp_Lin;
+  Circle(): gp_Circ;
+  Ellipse(): gp_Elips;
+  Hyperbola(): gp_Hypr;
+  Parabola(): gp_Parab;
+  Degree(): Graphic3d_ZLayerId;
+  IsRational(): Standard_Boolean;
+  NbPoles(): Graphic3d_ZLayerId;
+  NbKnots(): Graphic3d_ZLayerId;
+  Bezier(): Handle_Geom_BezierCurve;
+  BSpline(): Handle_Geom_BSplineCurve;
+  OffsetCurve(): Handle_Geom_OffsetCurve;
+  delete(): void;
+}
+
 export declare class TopTools_ListOfShape extends NCollection_BaseList {
   begin(): any;
   end(): any;
@@ -783,6 +982,46 @@ export declare class TopTools_ListOfShape extends NCollection_BaseList {
     constructor(theOther: TopTools_ListOfShape);
   }
 
+export declare class TopTools_IndexedDataMapOfShapeListOfShape extends NCollection_BaseMap {
+  begin(): any;
+  end(): any;
+  cbegin(): any;
+  cend(): any;
+  Exchange(theOther: TopTools_IndexedDataMapOfShapeListOfShape): void;
+  Assign(theOther: TopTools_IndexedDataMapOfShapeListOfShape): TopTools_IndexedDataMapOfShapeListOfShape;
+  ReSize(N: Standard_Integer): void;
+  Add(theKey1: TopoDS_Shape, theItem: TopTools_ListOfShape): Standard_Integer;
+  Contains(theKey1: TopoDS_Shape): Standard_Boolean;
+  Substitute(theIndex: Standard_Integer, theKey1: TopoDS_Shape, theItem: TopTools_ListOfShape): void;
+  Swap(theIndex1: Standard_Integer, theIndex2: Standard_Integer): void;
+  RemoveLast(): void;
+  RemoveFromIndex(theIndex: Standard_Integer): void;
+  RemoveKey(theKey1: TopoDS_Shape): void;
+  FindKey(theIndex: Standard_Integer): TopoDS_Shape;
+  FindFromIndex(theIndex: Standard_Integer): TopTools_ListOfShape;
+  ChangeFromIndex(theIndex: Standard_Integer): TopTools_ListOfShape;
+  FindIndex(theKey1: TopoDS_Shape): Standard_Integer;
+  ChangeFromKey(theKey1: TopoDS_Shape): TopTools_ListOfShape;
+  Seek(theKey1: TopoDS_Shape): TopTools_ListOfShape;
+  ChangeSeek(theKey1: TopoDS_Shape): TopTools_ListOfShape;
+  Clear_1(doReleaseMemory: Standard_Boolean): void;
+  Clear_2(theAllocator: Handle_NCollection_BaseAllocator): void;
+  Size(): Standard_Integer;
+  delete(): void;
+}
+
+  export declare class TopTools_IndexedDataMapOfShapeListOfShape_1 extends TopTools_IndexedDataMapOfShapeListOfShape {
+    constructor();
+  }
+
+  export declare class TopTools_IndexedDataMapOfShapeListOfShape_2 extends TopTools_IndexedDataMapOfShapeListOfShape {
+    constructor(theNbBuckets: Standard_Integer, theAllocator: Handle_NCollection_BaseAllocator);
+  }
+
+  export declare class TopTools_IndexedDataMapOfShapeListOfShape_3 extends TopTools_IndexedDataMapOfShapeListOfShape {
+    constructor(theOther: TopTools_IndexedDataMapOfShapeListOfShape);
+  }
+
 export declare class TopTools_IndexedMapOfShape extends NCollection_BaseMap {
   cbegin(): any;
   cend(): any;
@@ -814,6 +1053,40 @@ export declare class TopTools_IndexedMapOfShape extends NCollection_BaseMap {
 
   export declare class TopTools_IndexedMapOfShape_3 extends TopTools_IndexedMapOfShape {
     constructor(theOther: TopTools_IndexedMapOfShape);
+  }
+
+export declare type GeomAbs_Shape = {
+  GeomAbs_C0: {};
+  GeomAbs_G1: {};
+  GeomAbs_C1: {};
+  GeomAbs_G2: {};
+  GeomAbs_C2: {};
+  GeomAbs_C3: {};
+  GeomAbs_CN: {};
+}
+
+export declare class Handle_BRepAdaptor_Curve {
+  Nullify(): void;
+  IsNull(): boolean;
+  reset(thePtr: BRepAdaptor_Curve): void;
+  get(): BRepAdaptor_Curve;
+  delete(): void;
+}
+
+  export declare class Handle_BRepAdaptor_Curve_1 extends Handle_BRepAdaptor_Curve {
+    constructor();
+  }
+
+  export declare class Handle_BRepAdaptor_Curve_2 extends Handle_BRepAdaptor_Curve {
+    constructor(thePtr: BRepAdaptor_Curve);
+  }
+
+  export declare class Handle_BRepAdaptor_Curve_3 extends Handle_BRepAdaptor_Curve {
+    constructor(theHandle: Handle_BRepAdaptor_Curve);
+  }
+
+  export declare class Handle_BRepAdaptor_Curve_4 extends Handle_BRepAdaptor_Curve {
+    constructor(theHandle: Handle_BRepAdaptor_Curve);
   }
 
 export declare class BRepAdaptor_Curve extends Adaptor3d_Curve {
@@ -875,6 +1148,54 @@ export declare class BRepAdaptor_Curve extends Adaptor3d_Curve {
     constructor(E: TopoDS_Edge, F: TopoDS_Face);
   }
 
+export declare class Handle_Standard_Transient {
+  Nullify(): void;
+  IsNull(): boolean;
+  reset(thePtr: Standard_Transient): void;
+  get(): Standard_Transient;
+  delete(): void;
+}
+
+  export declare class Handle_Standard_Transient_1 extends Handle_Standard_Transient {
+    constructor();
+  }
+
+  export declare class Handle_Standard_Transient_2 extends Handle_Standard_Transient {
+    constructor(thePtr: Standard_Transient);
+  }
+
+  export declare class Handle_Standard_Transient_3 extends Handle_Standard_Transient {
+    constructor(theHandle: Handle_Standard_Transient);
+  }
+
+  export declare class Handle_Standard_Transient_4 extends Handle_Standard_Transient {
+    constructor(theHandle: Handle_Standard_Transient);
+  }
+
+export declare class Standard_Transient {
+  Delete(): void;
+  static get_type_name(): Standard_Character;
+  static get_type_descriptor(): Handle_Standard_Type;
+  DynamicType(): Handle_Standard_Type;
+  IsInstance_1(theType: Handle_Standard_Type): Standard_Boolean;
+  IsInstance_2(theTypeName: Standard_CString): Standard_Boolean;
+  IsKind_1(theType: Handle_Standard_Type): Standard_Boolean;
+  IsKind_2(theTypeName: Standard_CString): Standard_Boolean;
+  This(): Standard_Transient;
+  GetRefCount(): Graphic3d_ZLayerId;
+  IncrementRefCounter(): void;
+  DecrementRefCounter(): Graphic3d_ZLayerId;
+  delete(): void;
+}
+
+  export declare class Standard_Transient_1 extends Standard_Transient {
+    constructor();
+  }
+
+  export declare class Standard_Transient_2 extends Standard_Transient {
+    constructor(a: Standard_Transient);
+  }
+
 export declare class BRepGProp {
   constructor();
   static LinearProperties(S: TopoDS_Shape, LProps: GProp_GProps, SkipShared: Standard_Boolean, UseTriangulation: Standard_Boolean): void;
@@ -884,6 +1205,25 @@ export declare class BRepGProp {
   static VolumeProperties_2(S: TopoDS_Shape, VProps: GProp_GProps, Eps: Standard_Real, OnlyClosed: Standard_Boolean, SkipShared: Standard_Boolean): Standard_Real;
   static VolumePropertiesGK_1(S: TopoDS_Shape, VProps: GProp_GProps, Eps: Standard_Real, OnlyClosed: Standard_Boolean, IsUseSpan: Standard_Boolean, CGFlag: Standard_Boolean, IFlag: Standard_Boolean, SkipShared: Standard_Boolean): Standard_Real;
   static VolumePropertiesGK_2(S: TopoDS_Shape, VProps: GProp_GProps, thePln: gp_Pln, Eps: Standard_Real, OnlyClosed: Standard_Boolean, IsUseSpan: Standard_Boolean, CGFlag: Standard_Boolean, IFlag: Standard_Boolean, SkipShared: Standard_Boolean): Standard_Real;
+  delete(): void;
+}
+
+export declare class BRepAlgoAPI_Algo extends BRepBuilderAPI_MakeShape {
+  Shape(): TopoDS_Shape;
+  Clear(): void;
+  SetRunParallel(theFlag: Standard_Boolean): void;
+  RunParallel(): Standard_Boolean;
+  SetFuzzyValue(theFuzz: Standard_Real): void;
+  FuzzyValue(): Standard_Real;
+  HasErrors(): Standard_Boolean;
+  HasWarnings(): Standard_Boolean;
+  HasError(theType: Handle_Standard_Type): Standard_Boolean;
+  HasWarning(theType: Handle_Standard_Type): Standard_Boolean;
+  DumpErrors(theOS: Standard_OStream): void;
+  DumpWarnings(theOS: Standard_OStream): void;
+  ClearWarnings(): void;
+  GetReport(): Handle_Message_Report;
+  SetUseOBB(theUseOBB: Standard_Boolean): void;
   delete(): void;
 }
 
@@ -907,6 +1247,25 @@ export declare class BRepAlgoAPI_Fuse extends BRepAlgoAPI_BooleanOperation {
     constructor(S1: TopoDS_Shape, S2: TopoDS_Shape, aDSF: BOPAlgo_PaveFiller, theRange: Message_ProgressRange);
   }
 
+export declare class BRepAlgoAPI_BooleanOperation extends BRepAlgoAPI_BuilderAlgo {
+  Shape1(): TopoDS_Shape;
+  Shape2(): TopoDS_Shape;
+  SetTools(theLS: TopTools_ListOfShape): void;
+  Tools(): TopTools_ListOfShape;
+  SetOperation(theBOP: BOPAlgo_Operation): void;
+  Operation(): BOPAlgo_Operation;
+  Build(theRange: Message_ProgressRange): void;
+  delete(): void;
+}
+
+  export declare class BRepAlgoAPI_BooleanOperation_1 extends BRepAlgoAPI_BooleanOperation {
+    constructor();
+  }
+
+  export declare class BRepAlgoAPI_BooleanOperation_2 extends BRepAlgoAPI_BooleanOperation {
+    constructor(thePF: BOPAlgo_PaveFiller);
+  }
+
 export declare class BRepAlgoAPI_Cut extends BRepAlgoAPI_BooleanOperation {
   delete(): void;
 }
@@ -925,6 +1284,40 @@ export declare class BRepAlgoAPI_Cut extends BRepAlgoAPI_BooleanOperation {
 
   export declare class BRepAlgoAPI_Cut_4 extends BRepAlgoAPI_Cut {
     constructor(S1: TopoDS_Shape, S2: TopoDS_Shape, aDSF: BOPAlgo_PaveFiller, bFWD: Standard_Boolean, theRange: Message_ProgressRange);
+  }
+
+export declare class BRepAlgoAPI_BuilderAlgo extends BRepAlgoAPI_Algo {
+  SetArguments(theLS: TopTools_ListOfShape): void;
+  Arguments(): TopTools_ListOfShape;
+  SetNonDestructive(theFlag: Standard_Boolean): void;
+  NonDestructive(): Standard_Boolean;
+  SetGlue(theGlue: BOPAlgo_GlueEnum): void;
+  Glue(): BOPAlgo_GlueEnum;
+  SetCheckInverted(theCheck: Standard_Boolean): void;
+  CheckInverted(): Standard_Boolean;
+  Build(theRange: Message_ProgressRange): void;
+  SimplifyResult(theUnifyEdges: Standard_Boolean, theUnifyFaces: Standard_Boolean, theAngularTol: Standard_Real): void;
+  Modified(theS: TopoDS_Shape): TopTools_ListOfShape;
+  Generated(theS: TopoDS_Shape): TopTools_ListOfShape;
+  IsDeleted(aS: TopoDS_Shape): Standard_Boolean;
+  HasModified(): Standard_Boolean;
+  HasGenerated(): Standard_Boolean;
+  HasDeleted(): Standard_Boolean;
+  SetToFillHistory(theHistFlag: Standard_Boolean): void;
+  HasHistory(): Standard_Boolean;
+  SectionEdges(): TopTools_ListOfShape;
+  DSFiller(): BOPAlgo_PPaveFiller;
+  Builder(): BOPAlgo_PBuilder;
+  History(): Handle_BRepTools_History;
+  delete(): void;
+}
+
+  export declare class BRepAlgoAPI_BuilderAlgo_1 extends BRepAlgoAPI_BuilderAlgo {
+    constructor();
+  }
+
+  export declare class BRepAlgoAPI_BuilderAlgo_2 extends BRepAlgoAPI_BuilderAlgo {
+    constructor(thePF: BOPAlgo_PaveFiller);
   }
 
 export declare class BRepAlgoAPI_Common extends BRepAlgoAPI_BooleanOperation {
@@ -1011,6 +1404,13 @@ export declare type TopAbs_ShapeEnum = {
   TopAbs_EDGE: {};
   TopAbs_VERTEX: {};
   TopAbs_SHAPE: {};
+}
+
+export declare type TopAbs_Orientation = {
+  TopAbs_FORWARD: {};
+  TopAbs_REVERSED: {};
+  TopAbs_INTERNAL: {};
+  TopAbs_EXTERNAL: {};
 }
 
 export declare class BRep_Builder extends TopoDS_Builder {
@@ -1127,6 +1527,72 @@ export declare class BRep_Tool {
   delete(): void;
 }
 
+export declare class HLRBRep_InternalAlgo extends Standard_Transient {
+  Projector_1(P: HLRAlgo_Projector): void;
+  Projector_2(): HLRAlgo_Projector;
+  Update(): void;
+  Load_1(S: Handle_HLRTopoBRep_OutLiner, SData: Handle_Standard_Transient, nbIso: Graphic3d_ZLayerId): void;
+  Load_2(S: Handle_HLRTopoBRep_OutLiner, nbIso: Graphic3d_ZLayerId): void;
+  Index(S: Handle_HLRTopoBRep_OutLiner): Graphic3d_ZLayerId;
+  Remove(I: Graphic3d_ZLayerId): void;
+  ShapeData(I: Graphic3d_ZLayerId, SData: Handle_Standard_Transient): void;
+  SeqOfShapeBounds(): HLRBRep_SeqOfShapeBounds;
+  NbShapes(): Graphic3d_ZLayerId;
+  ShapeBounds(I: Graphic3d_ZLayerId): HLRBRep_ShapeBounds;
+  InitEdgeStatus(): void;
+  Select_1(): void;
+  Select_2(I: Graphic3d_ZLayerId): void;
+  SelectEdge(I: Graphic3d_ZLayerId): void;
+  SelectFace(I: Graphic3d_ZLayerId): void;
+  ShowAll_1(): void;
+  ShowAll_2(I: Graphic3d_ZLayerId): void;
+  HideAll_1(): void;
+  HideAll_2(I: Graphic3d_ZLayerId): void;
+  PartialHide(): void;
+  Hide_1(): void;
+  Hide_2(I: Graphic3d_ZLayerId): void;
+  Hide_3(I: Graphic3d_ZLayerId, J: Graphic3d_ZLayerId): void;
+  Debug_1(deb: Standard_Boolean): void;
+  Debug_2(): Standard_Boolean;
+  DataStructure(): Handle_HLRBRep_Data;
+  static get_type_name(): Standard_Character;
+  static get_type_descriptor(): Handle_Standard_Type;
+  DynamicType(): Handle_Standard_Type;
+  delete(): void;
+}
+
+  export declare class HLRBRep_InternalAlgo_1 extends HLRBRep_InternalAlgo {
+    constructor();
+  }
+
+  export declare class HLRBRep_InternalAlgo_2 extends HLRBRep_InternalAlgo {
+    constructor(A: Handle_HLRBRep_InternalAlgo);
+  }
+
+export declare class Handle_HLRBRep_PolyAlgo {
+  Nullify(): void;
+  IsNull(): boolean;
+  reset(thePtr: HLRBRep_PolyAlgo): void;
+  get(): HLRBRep_PolyAlgo;
+  delete(): void;
+}
+
+  export declare class Handle_HLRBRep_PolyAlgo_1 extends Handle_HLRBRep_PolyAlgo {
+    constructor();
+  }
+
+  export declare class Handle_HLRBRep_PolyAlgo_2 extends Handle_HLRBRep_PolyAlgo {
+    constructor(thePtr: HLRBRep_PolyAlgo);
+  }
+
+  export declare class Handle_HLRBRep_PolyAlgo_3 extends Handle_HLRBRep_PolyAlgo {
+    constructor(theHandle: Handle_HLRBRep_PolyAlgo);
+  }
+
+  export declare class Handle_HLRBRep_PolyAlgo_4 extends Handle_HLRBRep_PolyAlgo {
+    constructor(theHandle: Handle_HLRBRep_PolyAlgo);
+  }
+
 export declare class HLRBRep_PolyAlgo extends Standard_Transient {
   NbShapes(): Graphic3d_ZLayerId;
   Shape(I: Graphic3d_ZLayerId): TopoDS_Shape;
@@ -1194,6 +1660,30 @@ export declare class HLRBRep_PolyHLRToShape {
   delete(): void;
 }
 
+export declare class Handle_HLRBRep_Algo {
+  Nullify(): void;
+  IsNull(): boolean;
+  reset(thePtr: HLRBRep_Algo): void;
+  get(): HLRBRep_Algo;
+  delete(): void;
+}
+
+  export declare class Handle_HLRBRep_Algo_1 extends Handle_HLRBRep_Algo {
+    constructor();
+  }
+
+  export declare class Handle_HLRBRep_Algo_2 extends Handle_HLRBRep_Algo {
+    constructor(thePtr: HLRBRep_Algo);
+  }
+
+  export declare class Handle_HLRBRep_Algo_3 extends Handle_HLRBRep_Algo {
+    constructor(theHandle: Handle_HLRBRep_Algo);
+  }
+
+  export declare class Handle_HLRBRep_Algo_4 extends Handle_HLRBRep_Algo {
+    constructor(theHandle: Handle_HLRBRep_Algo);
+  }
+
 export declare class HLRBRep_Algo extends HLRBRep_InternalAlgo {
   Add_1(S: TopoDS_Shape, SData: Handle_Standard_Transient, nbIso: Graphic3d_ZLayerId): void;
   Add_2(S: TopoDS_Shape, nbIso: Graphic3d_ZLayerId): void;
@@ -1247,6 +1737,27 @@ export declare class HLRBRep_HLRToShape {
   IsoLineHCompound_2(S: TopoDS_Shape): TopoDS_Shape;
   CompoundOfEdges_1(type: HLRBRep_TypeOfResultingEdge, visible: Standard_Boolean, In3d: Standard_Boolean): TopoDS_Shape;
   CompoundOfEdges_2(S: TopoDS_Shape, type: HLRBRep_TypeOfResultingEdge, visible: Standard_Boolean, In3d: Standard_Boolean): TopoDS_Shape;
+  delete(): void;
+}
+
+export declare class BRepBuilderAPI_Command {
+  IsDone(): Standard_Boolean;
+  Check(): void;
+  delete(): void;
+}
+
+export declare class BRepBuilderAPI_MakeShape extends BRepBuilderAPI_Command {
+  Build(theRange: Message_ProgressRange): void;
+  Shape(): TopoDS_Shape;
+  Generated(S: TopoDS_Shape): TopTools_ListOfShape;
+  Modified(S: TopoDS_Shape): TopTools_ListOfShape;
+  IsDeleted(S: TopoDS_Shape): Standard_Boolean;
+  delete(): void;
+}
+
+export declare class BRepBuilderAPI_ModifyShape extends BRepBuilderAPI_MakeShape {
+  Modified(S: TopoDS_Shape): TopTools_ListOfShape;
+  ModifiedShape(S: TopoDS_Shape): TopoDS_Shape;
   delete(): void;
 }
 
@@ -1531,6 +2042,28 @@ export declare class BRepFilletAPI_MakeFillet extends BRepFilletAPI_LocalOperati
   delete(): void;
 }
 
+export declare class BRepFilletAPI_LocalOperation extends BRepBuilderAPI_MakeShape {
+  Add(E: TopoDS_Edge): void;
+  ResetContour(IC: Graphic3d_ZLayerId): void;
+  NbContours(): Graphic3d_ZLayerId;
+  Contour(E: TopoDS_Edge): Graphic3d_ZLayerId;
+  NbEdges(I: Graphic3d_ZLayerId): Graphic3d_ZLayerId;
+  Edge(I: Graphic3d_ZLayerId, J: Graphic3d_ZLayerId): TopoDS_Edge;
+  Remove(E: TopoDS_Edge): void;
+  Length(IC: Graphic3d_ZLayerId): Standard_Real;
+  FirstVertex(IC: Graphic3d_ZLayerId): TopoDS_Vertex;
+  LastVertex(IC: Graphic3d_ZLayerId): TopoDS_Vertex;
+  Abscissa(IC: Graphic3d_ZLayerId, V: TopoDS_Vertex): Standard_Real;
+  RelativeAbscissa(IC: Graphic3d_ZLayerId, V: TopoDS_Vertex): Standard_Real;
+  ClosedAndTangent(IC: Graphic3d_ZLayerId): Standard_Boolean;
+  Closed(IC: Graphic3d_ZLayerId): Standard_Boolean;
+  Reset(): void;
+  Simulate(IC: Graphic3d_ZLayerId): void;
+  NbSurf(IC: Graphic3d_ZLayerId): Graphic3d_ZLayerId;
+  Sect(IC: Graphic3d_ZLayerId, IS: Graphic3d_ZLayerId): Handle_ChFiDS_SecHArray1;
+  delete(): void;
+}
+
 export declare class HLRAlgo_Projector {
   Set(T: gp_Trsf, Persp: Standard_Boolean, Focus: Standard_Real): void;
   Directions(D1: gp_Vec2d, D2: gp_Vec2d, D3: gp_Vec2d): void;
@@ -1596,6 +2129,17 @@ export declare class BRepMesh_IncrementalMesh extends BRepMesh_DiscretRoot {
   export declare class BRepMesh_IncrementalMesh_3 extends BRepMesh_IncrementalMesh {
     constructor(theShape: TopoDS_Shape, theParameters: IMeshTools_Parameters, theRange: Message_ProgressRange);
   }
+
+export declare class BRepMesh_DiscretRoot extends Standard_Transient {
+  SetShape(theShape: TopoDS_Shape): void;
+  Shape(): TopoDS_Shape;
+  IsDone(): Standard_Boolean;
+  Perform(theRange: Message_ProgressRange): void;
+  static get_type_name(): Standard_Character;
+  static get_type_descriptor(): Handle_Standard_Type;
+  DynamicType(): Handle_Standard_Type;
+  delete(): void;
+}
 
 type Standard_Boolean = boolean;
 type Standard_Byte = number;
@@ -1754,12 +2298,27 @@ declare namespace FS {
 
 
 export type OpenCascadeInstance = {FS: typeof FS} & {
+  Handle_Poly_Triangulation: typeof Handle_Poly_Triangulation;
+  Handle_Poly_Triangulation_1: typeof Handle_Poly_Triangulation_1;
+  Handle_Poly_Triangulation_2: typeof Handle_Poly_Triangulation_2;
+  Handle_Poly_Triangulation_3: typeof Handle_Poly_Triangulation_3;
+  Handle_Poly_Triangulation_4: typeof Handle_Poly_Triangulation_4;
   Poly_Triangulation: typeof Poly_Triangulation;
   Poly_Triangulation_1: typeof Poly_Triangulation_1;
   Poly_Triangulation_2: typeof Poly_Triangulation_2;
   Poly_Triangulation_3: typeof Poly_Triangulation_3;
   Poly_Triangulation_4: typeof Poly_Triangulation_4;
   Poly_Triangulation_5: typeof Poly_Triangulation_5;
+  Poly_Array1OfTriangle: typeof Poly_Array1OfTriangle;
+  Poly_Array1OfTriangle_1: typeof Poly_Array1OfTriangle_1;
+  Poly_Array1OfTriangle_2: typeof Poly_Array1OfTriangle_2;
+  Poly_Array1OfTriangle_3: typeof Poly_Array1OfTriangle_3;
+  Poly_Array1OfTriangle_4: typeof Poly_Array1OfTriangle_4;
+  Poly_Array1OfTriangle_5: typeof Poly_Array1OfTriangle_5;
+  Poly_Triangle: typeof Poly_Triangle;
+  Poly_Triangle_1: typeof Poly_Triangle_1;
+  Poly_Triangle_2: typeof Poly_Triangle_2;
+  TopoDS_Builder: typeof TopoDS_Builder;
   TopoDS: typeof TopoDS;
   TopoDS_Face: typeof TopoDS_Face;
   TopoDS_Compound: typeof TopoDS_Compound;
@@ -1769,6 +2328,14 @@ export type OpenCascadeInstance = {FS: typeof FS} & {
   TopLoc_Location_1: typeof TopLoc_Location_1;
   TopLoc_Location_2: typeof TopLoc_Location_2;
   TopLoc_Location_3: typeof TopLoc_Location_3;
+  TColgp_Array1OfPnt: typeof TColgp_Array1OfPnt;
+  TColgp_Array1OfPnt_1: typeof TColgp_Array1OfPnt_1;
+  TColgp_Array1OfPnt_2: typeof TColgp_Array1OfPnt_2;
+  TColgp_Array1OfPnt_3: typeof TColgp_Array1OfPnt_3;
+  TColgp_Array1OfPnt_4: typeof TColgp_Array1OfPnt_4;
+  TColgp_Array1OfPnt_5: typeof TColgp_Array1OfPnt_5;
+  NCollection_BaseList: typeof NCollection_BaseList;
+  NCollection_BaseMap: typeof NCollection_BaseMap;
   TopExp_Explorer: typeof TopExp_Explorer;
   TopExp_Explorer_1: typeof TopExp_Explorer_1;
   TopExp_Explorer_2: typeof TopExp_Explorer_2;
@@ -1820,29 +2387,55 @@ export type OpenCascadeInstance = {FS: typeof FS} & {
   gp_Dir_2: typeof gp_Dir_2;
   gp_Dir_3: typeof gp_Dir_3;
   gp_Dir_4: typeof gp_Dir_4;
+  Adaptor3d_Curve: typeof Adaptor3d_Curve;
   TopTools_ListOfShape: typeof TopTools_ListOfShape;
   TopTools_ListOfShape_1: typeof TopTools_ListOfShape_1;
   TopTools_ListOfShape_2: typeof TopTools_ListOfShape_2;
   TopTools_ListOfShape_3: typeof TopTools_ListOfShape_3;
+  TopTools_IndexedDataMapOfShapeListOfShape: typeof TopTools_IndexedDataMapOfShapeListOfShape;
+  TopTools_IndexedDataMapOfShapeListOfShape_1: typeof TopTools_IndexedDataMapOfShapeListOfShape_1;
+  TopTools_IndexedDataMapOfShapeListOfShape_2: typeof TopTools_IndexedDataMapOfShapeListOfShape_2;
+  TopTools_IndexedDataMapOfShapeListOfShape_3: typeof TopTools_IndexedDataMapOfShapeListOfShape_3;
   TopTools_IndexedMapOfShape: typeof TopTools_IndexedMapOfShape;
   TopTools_IndexedMapOfShape_1: typeof TopTools_IndexedMapOfShape_1;
   TopTools_IndexedMapOfShape_2: typeof TopTools_IndexedMapOfShape_2;
   TopTools_IndexedMapOfShape_3: typeof TopTools_IndexedMapOfShape_3;
+  GeomAbs_Shape: GeomAbs_Shape;
+  Handle_BRepAdaptor_Curve: typeof Handle_BRepAdaptor_Curve;
+  Handle_BRepAdaptor_Curve_1: typeof Handle_BRepAdaptor_Curve_1;
+  Handle_BRepAdaptor_Curve_2: typeof Handle_BRepAdaptor_Curve_2;
+  Handle_BRepAdaptor_Curve_3: typeof Handle_BRepAdaptor_Curve_3;
+  Handle_BRepAdaptor_Curve_4: typeof Handle_BRepAdaptor_Curve_4;
   BRepAdaptor_Curve: typeof BRepAdaptor_Curve;
   BRepAdaptor_Curve_1: typeof BRepAdaptor_Curve_1;
   BRepAdaptor_Curve_2: typeof BRepAdaptor_Curve_2;
   BRepAdaptor_Curve_3: typeof BRepAdaptor_Curve_3;
+  Handle_Standard_Transient: typeof Handle_Standard_Transient;
+  Handle_Standard_Transient_1: typeof Handle_Standard_Transient_1;
+  Handle_Standard_Transient_2: typeof Handle_Standard_Transient_2;
+  Handle_Standard_Transient_3: typeof Handle_Standard_Transient_3;
+  Handle_Standard_Transient_4: typeof Handle_Standard_Transient_4;
+  Standard_Transient: typeof Standard_Transient;
+  Standard_Transient_1: typeof Standard_Transient_1;
+  Standard_Transient_2: typeof Standard_Transient_2;
   BRepGProp: typeof BRepGProp;
+  BRepAlgoAPI_Algo: typeof BRepAlgoAPI_Algo;
   BRepAlgoAPI_Fuse: typeof BRepAlgoAPI_Fuse;
   BRepAlgoAPI_Fuse_1: typeof BRepAlgoAPI_Fuse_1;
   BRepAlgoAPI_Fuse_2: typeof BRepAlgoAPI_Fuse_2;
   BRepAlgoAPI_Fuse_3: typeof BRepAlgoAPI_Fuse_3;
   BRepAlgoAPI_Fuse_4: typeof BRepAlgoAPI_Fuse_4;
+  BRepAlgoAPI_BooleanOperation: typeof BRepAlgoAPI_BooleanOperation;
+  BRepAlgoAPI_BooleanOperation_1: typeof BRepAlgoAPI_BooleanOperation_1;
+  BRepAlgoAPI_BooleanOperation_2: typeof BRepAlgoAPI_BooleanOperation_2;
   BRepAlgoAPI_Cut: typeof BRepAlgoAPI_Cut;
   BRepAlgoAPI_Cut_1: typeof BRepAlgoAPI_Cut_1;
   BRepAlgoAPI_Cut_2: typeof BRepAlgoAPI_Cut_2;
   BRepAlgoAPI_Cut_3: typeof BRepAlgoAPI_Cut_3;
   BRepAlgoAPI_Cut_4: typeof BRepAlgoAPI_Cut_4;
+  BRepAlgoAPI_BuilderAlgo: typeof BRepAlgoAPI_BuilderAlgo;
+  BRepAlgoAPI_BuilderAlgo_1: typeof BRepAlgoAPI_BuilderAlgo_1;
+  BRepAlgoAPI_BuilderAlgo_2: typeof BRepAlgoAPI_BuilderAlgo_2;
   BRepAlgoAPI_Common: typeof BRepAlgoAPI_Common;
   BRepAlgoAPI_Common_1: typeof BRepAlgoAPI_Common_1;
   BRepAlgoAPI_Common_2: typeof BRepAlgoAPI_Common_2;
@@ -1859,18 +2452,35 @@ export type OpenCascadeInstance = {FS: typeof FS} & {
   BRepAlgoAPI_Section_8: typeof BRepAlgoAPI_Section_8;
   ChFi3d_FilletShape: ChFi3d_FilletShape;
   TopAbs_ShapeEnum: TopAbs_ShapeEnum;
+  TopAbs_Orientation: TopAbs_Orientation;
   BRep_Builder: typeof BRep_Builder;
   BRep_Tool: typeof BRep_Tool;
+  HLRBRep_InternalAlgo: typeof HLRBRep_InternalAlgo;
+  HLRBRep_InternalAlgo_1: typeof HLRBRep_InternalAlgo_1;
+  HLRBRep_InternalAlgo_2: typeof HLRBRep_InternalAlgo_2;
+  Handle_HLRBRep_PolyAlgo: typeof Handle_HLRBRep_PolyAlgo;
+  Handle_HLRBRep_PolyAlgo_1: typeof Handle_HLRBRep_PolyAlgo_1;
+  Handle_HLRBRep_PolyAlgo_2: typeof Handle_HLRBRep_PolyAlgo_2;
+  Handle_HLRBRep_PolyAlgo_3: typeof Handle_HLRBRep_PolyAlgo_3;
+  Handle_HLRBRep_PolyAlgo_4: typeof Handle_HLRBRep_PolyAlgo_4;
   HLRBRep_PolyAlgo: typeof HLRBRep_PolyAlgo;
   HLRBRep_PolyAlgo_1: typeof HLRBRep_PolyAlgo_1;
   HLRBRep_PolyAlgo_2: typeof HLRBRep_PolyAlgo_2;
   HLRBRep_PolyAlgo_3: typeof HLRBRep_PolyAlgo_3;
   HLRBRep_PolyHLRToShape: typeof HLRBRep_PolyHLRToShape;
+  Handle_HLRBRep_Algo: typeof Handle_HLRBRep_Algo;
+  Handle_HLRBRep_Algo_1: typeof Handle_HLRBRep_Algo_1;
+  Handle_HLRBRep_Algo_2: typeof Handle_HLRBRep_Algo_2;
+  Handle_HLRBRep_Algo_3: typeof Handle_HLRBRep_Algo_3;
+  Handle_HLRBRep_Algo_4: typeof Handle_HLRBRep_Algo_4;
   HLRBRep_Algo: typeof HLRBRep_Algo;
   HLRBRep_Algo_1: typeof HLRBRep_Algo_1;
   HLRBRep_Algo_2: typeof HLRBRep_Algo_2;
   HLRBRep_TypeOfResultingEdge: HLRBRep_TypeOfResultingEdge;
   HLRBRep_HLRToShape: typeof HLRBRep_HLRToShape;
+  BRepBuilderAPI_Command: typeof BRepBuilderAPI_Command;
+  BRepBuilderAPI_MakeShape: typeof BRepBuilderAPI_MakeShape;
+  BRepBuilderAPI_ModifyShape: typeof BRepBuilderAPI_ModifyShape;
   BRepBuilderAPI_MakeFace: typeof BRepBuilderAPI_MakeFace;
   BRepBuilderAPI_MakeFace_1: typeof BRepBuilderAPI_MakeFace_1;
   BRepBuilderAPI_MakeFace_2: typeof BRepBuilderAPI_MakeFace_2;
@@ -1911,6 +2521,7 @@ export type OpenCascadeInstance = {FS: typeof FS} & {
   GCPnts_QuasiUniformDeflection_5: typeof GCPnts_QuasiUniformDeflection_5;
   BRepFilletAPI_MakeChamfer: typeof BRepFilletAPI_MakeChamfer;
   BRepFilletAPI_MakeFillet: typeof BRepFilletAPI_MakeFillet;
+  BRepFilletAPI_LocalOperation: typeof BRepFilletAPI_LocalOperation;
   HLRAlgo_Projector: typeof HLRAlgo_Projector;
   HLRAlgo_Projector_1: typeof HLRAlgo_Projector_1;
   HLRAlgo_Projector_2: typeof HLRAlgo_Projector_2;
@@ -1921,6 +2532,7 @@ export type OpenCascadeInstance = {FS: typeof FS} & {
   BRepMesh_IncrementalMesh_1: typeof BRepMesh_IncrementalMesh_1;
   BRepMesh_IncrementalMesh_2: typeof BRepMesh_IncrementalMesh_2;
   BRepMesh_IncrementalMesh_3: typeof BRepMesh_IncrementalMesh_3;
+  BRepMesh_DiscretRoot: typeof BRepMesh_DiscretRoot;
 };
 
 declare function init(): Promise<OpenCascadeInstance>;
