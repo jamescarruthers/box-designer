@@ -1,0 +1,600 @@
+# Sheet Box Designer — implementation specification
+
+A web app for designing boxes made from sheet material (plywood, MDF). It solves
+panel sizes from a few parameters, shows the result in 3D, and produces a cut
+list, sheet layouts and a technical drawing to British standards.
+
+This document records the model, the algorithms and the conventions decided
+during the prototype, so none of it has to be worked out twice. Everything
+marked **verified** was checked numerically; the test that checked it is given.
+
+---
+
+## 1. Coordinate system and naming
+
+| Axis | Meaning | Faces |
+|---|---|---|
+| `x` | width | `left` (x−), `right` (x+) |
+| `y` | depth | `front` (y−), `back` (y+) |
+| `z` | height | `bottom` (z−), `top` (z+) |
+
+All lengths are millimetres. Every box is stored as
+`{ x: [lo, hi], y: [lo, hi], z: [lo, hi] }` in envelope coordinates, origin at
+the front-left-bottom corner.
+
+Constants used throughout:
+
+```js
+const FACES = ["front", "back", "left", "right", "top", "bottom"];
+const AXIS  = { left:["x",-1], right:["x",1], front:["y",-1],
+                back:["y",1],  bottom:["z",-1], top:["z",1] };
+const PAIR  = { x:["left","right"], y:["front","back"], z:["bottom","top"] };
+```
+
+The twelve edges are keyed by the two faces meeting there, e.g. `"front|top"`.
+Build them by taking each pair of distinct axes and each combination of their
+faces.
+
+---
+
+## 2. The core model
+
+### 2.1 Prominence
+
+A *prominent* face is one whose panel is full size, so no other panel's edge
+shows on it. This is not a flag per face — it is a **strict rank over all six
+faces**. A panel runs to the outer surface of a neighbour it outranks, and stops
+at the inner surface of one it does not.
+
+Rank 0 is most prominent. Pair-wise choices ("front and back wrap") are just
+ranks that happen to sit adjacent, so presets and hand-ordering share one code
+path.
+
+Presets worth shipping:
+
+| Name | Order |
+|---|---|
+| Front & back wrap | front, back, left, right, top, bottom |
+| Sides wrap | left, right, top, bottom, front, back |
+| Top & bottom wrap | top, bottom, front, back, left, right |
+| Baffle wraps sides | front, left, right, bottom, back, top |
+| Plinth & lid | bottom, top, left, right, front, back |
+
+**Reordering prominence changes every panel size and no internal dimension.**
+State this in the UI. It is a joinery choice, not a tuning knob.
+
+### 2.2 One rule, applied three times
+
+The box is three nested layers, each tiling the walls of the previous layer's
+cavity with the same function:
+
+```
+envelope → cladding → shell → doubler → cavity
+```
+
+*Cladding* lies outside the carcass and grows the box. A *doubler* lies inside
+and eats the cavity. Both are optional per face.
+
+```js
+// Tile the walls of `box` with panels of thickness `th`, ordered by `rank`.
+function shellLayer(box, th, rank, name) {
+  const parts = [], inner = {};
+  for (const b of "xyz") {
+    const [bm, bp] = PAIR[b];
+    inner[b] = [box[b][0] + th[bm], box[b][1] - th[bp]];
+  }
+  for (const f of FACES) {
+    if (!(th[f] > 0)) continue;            // omit the panel, keep the trimming
+    const [a, s] = AXIS[f];
+    const nb = {};
+    nb[a] = s < 0 ? [box[a][0], box[a][0] + th[f]]
+                  : [box[a][1] - th[f], box[a][1]];
+    for (const b of "xyz") {
+      if (b === a) continue;
+      const [bm, bp] = PAIR[b];
+      nb[b] = [ rank[f] < rank[bm] ? box[b][0] : box[b][0] + th[bm],
+                rank[f] < rank[bp] ? box[b][1] : box[b][1] - th[bp] ];
+    }
+    parts.push({ face: f, layer: name, box: nb });
+  }
+  return { parts, inner };
+}
+
+const L0 = shellLayer(env,      cladding,  rank, "cladding");
+const L1 = shellLayer(L0.inner, thickness, rank, "shell");
+const L2 = shellLayer(L1.inner, doubler,   rank, "doubler");
+// L2.inner is the cavity
+```
+
+That is the whole geometry engine. Everything else derives from it.
+
+### 2.3 Deriving the envelope from the starting point
+
+Four starting points, all supported:
+
+```js
+wall[f] = cladding[f] + thickness[f] + doubler[f];
+
+// internal or external dimensions given directly
+size = { x, y, z };
+
+// internal or external volume given with a proportion
+k    = Math.cbrt(litres * 1e6 / (ratio.x * ratio.y * ratio.z));
+size = { x: ratio.x * k, y: ratio.y * k, z: ratio.z * k };
+
+// then, per axis b with faces bm, bp:
+E[b] = internalBasis ? size[b] + wall[bm] + wall[bp] : size[b];
+```
+
+Default proportion 1 : 1.25 : 1.6, which keeps the axial modes apart. Round the
+envelope to 0.1 mm.
+
+### 2.4 Invariants — **verified**
+
+1. **Panels tile the walls exactly.** No gaps, no overlaps.
+2. **Volume closes.** `Σ panel volumes + cavity volume = envelope volume`.
+3. **Internal dimensions depend only on wall thicknesses**, never on prominence.
+
+Tested over 29,920 random cases with all three layers populated, random
+prominence orders and mixed thicknesses: zero failures. The Python version used
+exact rational arithmetic (`fractions.Fraction`) so closure was exact, not
+within tolerance.
+
+**Cross-check against a real plan.** Envelope 166 × 187 × 344, 18 mm throughout,
+rank `front 0, left 1, right 2, bottom 3, back 4, top 5` must return:
+
+```
+front   344 × 166      (baffle wraps the side edges)
+left    344 × 169
+right   344 × 169
+back    326 × 130
+bottom  169 × 130
+top     151 × 130
+cavity  130 × 151 × 308  = 6.046 l
+```
+
+Those are the published numbers for the Mark Audio Pluvia 7P Mica standmount.
+Keep this as a fixture.
+
+---
+
+## 3. Edge treatments
+
+Full-length external edges take a chamfer or a fillet, set globally or per edge.
+
+- **Cut from the outer face.** The bevel starts at the external surface and works
+  inward. Getting this backwards puts the bevel in the cavity.
+- **Blank sizes are unchanged.** A bevel is an operation after assembly; the cut
+  list carries it as a note, not as a smaller panel.
+- A bevel attaches to a panel only where that panel is the outermost material at
+  that edge. Clad a face and the bevel moves from the shell panel to the
+  cladding panel.
+
+Depth profile, `d` measured inward from the outer face:
+
+```
+chamfer: inset(d) = R − d
+fillet:  inset(d) = R − sqrt(2Rd − d²)
+```
+
+Both give `inset(0) = R` and `inset(R) = 0`.
+
+### Validation
+
+```
+wall[f] = cladding[f] + thickness[f] + doubler[f]
+skin[f] = cladding[f] || thickness[f]
+
+R > min(wall of the two faces)  → error: cuts through the wall
+R > min(skin of the two faces)  → warning: cuts past the outer skin,
+                                  the glue line will show
+```
+
+---
+
+## 4. Panel geometry for the 3D view
+
+Each panel is a prism from its inner surface to its outer surface, tapered at
+any external edge carrying a bevel.
+
+1. Build a stack of rings from the outer surface inward. One step for a chamfer,
+   eight for a fillet. Each ring is a rectangle inset per side by `inset(d)`,
+   clamped so opposite insets cannot cross. Add a final ring at full thickness
+   with zero inset.
+2. Loft the rings into quads, cap the first and last.
+3. Transform into three.js coordinates. **Use a rotation, not an axis swap:**
+
+   ```
+   three.x =   model.x − E.x/2
+   three.y =   model.z − E.z/2
+   three.z = −(model.y − E.y/2)
+   ```
+
+   Swapping two axes is a reflection, determinant −1. It inverts every triangle
+   winding and `computeVertexNormals` then points the lot inward — the model
+   lights from the inside and transparent modes look wrong.
+4. **Orient each triangle outward against the panel centroid.** A bevelled box is
+   convex, so `dot(normal, triangleCentroid − panelCentroid) > 0` is exact. Doing
+   this numerically removes a whole class of winding bugs — **verified**: 0 of 76
+   triangles inward on a filleted side panel.
+5. `computeVertexNormals`, `flatShading: true`.
+
+Explode offsets move each panel along its face normal, scaled by layer:
+cladding 1.5, shell 1.0, doubler 0.45. In three coordinates the normal is
+`(x → s, z → s, y → −s)`; the sign flip on depth matters.
+
+### Render styles
+
+Named after Fusion 360's visual styles:
+
+| Style | Faces | Edges |
+|---|---|---|
+| Shaded | yes | none |
+| Shaded + hidden edges | yes, 94% opacity | all, `depthTest: false` |
+| Wireframe | none | all, `depthTest: false` |
+| Wireframe, hidden removed | depth only, `colorWrite: false` | all, `depthTest: true` |
+
+`EdgesGeometry(geom, 24)` suppresses the fillet's eight-step facets while keeping
+chamfer creases.
+
+### Colour modes
+
+Material colour, or colour by face. The face palette encodes structure: hue is
+the axis, light against dark is which end.
+
+```
+left  #74c47c   right  #2f8a52    (x, green)
+front #5fadd8   back   #2c6c91    (y, blue)
+top   #ac8bd8   bottom #6c4fa2    (z, violet)
+```
+
+Cladding and doublers keep the face hue and shift lightness (`+0.02/+0.09` and
+`−0.05/−0.13` in HSL), so a clad front and the shell behind it read as the same
+face at different depths.
+
+Selection must **not** recolour the panel — that destroys what the colouring is
+for. Use an emissive lift (`0x5f2110`) plus accent-coloured edges.
+
+When face colouring is on, carry the swatch into the cut list, part list, sheet
+layouts and the prominence list. Turn it off and every swatch goes. The two views
+never disagree.
+
+### Camera
+
+Hand-rolled orbit; three r128 has no bundled `OrbitControls`. Spherical
+coordinates, drag to orbit, shift-drag to pan, wheel to zoom, click to select.
+Clamp polar angle to `[0.06, π − 0.06]` or `lookAt` degenerates.
+
+View presets: iso `[−0.72, 1.08]`, front `[0, π/2]`, top `[0, 0.08]`,
+right `[π/2, π/2]`; distance `2.7 × max(W, D, H)`.
+
+Keep the viewport **mounted** when the user switches to another mode and hide it
+with CSS, so the camera survives. Skip the render call while `clientWidth === 0`.
+
+---
+
+## 5. Cut list, parts and sheets
+
+Sort panels by layer (cladding, shell, doubler), then by area descending. Number
+`P01`, `P02`, … after sorting so the numbering is stable.
+
+Each row: part id, face, layer, length, width, thickness, material, grain, edge
+work. Export as CSV. Show totals: part count, area in m², sheet count, and the
+volume closure error — print `exact` when it is zero, which it should always be.
+
+**Part templates** must share one scale. Give every part the same viewBox width
+keyed to the longest part in the set, so a 344 mm baffle and a 130 mm cleat do
+not draw the same size. Set stroke width and font size as fractions of that
+length, since the viewBox is in millimetres.
+
+**Nesting.** Shelf packing, first fit decreasing: sort by width descending, place
+along the current shelf, open a new shelf when it will not fit, open a new sheet
+when that fails. Add the kerf (default 3.2 mm) after each placement. Rotate parts
+unless grain is locked. **Group by thickness** — 6 mm cladding cannot share a
+sheet with an 18 mm carcass.
+
+Stock sizes: MDF 2440 × 1220 and 3050 × 1220; birch ply 2440 × 1220 and
+1525 × 1525; others 2440 × 1220.
+
+---
+
+## 6. The technical drawing
+
+### 6.1 Sheet
+
+A3 landscape, 420 × 297, ISO 216 ratio. Margins 10 mm, except 20 mm on the left
+for filing (ISO 5457). Title block 180 × 40 in the bottom-right corner of the
+frame.
+
+**Pick a real scale**, do not fit. Take the largest ISO 5455 preferred scale that
+fits and print it in the title block:
+
+```
+[10, 5, 2, 1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01]
+```
+
+"To fit" hides size changes: the drawing rescales and looks identical when the
+box grows. A fixed scale makes the change visible.
+
+Line widths in sheet millimetres: visible outline 0.7, hidden 0.45 dashed 3/1.4,
+dimension lines 0.25, cutting plane 0.45 chain, frame 0.7. Text: dimensions 3.2,
+view labels 2.9, title block values 4, keys 2.2, notes 2.4.
+
+Hidden lines at the strict ISO 0.35 are under a pixel wide once the sheet is
+scaled into a browser pane and effectively vanish. 0.45 stays within the 1:2
+thin-to-thick ratio and reads.
+
+### 6.2 View arrangement
+
+```
+┌──────────────┬──────────────┬──────────────┐
+│    FRONT     │  END VIEW    │  SECTION A–A │
+│  ELEVATION   │  FROM LEFT   │              │
+├──────────────┼──────────────┴──────────────┤
+│     PLAN     │        ISOMETRIC            │
+│  FROM ABOVE  │                             │
+└──────────────┴─────────────────────────────┘
+                              [ title block ]
+```
+
+Columns `W, D, D`; rows `H, D`. Centre the block in the frame with gaps clamped
+to 22–40 mm horizontally, 22–46 mm vertically.
+
+**First angle.** The projection plane sits beyond the object and hinges about its
+line of intersection with the vertical plane. That line is at the **back**, so:
+
+- the view from the left goes on the right, with the **back** of the object on
+  its left edge (the side nearest the front elevation);
+- the plan goes below, with the **back** of the object along its **top** edge.
+
+The plan is easy to get backwards. Derive it from the hinge, not from intuition.
+
+Projections, with `n` the nearness (smaller is nearer):
+
+```js
+front: b => ({ h: b.x,                     v: [Ez-b.z[1], Ez-b.z[0]], n: b.y[0] })
+end:   b => ({ h: [Ey-b.y[1], Ey-b.y[0]],  v: [Ez-b.z[1], Ez-b.z[0]], n: b.x[0] })
+plan:  b => ({ h: b.x,                     v: [Ey-b.y[1], Ey-b.y[0]], n: Ez-b.z[1] })
+```
+
+### 6.3 Hidden line removal
+
+Every panel is an axis-aligned box, so it projects to a rectangle and visibility
+is exact — no tolerance anywhere.
+
+1. Emit the four boundary segments of every panel's projected rectangle.
+2. Split each segment at every rectangle boundary coordinate, **including its own
+   rectangle's**, so coincident segments split identically and dedupe cleanly.
+3. A sub-segment is hidden if some **strictly nearer** rectangle **strictly**
+   contains its midpoint. Strict on both counts: a segment lying on a nearer
+   rectangle's boundary is a real visible joint line.
+4. Dedupe by `(orientation, fixed, start, end)`; **visible wins**.
+5. Merge collinear runs sharing orientation, position and visibility.
+
+Step 5 matters: an outline assembled from four different panels must come out as
+one continuous line.
+
+**Verified.** A 236 × 286 × 356 carcass, 18 mm, front and back wrapping, in the
+end view:
+
+```
+solid   horiz v=0    h 0..286     outline top
+dashed  horiz v=18   h 18..268    top panel, inner face
+dashed  horiz v=338  h 18..268    bottom panel, inner face
+solid   horiz v=356  h 0..286     outline bottom
+solid   vert  h=0                 outline back
+solid   vert  h=18                back panel, inner face
+solid   vert  h=268               front panel, inner face
+solid   vert  h=286               outline front
+```
+
+Note how sparse a correct drawing is. When a hidden line falls exactly on a
+visible one, convention draws the visible one, and in a box that happens
+constantly — in a closed carcass the bottom panel's outline sits precisely under
+the top panel's. A plan can legitimately carry almost no dashed line.
+
+### 6.4 Edge treatments in the views
+
+An edge behaves differently depending on how it runs relative to the view:
+
+- **Parallel to the view direction** → a cut corner. Draw a quarter arc (fillet)
+  or a diagonal (chamfer), and trim the outline segments back by `R`. SVG sweep
+  flag: `dh · dv > 0 ? 0 : 1`.
+- **Across the view** → for a **chamfer only**, a line inset from the outline by
+  the leg length, stopping short at each end where a cut corner takes over.
+  Visible when it sits on the near face, dashed when on the far one; the two
+  usually coincide and dedupe to one solid line.
+
+**A fillet gets no such line.** It meets the flat face tangentially, so there is
+no edge there and ISO 128 omits it. Drawing one tells the reader the material
+steps, which it does not. This was the single most confusing bug in the
+prototype.
+
+Each edge therefore appears as a corner in exactly one view and as a tangent line
+(chamfers) in the other two.
+
+Dimensioning: one note when every edge shares a treatment — `ALL EXTERNAL EDGES
+R12` — and leadered labels otherwise, once per distinct treatment per view.
+
+Map faces to view sides:
+
+```js
+front: { left:["h",0], right:["h",1], top:["v",0], bottom:["v",1] }
+end:   { back:["h",0], front:["h",1], top:["v",0], bottom:["v",1] }
+plan:  { left:["h",0], right:["h",1], back:["v",0], front:["v",1] }
+```
+
+Both faces present → corner. Exactly one → tangent line, and the missing one is
+the near/far face that decides visibility.
+
+### 6.5 Section A–A
+
+**This view is not optional.** Outline views cannot show a laminated wall. A
+front doubler adds *nothing* to the front elevation — it sits exactly behind the
+cavity outline — and in the other views it is an 18 mm strip 3.6 mm from the
+panel it doubles at 1:5. Correct, and useless.
+
+Cut a vertical plane at `x = W/2`, viewed from the left:
+
+- **cut** = panels with `box.x[0] < cx < box.x[1]`;
+- **beyond** = panels with `box.x[0] >= cx`;
+- run the usual HLR over cut ∪ beyond with `n = max(box.x[0], cx)`, keep visible
+  segments only — sections omit hidden detail;
+- hatch each cut panel's cross-section by layer.
+
+Hatching, as SVG patterns in user space: carcass 45° at 2.2 mm, doublers −45° at
+2.2 mm, cladding 45° at 1.2 mm, 0.16 stroke. Opposed directions for adjacent
+parts is the ISO convention and it makes a doubler read as its own band.
+
+Put the cutting-plane symbol on the **plan**, not the front elevation — the front
+elevation's centre lines and internal-width dimension are already there. Chain
+line, arrowheads pointing in the direction of sight, letter `A` at each end.
+
+The cut plane is currently fixed at half the width. Make it a control; a port or
+an off-centre brace will need it moved.
+
+### 6.6 Isometric
+
+True isometric **projection**, eye front-right-above, each axis foreshortened to
+√(2/3) — not the stretched isometric-drawing convention.
+
+```js
+const ISO_X = Math.SQRT1_2, ISO_Y = Math.sqrt(1/6), ISO_Z = Math.sqrt(2/3);
+screen = { x: ISO_X * (v.x + v.y),
+           y: ISO_Y * (v.x - v.y) - ISO_Z * v.z };
+```
+
+Build it from the three visible planes — front `y = 0`, right `x = E.x`, top
+`z = E.z`. Every panel meeting one of those planes contributes the boundary of
+its cross-section there. Deduplicate by rounded endpoint pair. That gives the
+real joint pattern, including cladding lines, rather than a bare box. No hidden
+detail.
+
+It usually needs its own preferred scale, since a tall box leaves the quadrant
+shorter than the pictorial wants. Label it when it differs from the sheet scale.
+
+### 6.7 Dimensioning
+
+Aligned system. Extension lines with a 0.8 mm gap from the object and 1.2 mm
+past the arrow, filled arrowheads 1.5 mm. Overall width, depth and height solid;
+internal dimensions bracketed as reference. Note on the sheet:
+
+> ALL DIMENSIONS IN MILLIMETRES. BRACKETED DIMENSIONS ARE FOR REFERENCE. HIDDEN
+> DETAIL DASHED. HATCHING IN SECTION: COARSE = CARCASS, OPPOSED = DOUBLER,
+> FINE = CLADDING.
+
+Title block, two rows of 20 mm, columns at 0 / 90 / 140 / 180:
+
+```
+TITLE          | MATERIAL | REV
+PROJECTION ⊲◎  | SCALE    | SHEET
+```
+
+Draw the first-angle symbol properly: a frustum in elevation with the large end
+on the left, and its end view — two concentric circles — placed to the right.
+
+---
+
+## 7. Interface
+
+Two columns. Controls on the left (about 314 px), main area on the right
+switching between three modes:
+
+**3D view** — viewport with floating chips for render style, colour mode, view
+presets and an explode slider.
+
+**Cut list & sheets** — three columns side by side: cut list, part templates,
+sheet layouts. Hovering a part highlights it in all three and in the 3D view.
+These belong together; do not make the user flip tabs between things they read
+against each other.
+
+**Drawing** — the sheet, centred, on the dark ground.
+
+Control groups, in order: starting point, material, prominence, reinforcement,
+edge treatment. Warnings run along the bottom of the main area in every mode.
+
+Below 1320 px the parts column drops out first; below 1000 px everything stacks.
+
+Aesthetic: drawing-office instrument. Cool graphite ground, monospace with
+tabular figures throughout, one saturated accent reserved for selection and
+active state. Real material colours in the 3D view.
+
+---
+
+## 8. Validation messages
+
+| Condition | Level |
+|---|---|
+| Internal dimension ≤ 0 | error |
+| Internal dimension < 20 mm | warning |
+| Any panel with a non-positive planar dimension | error |
+| Bevel deeper than the thinner wall | error |
+| Bevel deeper than the outer skin | warning |
+| Volume closure non-zero | error — a bug, not user input |
+
+---
+
+## 9. Test suite to port
+
+These are why the geometry is right. Write them first.
+
+1. **Closure and overlap.** 30,000 random envelopes, thicknesses, cladding,
+   doublers and prominence orders. Assert `Σ panel volumes + cavity = envelope`
+   and no pair of panels overlaps. Use exact rational arithmetic if the language
+   allows.
+2. **Pluvia fixture.** The table in §2.4, exact.
+3. **Triangle orientation.** Build a filleted side panel; assert every triangle
+   normal points away from the panel centroid, and that the bevel appears at the
+   outer face — sample the panel's extent at the outer and inner surfaces and
+   check the outer one is inset by `R` while the inner is full width.
+4. **HLR fixtures.** The end-view table in §6.3. Add a sides-wrap case, where the
+   outline is assembled from four panels and must merge into four segments.
+5. **Bevel line counts.** On one box: no bevel → 74 lines, 0 arcs; fillet →
+   74 lines, 12 arcs; chamfer → 98 lines, 0 arcs. The fillet must add arcs
+   without adding lines.
+6. **Render and look.** Render the drawing SVG to PNG and inspect it. This caught
+   the reversed plan, a collided cutting-plane symbol and an unescaped en dash —
+   none of which any assertion would have found.
+7. **Drive the app.** Mount it in jsdom, stub `WebGLRenderer`, click through the
+   modes and change inputs, assert the drawing and cut list update and that no
+   React errors fire.
+
+---
+
+## 10. Known gaps
+
+- **No cutouts.** Driver holes, ports, hinge recesses. This is the biggest one:
+  without them the part templates are rectangles and not worth printing at 1:1.
+- **No rebates, dados, mitres or tongues.** Every joint is a butt joint.
+- **The isometric ignores edge treatments.** A fillet in isometric is an ellipse
+  arc and the corner where three meet is a spherical patch. The pictorial shows
+  hard corners while the elevations correctly show the radius.
+- **Bevels do not shift interior hidden lines.** The outline corners are trimmed,
+  but hidden lines terminating near those corners run a millimetre or two past
+  where the material actually stops. Only visible when the radius approaches the
+  wall thickness.
+- **One sheet size.** A3 only; A2 for large boxes would need choosing.
+- **Section plane fixed** at half the width.
+- **No dimension collision avoidance.** Placements are hand-tuned.
+
+---
+
+## 11. If you adopt OpenCASCADE
+
+OCCT does drawings as well as solids. `HLRBRep_Algo` is exact hidden line
+removal on the B-Rep; `HLRBRep_PolyAlgo` is the faster version on triangulations.
+The extraction step classifies edges into visible and hidden, and within each,
+sharp edges, **smooth (tangential) edges**, silhouettes and isolines — the
+fillet-tangency distinction of §6.4 comes free and selectable. Sections come from
+booleans against a half-space. Dimensions exist as viewer presentations, not a
+drafting engine.
+
+What OCCT does not give you: the sheet, frame, title block, scale selection, view
+arrangement, dimension placement, hatch standards, cut list. FreeCAD's TechDraw
+sits on `HLRBRep` and adds all of that, which is where the line falls.
+
+In the browser, `opencascade.js` costs around 7 MB of JS plus WASM for a trimmed
+custom build, near 2.4 MB compressed.
+
+Multithreading reference:
+https://github.com/battlesquid/opencascade.js-vite-multithreading-poc
