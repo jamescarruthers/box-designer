@@ -107,7 +107,7 @@ export default function App() {
           ) : null}
 
           {mode === "drawing" ? (
-            <div className="pane pane-drawing"><DrawingView derived={derived} /></div>
+            <div className="pane pane-drawing"><DrawingView derived={derived} design={design} /></div>
           ) : null}
         </div>
 

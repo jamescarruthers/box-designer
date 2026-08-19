@@ -1,0 +1,126 @@
+# A trimmed OpenCASCADE build for the sheet box designer.
+#
+# §11 of claude.md put a custom build at around 2.4 MB compressed against the
+# 13.2 MB of the prebuilt full bundle. Only the modules this app actually uses
+# are bound: primitives and booleans to make the solids, the fillet API for the
+# edge treatments, HLRBRep for the drawing views, and enough of BRep and Poly to
+# get triangles out for three.js and polylines out for the SVG.
+#
+# Build with:
+#   docker run --rm -v "$PWD/occt":/src -u "$(id -u):$(id -g)" \
+#     donalffons/opencascade.js:2.0.0-beta.b5ff984 box-designer.yml
+
+mainBuild:
+  name: occt-box.js
+  bindings:
+    # Geometry primitives
+    - symbol: gp_Pnt
+    - symbol: gp_Dir
+    - symbol: gp_Vec
+    - symbol: gp_Ax1
+    - symbol: gp_Ax2
+    - symbol: gp_Ax3
+    - symbol: gp_Pln
+    - symbol: gp_Trsf
+
+    # Base classes. Without these embind reports unbound types at the first
+    # call: MakeBox.Shape() comes from BRepBuilderAPI_MakeShape, and the
+    # HLRBRep_Algo handle needs Standard_Transient.
+    - symbol: Standard_Transient
+    - symbol: BRepBuilderAPI_Command
+    - symbol: BRepBuilderAPI_MakeShape
+    - symbol: BRepBuilderAPI_ModifyShape
+    - symbol: BRepFilletAPI_LocalOperation
+    - symbol: GeomAbs_Shape
+    - symbol: TopAbs_Orientation
+    # The rest of the closure, computed rather than discovered one build at a
+    # time: every base class of every bound symbol must itself be bound.
+    - symbol: Adaptor3d_Curve
+    - symbol: BRepAlgoAPI_Algo
+    - symbol: BRepAlgoAPI_BooleanOperation
+    - symbol: BRepAlgoAPI_BuilderAlgo
+    - symbol: BRepMesh_DiscretRoot
+    - symbol: HLRBRep_InternalAlgo
+    - symbol: NCollection_BaseList
+    - symbol: NCollection_BaseMap
+    - symbol: TopoDS_Builder
+    # Handle types are separate classes and are not implied by the class.
+    - symbol: Handle_Standard_Transient
+    - symbol: Handle_HLRBRep_Algo
+    - symbol: Handle_HLRBRep_PolyAlgo
+    - symbol: Handle_Poly_Triangulation
+    - symbol: Handle_BRepAdaptor_Curve
+
+    # Topology
+    - symbol: TopoDS
+    - symbol: TopoDS_Shape
+    - symbol: TopoDS_Edge
+    - symbol: TopoDS_Face
+    - symbol: TopoDS_Compound
+    - symbol: TopAbs_ShapeEnum
+    - symbol: TopExp
+    - symbol: TopExp_Explorer
+    - symbol: TopTools_IndexedMapOfShape
+    - symbol: TopTools_ListOfShape
+    - symbol: TopTools_IndexedDataMapOfShapeListOfShape
+    - symbol: TopLoc_Location
+
+    # Solids
+    - symbol: BRepPrimAPI_MakeBox
+    - symbol: BRepPrimAPI_MakeHalfSpace
+    - symbol: BRepBuilderAPI_MakeFace
+    - symbol: BRepBuilderAPI_Transform
+    - symbol: BRep_Builder
+    - symbol: BRep_Tool
+
+    # §3 Edge treatments
+    - symbol: BRepFilletAPI_MakeFillet
+    - symbol: BRepFilletAPI_MakeChamfer
+    - symbol: ChFi3d_FilletShape
+
+    # §6.5 Sections, and the cut-outs §10 wants next
+    - symbol: BRepAlgoAPI_Common
+    - symbol: BRepAlgoAPI_Cut
+    - symbol: BRepAlgoAPI_Fuse
+    - symbol: BRepAlgoAPI_Section
+
+    # §6.3 Hidden line removal, with the smooth/sharp split of §6.4
+    - symbol: HLRBRep_Algo
+    - symbol: HLRBRep_HLRToShape
+    - symbol: HLRBRep_PolyAlgo
+    - symbol: HLRBRep_PolyHLRToShape
+    - symbol: HLRAlgo_Projector
+    - symbol: HLRBRep_TypeOfResultingEdge
+
+    # Discretisation: triangles for three.js, polylines for the SVG
+    - symbol: BRepMesh_IncrementalMesh
+    - symbol: Poly_Triangulation
+    - symbol: Poly_Array1OfTriangle
+    - symbol: Poly_Triangle
+    - symbol: TColgp_Array1OfPnt
+    - symbol: BRepAdaptor_Curve
+    - symbol: GCPnts_TangentialDeflection
+    - symbol: GCPnts_QuasiUniformDeflection
+
+    # Volumes, so §2.4 closure can be checked against the kernel
+    - symbol: BRepGProp
+    - symbol: GProp_GProps
+
+  emccFlags:
+    - -flto
+    - -fexceptions
+    - -sDISABLE_EXCEPTION_CATCHING=0
+    - -O3
+    - -sEXPORT_ES6=1
+    - -sUSE_ES6_IMPORT_META=0
+    - -sEXPORTED_RUNTIME_METHODS=['FS']
+    - -sINITIAL_MEMORY=64MB
+    - -sMAXIMUM_MEMORY=2GB
+    - -sALLOW_MEMORY_GROWTH=1
+    # No font or visualisation symbols are bound, so FreeType is dead weight.
+    - -sUSE_FREETYPE=0
+    - -sLLD_REPORT_UNDEFINED
+    - --no-entry
+    # Threading, per battlesquid's POC. Needs COOP/COEP at serve time.
+    - -pthread
+    - -sPTHREAD_POOL_SIZE=4

@@ -55,6 +55,13 @@ A–A, plan from above and a true isometric projection. Hidden line removal is
 exact — every panel projects to a rectangle, so visibility is a containment test
 with no tolerance anywhere. SVG export.
 
+**Two drawing engines.** The analytic one — exact rectangle arithmetic, no
+tolerance anywhere — draws the sheet on the first paint. Switching to
+OpenCASCADE fetches a trimmed OCCT build (3.5 MB gzipped, threaded) and redraws
+from real B-Rep solids, which knows a tangential edge from a sharp one and can
+show the blend where two fillets meet. They agree exactly on the verified
+fixtures. See `occt/README.md` and §11 of the specification.
+
 ## Layout
 
 ```
@@ -62,7 +69,10 @@ src/model/      constants, the solver, edge treatments, validation
 src/three/      panel solids, the face palette
 src/cutlist/    cut list, CSV, shelf nesting
 src/drawing/    projections, hidden line removal, section, isometric, the sheet
+src/occt/       the OpenCASCADE adapter: solids, HLR, merging
 src/ui/         the three modes and the controls
+occt/           the kernel build definition
+public/occt/    the built kernel, served as static files
 test/           the suite from §9 of the specification
 tools/          render an SVG to PNG, and drive the built app in Chromium
 ```
@@ -83,6 +93,9 @@ tools/          render an SVG to PNG, and drive the built app in Chromium
   chamfer 98 and 0. A fillet must add arcs without adding lines.
 - **Valid SVG** — every preset against every fixture, parsed as XML.
 - **Driving the app** — mounted in jsdom with a stubbed `WebGLRenderer`.
+- **The two engines agree** — the same verified fixtures, drawn once by
+  rectangle arithmetic and once by a B-Rep kernel, come out line for line
+  identical.
 
 To look at the drawing rather than assert about it:
 

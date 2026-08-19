@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "render:sheet": "node tools/render-svg.mjs",
-    "shoot:app": "node tools/shoot-app.mjs http://localhost:5011"
+    "shoot:app": "node tools/shoot-app.mjs http://localhost:5011",
+    "build:occt": "sh tools/build-occt.sh"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -24,6 +25,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "jsdom": "^25.0.1",
+    "opencascade.js": "^2.0.0-beta.b5ff984",
     "playwright-core": "^1.62.1",
     "vite": "^5.4.11",
     "vitest": "^2.1.8"

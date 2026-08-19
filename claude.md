@@ -647,22 +647,92 @@ These are why the geometry is right. Write them first.
 
 ---
 
-## 11. If you adopt OpenCASCADE
+## 11. OpenCASCADE
 
-OCCT does drawings as well as solids. `HLRBRep_Algo` is exact hidden line
-removal on the B-Rep; `HLRBRep_PolyAlgo` is the faster version on triangulations.
-The extraction step classifies edges into visible and hidden, and within each,
-sharp edges, **smooth (tangential) edges**, silhouettes and isolines — the
-fillet-tangency distinction of §6.4 comes free and selectable. Sections come from
-booleans against a half-space. Dimensions exist as viewer presentations, not a
-drafting engine.
+Adopted. OCCT provides the solids, the hidden line removal and — next — the
+booleans for cutouts. The sheet, frame, title block, scale selection, view
+arrangement, dimension placement, hatch standards and cut list stay where they
+were, which is exactly where FreeCAD's TechDraw draws the same line.
 
-What OCCT does not give you: the sheet, frame, title block, scale selection, view
-arrangement, dimension placement, hatch standards, cut list. FreeCAD's TechDraw
-sits on `HLRBRep` and adds all of that, which is where the line falls.
+### The seam
 
-In the browser, `opencascade.js` costs around 7 MB of JS plus WASM for a trimmed
-custom build, near 2.4 MB compressed.
+`{ view, ext, lines, arcs }`. Whatever produces it, `sheet.js` renders it. The
+analytic engine does by default and the kernel passes its own, so the drafting
+layer never learns which one drew the views. That also means the analytic engine
+is the instant-load path: the app paints before anyone asks for a B-Rep drawing,
+and falls back to it if the kernel fails.
 
-Multithreading reference:
-https://github.com/battlesquid/opencascade.js-vite-multithreading-poc
+The analytic solver keeps deciding panel sizes. It is exact integer arithmetic
+and the cut list rests on it; handing that to a B-Rep kernel would trade
+exactness for nothing.
+
+### What it costs
+
+| | full prebuilt | trimmed |
+|---|---|---|
+| wasm | 48 MB | 9.3 MB |
+| gzipped | 13.2 MB | 3.5 MB |
+
+§11 originally guessed 7 MB and 2.4 MB compressed. The trimmed build is close on
+the compressed figure and the remainder is `BRepMesh` and the booleans, wanted
+for triangles and for cutouts. Fetched on demand, never in the first paint.
+
+### Building it
+
+`occt/box-designer.yml` lists the symbols; `tools/build-occt.sh` runs the
+`donalffons/opencascade.js` image over it. Roughly fifteen minutes. Four things
+cost a build each to find:
+
+1. **Emscripten fetches ports over HTTPS** and dies on a TLS-intercepting
+   proxy's certificate. Mount the CA into the container.
+2. **`-sUSE_FREETYPE=0`.** No font symbols are bound, so it is dead weight — and
+   leaving it on is what triggers that port fetch.
+3. **Bind the base classes.** Listing `BRepPrimAPI_MakeBox` is not enough:
+   `.Shape()` comes from `BRepBuilderAPI_MakeShape`, and without it embind fails
+   at the first call with `UnboundTypeError`, naming a type you never wrote
+   down. Same for `Standard_Transient`, without which the `HLRBRep_Algo` handle
+   is never generated.
+4. **Serve the artefacts as plain files.** The pthread worker resolves
+   `./occt-box.js` against its own URL, so a hashed bundle filename breaks it.
+   They live in `public/occt/` and are loaded by URL at run time.
+
+### Threading
+
+Built `-pthread` with a pool of 4, which needs cross-origin isolation. The Vite
+dev and preview servers set COOP and COEP directly. GitHub Pages cannot set
+headers at all, so `public/coi-serviceworker.js` re-serves every response with
+them and the page reloads once under its control.
+
+The generated glue spawns classic workers while the worker file it generates
+uses `import()`. Only a module worker can, so the build script patches
+`new Worker(x)` to `new Worker(x, {type:"module"})` — patched in the script
+rather than by hand, or a rebuild silently undoes it.
+
+### What it buys
+
+- **The fillet-tangency rule of §6.4 stops being hand-coded.** HLRBRep separates
+  smooth edges from sharp, so omitting the tangent line is a choice of which
+  compound to draw rather than an argument about ISO 128.
+- **Silhouettes**, which is what a fillet actually shows in the isometric —
+  §10's standing gap.
+- **Volume that knows about the bevels.** The analytic model carries them as
+  notes, so it cannot: on the 236 × 286 × 356 carcass, 8028.6 cm³ square and
+  7956.7 cm³ once R12 fillets are cut.
+- **Booleans**, which is the road to cutouts.
+
+### The two engines agree
+
+Given the merge of §6.3 applied to what the kernel emits — it runs over a
+compound of separate solids, so every panel reports its own outline and a hidden
+line often lies under a visible one — the verified end-view table comes out
+identical from both. Eight segments, four of them dashed, from rectangle
+arithmetic and from a B-Rep kernel. That is about as independent as two
+implementations get, and it is the fixture worth keeping.
+
+### Testing
+
+Node-side tests run against the full prebuilt `opencascade.js` package, not the
+trimmed build: the trimmed one is compiled `-pthread` and its worker calls
+`require`, which Node rejects in a `"type": "module"` package. Both expose the
+same API, and the adapter takes the kernel as an argument so either will do. The
+trimmed build is checked in the browser instead.
