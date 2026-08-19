@@ -55,6 +55,9 @@ A–A, plan from above and a true isometric projection. Hidden line removal is
 exact — every panel projects to a rectangle, so visibility is a containment test
 with no tolerance anywhere. SVG export.
 
+**Two engines, in both views.** The 3D view and the drawing each have an
+Analytic/OpenCASCADE toggle, and each reports which drew what is on screen.
+
 **Two drawing engines.** The analytic one — exact rectangle arithmetic, no
 tolerance anywhere — draws the sheet on the first paint. Switching to
 OpenCASCADE fetches a trimmed OCCT build (3.5 MB gzipped, threaded) and redraws

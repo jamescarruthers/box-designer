@@ -4,6 +4,7 @@ import Viewport, { RENDER_STYLES, VIEW_PRESETS } from "./Viewport.jsx";
 import CutListView from "./CutListView.jsx";
 import DrawingView from "./DrawingView.jsx";
 import { DEFAULT_DESIGN, derive } from "./design.js";
+import { useKernelSolids } from "./useKernelSolids.js";
 import { fmt } from "../cutlist/cutlist.js";
 
 const MODES = [
@@ -21,6 +22,7 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [hovered, setHovered] = useState(null);
   const [camera, setCamera] = useState({ preset: "iso", nonce: 0 });
+  const [solidEngine, setSolidEngine] = useState("analytic");
 
   const derived = useMemo(() => {
     try { return { ok: true, ...derive(design) }; }
@@ -28,6 +30,7 @@ export default function App() {
   }, [design]);
 
   const onSelect = useCallback((i) => setSelected((cur) => (cur === i ? null : i)), []);
+  const kernelSolids = useKernelSolids(derived.ok ? derived : null, derived.ok && solidEngine === "kernel");
 
   if (!derived.ok) {
     return <div className="app fatal"><p>The box cannot be solved: {String(derived.error?.message ?? derived.error)}</p></div>;
@@ -66,7 +69,8 @@ export default function App() {
           {/* The viewport stays mounted and is hidden with CSS, so the camera survives. */}
           <div className={`pane pane-view ${mode === "view" ? "" : "hidden"}`}>
             <Viewport derived={derived} style={style} colourByFace={colourByFace} explode={explode}
-              selected={selected} hovered={hovered} onSelect={onSelect} hidden={mode !== "view"} camera={camera} />
+              selected={selected} hovered={hovered} onSelect={onSelect} hidden={mode !== "view"} camera={camera}
+              solids={solidEngine === "kernel" ? kernelSolids.solids : null} />
             <div className="chips">
               <div className="chip-group">
                 {RENDER_STYLES.map((s) => (
@@ -83,6 +87,12 @@ export default function App() {
                   <button key={p} type="button" onClick={() => setCamera({ preset: p, nonce: Date.now() })}>{p}</button>
                 ))}
               </div>
+              <div className="chip-group">
+                <button type="button" className={solidEngine === "analytic" ? "on" : ""}
+                  onClick={() => setSolidEngine("analytic")}>Analytic</button>
+                <button type="button" className={solidEngine === "kernel" ? "on" : ""}
+                  onClick={() => setSolidEngine("kernel")}>OpenCASCADE</button>
+              </div>
               <div className="chip-group explode">
                 <label htmlFor="explode">Explode</label>
                 <input id="explode" type="range" min="0" max="120" value={explode}
@@ -90,6 +100,9 @@ export default function App() {
                 <output>{explode}</output>
               </div>
             </div>
+            {solidEngine === "kernel" ? (
+              <div className="solid-state">{solidNote(kernelSolids)}</div>
+            ) : null}
             {selectedRow ? (
               <div className="selection">
                 <strong>{selectedRow.id}</strong> {selectedRow.faceLabel} {selectedRow.layerLabel} ·{" "}
@@ -120,4 +133,12 @@ export default function App() {
       </main>
     </div>
   );
+}
+
+function solidNote(k) {
+  if (k.status === "loading") return "fetching the kernel, 4 MB…";
+  if (k.status === "refreshing") return "remeshing…";
+  if (k.status === "failed") return "kernel unavailable — showing the ring-stack solids";
+  if (k.status === "ready") return `B-Rep, ${k.triangles} triangles, ${k.ms} ms${k.threaded ? ", threaded" : ""}`;
+  return "";
 }
