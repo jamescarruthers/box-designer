@@ -1,0 +1,160 @@
+/** §9.7 Drive the app: mount it in jsdom, stub WebGLRenderer, click through the
+ *  modes and change inputs, and assert nothing falls over. */
+import React from "react";
+import { describe, it, expect, vi, beforeAll, afterEach } from "vitest";
+import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
+
+vi.mock("three", async (importOriginal) => {
+  const actual = await importOriginal();
+  class StubRenderer {
+    constructor() { this.domElement = document.createElement("canvas"); }
+    setPixelRatio() {}
+    setClearColor() {}
+    setSize(w, h) { this.domElement.width = w; this.domElement.height = h; }
+    render() { StubRenderer.renders++; }
+    dispose() {}
+  }
+  StubRenderer.renders = 0;
+  return { ...actual, WebGLRenderer: StubRenderer };
+});
+
+import App from "../src/ui/App.jsx";
+
+beforeAll(() => {
+  global.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
+  Element.prototype.setPointerCapture = () => {};
+  global.URL.createObjectURL = () => "blob:stub";
+  global.URL.revokeObjectURL = () => {};
+});
+
+afterEach(cleanup);
+
+const errors = [];
+const originalError = console.error;
+console.error = (...a) => { errors.push(a.join(" ")); originalError(...a); };
+
+describe("the app", () => {
+  it("mounts, shows the three modes and fires no React errors", () => {
+    errors.length = 0;
+    render(<App />);
+    for (const name of ["3D view", "Cut list & sheets", "Drawing"])
+      expect(screen.getByRole("button", { name })).toBeTruthy();
+    expect(errors).toEqual([]);
+  });
+
+  it("moves between modes and keeps the viewport mounted", () => {
+    const { container } = render(<App />);
+    const viewport = container.querySelector(".viewport");
+    expect(viewport).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    expect(container.querySelector(".pane-cuts")).toBeTruthy();
+    // The camera survives: the viewport is hidden, not unmounted.
+    expect(container.querySelector(".viewport")).toBe(viewport);
+    expect(container.querySelector(".pane-view").className).toContain("hidden");
+
+    fireEvent.click(screen.getByRole("button", { name: "Drawing" }));
+    expect(container.querySelector(".pane-drawing svg")).toBeTruthy();
+    expect(container.querySelector(".viewport")).toBe(viewport);
+  });
+
+  it("updates the cut list and the drawing when an input changes", () => {
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    const before = [...container.querySelectorAll("table.cuts tbody tr")].map((r) => r.textContent);
+
+    fireEvent.change(screen.getByLabelText("Volume"), { target: { value: "40" } });
+    const after = [...container.querySelectorAll("table.cuts tbody tr")].map((r) => r.textContent);
+    expect(after).not.toEqual(before);
+    expect(after).toHaveLength(before.length);
+
+    fireEvent.click(screen.getByRole("button", { name: "Drawing" }));
+    const svg = container.querySelector(".sheet-holder").innerHTML;
+    expect(svg).toContain("FRONT ELEVATION");
+    expect(svg).toContain("SECTION A–A");
+  });
+
+  it("changes every panel size and no internal dimension when prominence is reordered", () => {
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    const sizes = () => [...container.querySelectorAll("table.cuts tbody tr")]
+      .map((r) => [...r.querySelectorAll(".num")].slice(0, 2).map((c) => c.textContent).join("×")).sort();
+    const before = sizes();
+    const internalBefore = readout(container, "Internal");
+
+    fireEvent.change(screen.getByLabelText("Preset"), { target: { value: "sides" } });
+    expect(sizes()).not.toEqual(before);
+    expect(readout(container, "Internal")).toBe(internalBefore);
+  });
+
+  it("reports an error when the walls meet", () => {
+    const { container } = render(<App />);
+    // On an internal basis the envelope grows to keep the cavity, so the walls
+    // can only meet when the outside is what is fixed.
+    fireEvent.click(screen.getByRole("button", { name: "External" }));
+    fireEvent.click(screen.getByRole("button", { name: "Dimensions" }));
+    fireEvent.change(screen.getByLabelText("Thickness"), { target: { value: "200" } });
+    expect(container.querySelector(".messages .error").textContent).toMatch(/Internal (width|depth|height)/);
+  });
+
+  it("warns when a bevel cuts past the outer skin, and errors when it cuts through the wall", () => {
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Fillet" }));
+    fireEvent.change(screen.getByLabelText("Radius"), { target: { value: "40" } });
+    expect(container.querySelector(".messages .error").textContent).toContain("cuts through");
+  });
+
+  it("carries the face swatch into the cut list, and drops it when face colouring is off", () => {
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    expect(container.querySelectorAll("table.cuts .swatch").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "3D view" }));
+    fireEvent.click(screen.getByRole("button", { name: "Material" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    expect(container.querySelectorAll("table.cuts .swatch")).toHaveLength(0);
+    expect(container.querySelectorAll(".prominence .swatch")).toHaveLength(0);
+  });
+
+  it("selects a part from the cut list and shows it in the 3D view", () => {
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    const first = container.querySelector("table.cuts tbody tr");
+    fireEvent.click(first);
+    expect(first.className).toContain("sel");
+    fireEvent.click(screen.getByRole("button", { name: "3D view" }));
+    expect(container.querySelector(".selection").textContent).toContain("P01");
+  });
+
+  it("cycles the render styles and the view presets without error", () => {
+    errors.length = 0;
+    const { container } = render(<App />);
+    for (const s of ["Shaded", "Wireframe", "Wireframe, hidden removed", "Shaded + hidden edges"])
+      fireEvent.click(screen.getByRole("button", { name: s }));
+    for (const p of ["iso", "front", "top", "right"])
+      fireEvent.click(screen.getByRole("button", { name: p }));
+    fireEvent.change(container.querySelector("#explode"), { target: { value: "60" } });
+    expect(errors).toEqual([]);
+  });
+
+  it("switches the starting point between dimensions and volume", () => {
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Dimensions" }));
+    fireEvent.change(screen.getByLabelText("Width"), { target: { value: "500" } });
+    expect(readout(container, "Envelope")).toContain("536");   // 500 internal + 2 × 18
+    fireEvent.click(screen.getByRole("button", { name: "External" }));
+    expect(readout(container, "Envelope")).toContain("500");
+  });
+
+  it("reports the volume closure as exact", () => {
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    const totals = container.querySelector(".totals");
+    expect(within(totals).getByText("exact")).toBeTruthy();
+  });
+});
+
+function readout(container, label) {
+  for (const d of container.querySelectorAll(".readout div"))
+    if (d.querySelector("dt").textContent === label) return d.querySelector("dd").textContent;
+  return null;
+}

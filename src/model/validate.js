@@ -29,7 +29,7 @@ export function validate(sol, edges) {
 
   msgs.push(...bevelIssues(edges, sol.wall, sol.skin ?? skinFrom(sol)));
 
-  if (Math.abs(sol.closure) > 1e-6) {
+  if (!sol.closureExact) {
     msgs.push({ level: "error",
       text: `Volume closure error ${sol.closure.toExponential(3)} mm³ — this is a bug, not user input.` });
   }

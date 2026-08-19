@@ -121,14 +121,17 @@ export function solve(input) {
   const panels = [...L0.parts, ...L1.parts, ...L2.parts];
   const cavity = L2.inner;
 
-  const closure = boxVolume(env) - (panels.reduce((a, p) => a + boxVolume(p.box), 0) + boxVolume(cavity));
+  const envVolume = boxVolume(env);
+  const closure = envVolume - (panels.reduce((a, p) => a + boxVolume(p.box), 0) + boxVolume(cavity));
 
   return {
     E, env, rank, wall, cladding, thickness, doubler,
-    panels, cavity,
+    panels, cavity, envVolume,
     carcassInner: L1.inner,          // inside the shell, before doublers
     internal: boxSize(cavity),
     closure,
+    // The invariant is exact in arithmetic; in doubles it is exact to rounding.
+    closureExact: Math.abs(closure) <= 1e-9 * envVolume,
   };
 }
 

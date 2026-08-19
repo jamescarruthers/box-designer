@@ -3,13 +3,15 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Sheet material box designer — panel solver, 3D view, cut list and technical drawing",
+  "description": "Sheet material box designer \u2014 panel solver, 3D view, cut list and technical drawing",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "render:sheet": "node tools/render-svg.mjs",
+    "shoot:app": "node tools/shoot-app.mjs http://localhost:5011"
   },
   "dependencies": {
     "react": "^18.3.1",

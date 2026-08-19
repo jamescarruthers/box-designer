@@ -45,12 +45,12 @@ export function buildCutList(sol, edges, owners, { material, grainLocked }) {
   return rows;
 }
 
-export function cutListTotals(rows, sheets, closure) {
+export function cutListTotals(rows, sheets, closure, exact = closure === 0) {
   return {
     parts: rows.length,
     area: rows.reduce((a, r) => a + r.area, 0) / 1e6,
     sheets: sheets.length,
-    closure: closure === 0 ? "exact" : closure.toExponential(3),
+    closure: exact ? "exact" : closure.toExponential(3),
   };
 }
 
