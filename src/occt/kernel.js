@@ -11,6 +11,27 @@ let pending = null;
 let failure = null;
 
 /**
+ * How long to wait for the kernel before giving up.
+ *
+ * Generous: the wasm is about 4 MB compressed and some connections are slow.
+ * The point is not speed but that a stall always ends in the analytic engine
+ * and a message, rather than in a status chip that never changes.
+ *
+ * This cannot rescue a tab the browser kills outright — nothing in JS can —
+ * but it turns every hang into a graceful fallback.
+ */
+export const LOAD_TIMEOUT_MS = 90_000;
+
+/** Instantiating a shared memory that will not fit reads as an allocation failure. */
+export function describeFailure(e) {
+  const text = String(e?.message ?? e);
+  if (e instanceof RangeError || /memory|allocat|Out of/i.test(text)) {
+    return new Error(`the kernel could not reserve the memory it asked for (${text})`);
+  }
+  return e;
+}
+
+/**
  * Whether threads are available at all. False just means slower, never broken.
  *
  * This is a capability, not a claim that any given step used it. Only BRepMesh
@@ -38,18 +59,31 @@ export function loadKernel() {
   // and a relative dynamic import would resolve against the chunk in /assets/
   // rather than against the page.
   const dir = new URL("occt/", document.baseURI).href;
-  pending = ensureCrossOriginIsolated()
+
+  let timer;
+  const watchdog = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`gave up after ${Math.round(LOAD_TIMEOUT_MS / 1000)} s`)),
+      LOAD_TIMEOUT_MS);
+  });
+
+  const load = ensureCrossOriginIsolated()
     .then(() => import(/* @vite-ignore */ `${dir}occt-box.js`))
     .then(({ default: factory }) => factory({
       locateFile: (path) => (path.endsWith(".wasm") || path.endsWith(".worker.js") ? dir + path : path),
-    }))
+    }));
+
+  pending = Promise.race([load, watchdog])
+    .then((oc) => { clearTimeout(timer); return oc; })
     .catch((e) => {
+      clearTimeout(timer);
+      const err = describeFailure(e);
       // Worth a console line: the drawing silently falls back to the analytic
       // engine, so without this the failure is invisible.
-      console.error("OpenCASCADE kernel failed to load:", e);
-      failure = e;
+      console.error("OpenCASCADE kernel failed to load:", err);
+      failure = err;
       pending = null;
-      throw e;
+      throw err;
     });
 
   return pending;
