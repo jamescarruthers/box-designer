@@ -6,17 +6,16 @@
 // the things §11 notes OCCT does not give you — are untouched.
 
 import { assembly } from "./solids.js";
-import { viewGeometry } from "./hlr.js";
+import { viewGeometry, isoGeometry } from "./hlr.js";
 import { mergeViewLines } from "./merge.js";
 import { VIEW_EXTENT } from "../drawing/hlr.js";
 import { panelBevels } from "../model/bevel.js";
-import { buildIsometric } from "../drawing/iso.js";
 import { buildSection } from "../drawing/section.js";
 
 /**
- * Build the three orthographic views with the kernel, keeping the section and
- * the isometric on the analytic path for now: the section needs a half-space
- * boolean and the isometric a silhouette pass, and neither is wired yet.
+ * Build the orthographic views and the isometric with the kernel. The section
+ * stays analytic: it is already exact for axis-aligned boxes, and a boolean
+ * against a half-space would only add the bevels in section.
  */
 export function kernelViews(oc, sol, edges, owners, { sectionAt, tangentEdges = false } = {}) {
   const shape = assembly(oc, sol.panels, (i, p) => panelBevels(i, p, edges, owners));
@@ -26,6 +25,6 @@ export function kernelViews(oc, sol, edges, owners, { sectionAt, tangentEdges = 
     out[view] = { view, ext: VIEW_EXTENT[view](sol.E), ...mergeViewLines(raw.lines), classes: raw.classes };
   }
   out.section = buildSection(sol, sectionAt ?? sol.E.x / 2);
-  out.iso = buildIsometric(sol);
+  out.iso = isoGeometry(oc, shape, sol.E);
   return { geometry: out, shape };
 }

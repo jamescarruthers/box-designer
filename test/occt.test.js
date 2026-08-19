@@ -14,7 +14,8 @@ import {
 } from "../src/model/bevel.js";
 import { PROMINENCE_PRESETS } from "../src/model/constants.js";
 import { assembly, volumeOf, panelSolid, edgesOf } from "../src/occt/solids.js";
-import { viewGeometry, hiddenLineRemoval, VIEW_AXES } from "../src/occt/hlr.js";
+import { viewGeometry, hiddenLineRemoval, isoGeometry, VIEW_AXES, ISO_VIEW } from "../src/occt/hlr.js";
+import { buildIsometric } from "../src/drawing/iso.js";
 import { mergeViewLines, describe as describeLines } from "../src/occt/merge.js";
 import { triangulate, meshPanels } from "../src/occt/mesh.js";
 import { viewLines, segEnds } from "../src/drawing/hlr.js";
@@ -161,6 +162,46 @@ describe("merging what the kernel emits", () => {
     const arc = { a: [0, 0], b: [10, 10], visible: true };
     expect(mergeViewLines([arc, { ...arc }]).lines).toHaveLength(1);
   });
+});
+
+describe("§6.6 the isometric, from the kernel", () => {
+  const sol = carcass();
+
+  it("lands on the same projection as §6.6's own formula", () => {
+    // Not a rotation of it: the x direction (1,1,0) is what makes OCCT's
+    // projection agree with ISO_X/ISO_Y/ISO_Z rather than merely resemble it.
+    expect(ISO_VIEW).toEqual({ dir: [1, -1, 1], xdir: [1, 1, 0] });
+    const kernel = isoGeometry(oc, build(sol, noEdges()), sol.E);
+    const analytic = buildIsometric(sol);
+    expect(kernel.ext.h).toBeCloseTo(analytic.ext.h, 6);
+    expect(kernel.ext.v).toBeCloseTo(analytic.ext.v, 6);
+  }, 120000);
+
+  it("shows the edge treatments the analytic isometric cannot", () => {
+    const cont = fullLengthEdges(sol.env, sol.panels, edgeOwners(sol.env, sol.panels));
+    const edges = applicableEdges(uniformEdges("fillet", 12), cont);
+    const filleted = isoGeometry(oc, build(sol, edges), sol.E);
+    const square = isoGeometry(oc, build(sol, noEdges()), sol.E);
+    expect(filleted.lines.length).toBeGreaterThan(square.lines.length * 3);
+    // The round-overs eat into the outer corners, so the pictorial gets smaller.
+    expect(filleted.ext.h).toBeLessThan(square.ext.h);
+    expect(filleted.ext.v).toBeLessThan(square.ext.v);
+    // §10 recorded this as a gap: the analytic isometric takes no edge
+    // treatment at all, so it draws the same hard-cornered box either way.
+    expect(buildIsometric(sol).lines.length).toBeLessThan(filleted.lines.length / 3);
+  }, 120000);
+
+  it("carries visible detail only, as a pictorial should", () => {
+    expect(isoGeometry(oc, build(sol, noEdges()), sol.E).lines.every((l) => l.visible)).toBe(true);
+  }, 120000);
+
+  it("starts at the origin of its own bounding box", () => {
+    const iso = isoGeometry(oc, build(sol, noEdges()), sol.E);
+    const xs = iso.lines.flatMap((l) => [l.a[0], l.b[0]]);
+    const ys = iso.lines.flatMap((l) => [l.a[1], l.b[1]]);
+    expect(Math.min(...xs)).toBeCloseTo(0, 6);
+    expect(Math.min(...ys)).toBeCloseTo(0, 6);
+  }, 120000);
 });
 
 describe("§4 triangles for the 3D view", () => {

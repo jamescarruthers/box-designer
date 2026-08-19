@@ -16,6 +16,16 @@ export const VIEW_AXES = {
   plan:  { dir: [0, 0, 1], xdir: [1, 0, 0], h: (X, E) => X, v: (Y, E) => E.y - Y },
 };
 
+// §6.6 The isometric eye: front-right-above, so the direction from the object
+// to the viewer is (1, −1, 1).
+//
+// The x direction is (1, 1, 0), not any other perpendicular: it is what makes
+// OCCT's projection land on §6.6's own screen formula rather than a rotation of
+// it. With Vy = dir × xdir = (−1, 1, 2)/√6, model z projects to −√(2/3) and
+// model x and y to ∓1/√6, which is ISO_Y·(x − y) − ISO_Z·z exactly. So the two
+// isometrics can be laid over each other.
+export const ISO_VIEW = { dir: [1, -1, 1], xdir: [1, 1, 0] };
+
 /** Chord height for flattening a curved projected edge, in millimetres. */
 export const DEFLECTION = 0.05;
 
@@ -47,7 +57,9 @@ function collect(oc, compound, map, E) {
  * what a drawing standard wants drawn.
  */
 export function hiddenLineRemoval(oc, shape, view, E) {
-  const map = VIEW_AXES[view];
+  const map = view === "iso"
+    ? { ...ISO_VIEW, h: (X) => X, v: (Y) => -Y }
+    : VIEW_AXES[view];
   const ax2 = new oc.gp_Ax2_2(new oc.gp_Pnt_3(0, 0, 0),
     new oc.gp_Dir_4(...map.dir), new oc.gp_Dir_4(...map.xdir));
 
@@ -93,4 +105,30 @@ export function viewGeometry(oc, shape, view, E, { tangentEdges = false } = {}) 
     push(r.smoothHidden, false, "tangent");
   }
   return { view, lines, arcs: [], classes: r };
+}
+
+/**
+ * §6.6 The isometric, from the kernel. Visible detail only, as a pictorial
+ * should be — but including silhouettes, so a fillet finally reads as round
+ * instead of as the hard corner §10 had to live with.
+ */
+export function isoGeometry(oc, shape, E) {
+  const r = hiddenLineRemoval(oc, shape, "iso", E);
+  const polys = [...r.sharpVisible, ...r.outlineVisible];
+  const xs = polys.flatMap((p) => p.map((q) => q[0]));
+  const ys = polys.flatMap((p) => p.map((q) => q[1]));
+  const min = [Math.min(...xs), Math.min(...ys)];
+  const ext = { h: Math.max(...xs) - min[0], v: Math.max(...ys) - min[1] };
+
+  const lines = [];
+  for (const p of polys) {
+    for (let i = 0; i + 1 < p.length; i++) {
+      lines.push({
+        a: [p[i][0] - min[0], p[i][1] - min[1]],
+        b: [p[i + 1][0] - min[0], p[i + 1][1] - min[1]],
+        visible: true, kind: "iso",
+      });
+    }
+  }
+  return { view: "iso", ext, lines, arcs: [] };
 }
