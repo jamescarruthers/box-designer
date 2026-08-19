@@ -4,7 +4,7 @@
 // so this loads in the background and the viewport swaps over when it lands.
 
 import { useEffect, useState } from "react";
-import { loadKernel, threaded } from "../occt/kernel.js";
+import { loadKernel, isolated } from "../occt/kernel.js";
 import { meshPanels } from "../occt/mesh.js";
 import { panelBevels } from "../model/bevel.js";
 
@@ -20,14 +20,17 @@ export function useKernelSolids(derived, enabled) {
       .then((oc) => {
         if (!live) return;
         const t0 = performance.now();
-        const { sol, edges, owners } = derived;
-        const solids = meshPanels(oc, sol.panels, (i, p) => panelBevels(i, p, edges, owners), sol.E);
+        const { sol, edges, owners, fittingsOn } = derived;
+        const solids = meshPanels(oc, sol.panels, (i, p) => panelBevels(i, p, edges, owners), sol.E, {
+          fittingsFor: (i, p) => fittingsOn?.(p) ?? [],
+        });
         if (live) {
           setState({
             status: "ready", solids,
             ms: Math.round(performance.now() - t0),
             triangles: solids.reduce((a, m) => a + m.triangles, 0),
-            threaded: threaded(),
+            // Meshing asks for parallel, so with isolation this really was threaded.
+            threaded: isolated(),
           });
         }
       })

@@ -18,7 +18,8 @@ import { buildSection } from "../drawing/section.js";
  * against a half-space would only add the bevels in section.
  */
 export function kernelViews(oc, sol, edges, owners, { sectionAt, tangentEdges = false } = {}) {
-  const shape = assembly(oc, sol.panels, (i, p) => panelBevels(i, p, edges, owners));
+  const shape = assembly(oc, sol.panels, (i, p) => panelBevels(i, p, edges, owners),
+    (i, p) => opts.fittingsOn?.(p) ?? []);
   const out = {};
   for (const view of ["front", "end", "plan"]) {
     const raw = viewGeometry(oc, shape, view, sol.E, { tangentEdges });

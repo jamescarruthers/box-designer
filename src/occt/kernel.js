@@ -10,8 +10,14 @@ import { ensureCrossOriginIsolated } from "./isolate.js";
 let pending = null;
 let failure = null;
 
-/** Whether threads are available. False just means slower, never broken. */
-export const threaded = () => typeof window !== "undefined" && window.crossOriginIsolated === true;
+/**
+ * Whether threads are available at all. False just means slower, never broken.
+ *
+ * This is a capability, not a claim that any given step used it. Only BRepMesh
+ * takes threads; HLRBRep has no parallel mode, so the sheet is serial however
+ * this answers.
+ */
+export const isolated = () => typeof window !== "undefined" && window.crossOriginIsolated === true;
 
 export function kernelState() {
   if (failure) return { status: "failed", error: failure };
