@@ -86,6 +86,14 @@ node tools/shoot-scenario.mjs ./out                   # fillets, cladding, doubl
 node tools/shoot-responsive.mjs ./out                 # the 1320 px and 1000 px breakpoints
 ```
 
+## Deployment
+
+`.github/workflows/pages.yml` runs the tests and the build on every push and
+pull request, and publishes `dist/` to GitHub Pages from `main`. The Vite base
+is `./`, so it works under a project-site path without further configuration.
+
+Enable it once in the repository: **Settings → Pages → Source: GitHub Actions**.
+
 ## Known gaps
 
 No cutouts, no rebates or dados, the isometric ignores edge treatments, bevels
