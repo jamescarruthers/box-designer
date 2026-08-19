@@ -496,7 +496,19 @@ shorter than the pictorial wants. Label it when it differs from the sheet scale.
 
 Aligned system. Extension lines with a 0.8 mm gap from the object and 1.2 mm
 past the arrow, filled arrowheads 1.5 mm. Overall width, depth and height solid;
-internal dimensions bracketed as reference. Note on the sheet:
+internal dimensions bracketed as reference.
+
+**An internal dimension measures the cavity.** Its extension lines come off the
+cavity's faces, found by projecting the cavity box through the same `PROJECTIONS`
+as everything else. Anchoring it to the envelope instead draws the overall width
+a second time and prints a different number against it — which is worse than
+omitting it, because it reads as correct.
+
+Shorter dimensions sit nearer the object and the overall outside them, so an
+extension line never crosses a dimension line (ISO 129). Drop any dimension
+whose span is not positive rather than drawing a degenerate arrow.
+
+Note on the sheet:
 
 > ALL DIMENSIONS IN MILLIMETRES. BRACKETED DIMENSIONS ARE FOR REFERENCE. HIDDEN
 > DETAIL DASHED. HATCHING IN SECTION: COARSE = CARCASS, OPPOSED = DOUBLER,
@@ -538,6 +550,11 @@ is a form for a box that mostly has no cladding. Instead: one stack per layer,
 each with a dropdown of the sides not yet used. Pick a side and a panel appears,
 inheriting the project sheet, with its thickness and material editable in place
 and a cross to drop it. The side picker empties as sides are used up.
+
+**Prominence is a preset until it is not.** A preset covers most boxes, so the
+six-face order stays folded away behind it. A summary line always shows the order
+in force, so folding it back up never hides a hand-made one; hand-ordering sets
+the preset to Custom, and a Custom order opens the list on load.
 
 Below 1320 px the parts column drops out first; below 1000 px everything stacks.
 

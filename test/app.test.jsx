@@ -74,6 +74,39 @@ describe("the app", () => {
     expect(svg).toContain("SECTION A–A");
   });
 
+  it("keeps the six-face order folded away behind the preset", () => {
+    const { container } = render(<App />);
+    expect(container.querySelector(".prominence")).toBeNull();
+    // The summary still says what the order is.
+    expect([...container.querySelectorAll(".rank-summary li")].map((li) => li.textContent))
+      .toEqual(["Front", "Back", "Left", "Right", "Top", "Bottom"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Override the order…" }));
+    expect(container.querySelectorAll(".prominence li")).toHaveLength(6);
+    expect(container.querySelector(".rank-summary")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide the order" }));
+    expect(container.querySelector(".prominence")).toBeNull();
+  });
+
+  it("follows the preset in the summary", () => {
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByLabelText("Preset"), { target: { value: "baffle" } });
+    expect([...container.querySelectorAll(".rank-summary li")].map((li) => li.textContent))
+      .toEqual(["Front", "Left", "Right", "Bottom", "Back", "Top"]);
+  });
+
+  it("marks a hand-made order Custom and keeps it visible when folded", () => {
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Override the order…" }));
+    fireEvent.click(screen.getByLabelText("Raise Left"));
+    expect(screen.getByLabelText("Preset").value).toBe("custom");
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide the order" }));
+    expect([...container.querySelectorAll(".rank-summary li")].map((li) => li.textContent))
+      .toEqual(["Front", "Left", "Back", "Right", "Top", "Bottom"]);
+  });
+
   it("changes every panel size and no internal dimension when prominence is reordered", () => {
     const { container } = render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));

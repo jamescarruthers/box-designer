@@ -1,6 +1,6 @@
 // §7 Control groups: starting point, material, prominence, reinforcement, edge treatment.
 
-import React from "react";
+import React, { useState } from "react";
 import { FACES, FACE_LABEL, MATERIALS, PROMINENCE_PRESETS, EDGES, edgeAxis, materialById } from "../model/constants.js";
 import { panelColour } from "../three/palette.js";
 import { setIn, freeFaces, addPanel, removePanel, editPanel, setProjectMaterial, setProjectThickness } from "./design.js";
@@ -29,6 +29,10 @@ function Num({ label, value, onChange, step = 1, min = 0, suffix, list }) {
   );
 }
 
+/** The face swatch, shown only while face colouring is on. */
+const FaceSwatch = ({ face, layer, on }) => on
+  ? <i className="swatch" style={{ background: panelColour({ face, layer }) }} /> : null;
+
 function Segmented({ value, options, onChange, ariaLabel }) {
   return (
     <div className="segmented" role="group" aria-label={ariaLabel}>
@@ -42,9 +46,6 @@ function Segmented({ value, options, onChange, ariaLabel }) {
 
 export default function Controls({ design, set, derived, colourByFace }) {
   const s = design.start;
-  const swatch = (face, layer) => colourByFace
-    ? <i className="swatch" style={{ background: panelColour({ face, layer }) }} /> : null;
-
   return (
     <div className="controls">
       <StockThicknesses />
@@ -116,30 +117,7 @@ export default function Controls({ design, set, derived, colourByFace }) {
 
       <Group title="Prominence"
         note="A rank over all six faces. Reordering changes every panel size and no internal dimension — it is a joinery choice, not a tuning knob.">
-        <label className="field">
-          <span>Preset</span>
-          <select value={design.preset}
-            onChange={(e) => {
-              const p = PROMINENCE_PRESETS.find((x) => x.id === e.target.value);
-              set({ ...design, preset: p.id, order: p.order });
-            }}>
-            {PROMINENCE_PRESETS.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            {design.preset === "custom" ? <option value="custom">Custom</option> : null}
-          </select>
-        </label>
-        <ol className="prominence">
-          {design.order.map((f, i) => (
-            <li key={f}>
-              <span className="rank">{i}</span>
-              {swatch(f, "shell")}
-              <span className="name">{FACE_LABEL[f]}</span>
-              <span className="moves">
-                <button type="button" aria-label={`Raise ${f}`} disabled={i === 0} onClick={() => move(design, set, i, -1)}>▲</button>
-                <button type="button" aria-label={`Lower ${f}`} disabled={i === 5} onClick={() => move(design, set, i, 1)}>▼</button>
-              </span>
-            </li>
-          ))}
-        </ol>
+        <Prominence design={design} set={set} colourByFace={colourByFace} />
       </Group>
 
       <Group title="Reinforcement" note="Cladding lies outside the carcass and grows the box. A doubler lies inside and eats the cavity. Each panel starts as the project sheet and can then be changed.">
@@ -191,6 +169,61 @@ export default function Controls({ design, set, derived, colourByFace }) {
   );
 }
 
+/**
+ * A preset covers most boxes, so the six-face order stays folded away until it
+ * is wanted. The summary line always shows the order in force, so folding it
+ * back up never hides a hand-made one.
+ */
+function Prominence({ design, set, colourByFace }) {
+  const [open, setOpen] = useState(design.preset === "custom");
+  return (
+    <>
+      <label className="field">
+        <span>Preset</span>
+        <select value={design.preset}
+          onChange={(e) => {
+            const p = PROMINENCE_PRESETS.find((x) => x.id === e.target.value);
+            if (p) set({ ...design, preset: p.id, order: p.order });
+          }}>
+          {PROMINENCE_PRESETS.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          {design.preset === "custom" ? <option value="custom">Custom</option> : null}
+        </select>
+      </label>
+
+      {open ? (
+        <ol className="prominence">
+          {design.order.map((f, i) => (
+            <li key={f}>
+              <span className="rank">{i}</span>
+              <FaceSwatch face={f} layer="shell" on={colourByFace} />
+              <span className="name">{FACE_LABEL[f]}</span>
+              <span className="moves">
+                <button type="button" aria-label={`Raise ${FACE_LABEL[f]}`} disabled={i === 0}
+                  onClick={() => move(design, set, i, -1)}>▲</button>
+                <button type="button" aria-label={`Lower ${FACE_LABEL[f]}`} disabled={i === 5}
+                  onClick={() => move(design, set, i, 1)}>▼</button>
+              </span>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <ol className="rank-summary" aria-label="Prominence order, most prominent first">
+          {design.order.map((f) => (
+            <li key={f}>
+              <FaceSwatch face={f} layer="shell" on={colourByFace} />
+              {FACE_LABEL[f]}
+            </li>
+          ))}
+        </ol>
+      )}
+
+      <button type="button" className="linkish" onClick={() => setOpen(!open)}>
+        {open ? "Hide the order" : "Override the order…"}
+      </button>
+    </>
+  );
+}
+
 /** A list of added panels for one layer, plus a side picker to add another. */
 function LayerStack({ design, set, layer, title, colourByFace }) {
   const entries = Object.entries(design[layer] ?? {});
@@ -215,7 +248,7 @@ function LayerStack({ design, set, layer, title, colourByFace }) {
             return (
               <li key={face}>
                 <span className="stack-face">
-                  {colourByFace ? <i className="swatch" style={{ background: panelColour({ face, layer }) }} /> : null}
+                  <FaceSwatch face={face} layer={layer} on={colourByFace} />
                   {FACE_LABEL[face]}
                 </span>
                 <input type="number" min="0" step="0.5" value={entry.thickness}

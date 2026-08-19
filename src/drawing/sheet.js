@@ -1,6 +1,7 @@
 // §6.1 the sheet, §6.2 view arrangement, §6.7 dimensioning.
 
 import { buildOrthoView } from "./views.js";
+import { PROJECTIONS } from "./hlr.js";
 import { buildSection, cuttingPlaneOnPlan, HATCH } from "./section.js";
 import { buildIsometric } from "./iso.js";
 import { EDGES } from "../model/constants.js";
@@ -209,7 +210,7 @@ export function buildSheet(sol, edges, opts = {}) {
     label(isoCell, VIEW_TITLE.iso, isoScale === s ? null : `SCALE ${scaleLabel(isoScale)}`), `</g>`);
 
   // §6.7 Dimensions.
-  body.push(`<g data-dims="1">`, ...dimensions(sol, L, s), `</g>`);
+  body.push(`<g data-dims="1">`, ...dimensions(sol, L), `</g>`);
 
   // Notes and keys.
   body.push(notes(L, edges));
@@ -260,23 +261,52 @@ function cuttingPlane(cell, s, cp) {
   return out.join("");
 }
 
-function dimensions(sol, L, s) {
-  const { E, internal } = sol;
-  const out = [];
-  const fe = L.cells.front, ev = L.cells.end, se = L.cells.section;
+/**
+ * §6.7 Where each dimension goes.
+ *
+ * An internal dimension measures the cavity, so its extension lines come off
+ * the cavity's faces — not the envelope's. Anchoring both to the envelope draws
+ * the overall width twice and prints a different number on the second one.
+ *
+ * Shorter dimensions sit nearer the object and the overall outside them, so
+ * extension lines never cross a dimension line (ISO 129).
+ */
+export function planDimensions(sol, L) {
+  const { E, cavity, internal } = sol;
+  const s = L.scale, c = L.cells;
+  const cavFront = PROJECTIONS.front(cavity, E);
+  const cavEnd = PROJECTIONS.end(cavity, E);
+  const NEAR = 9, FAR = 17;
 
-  // Front elevation: overall width above, internal width above that.
-  out.push(dimension([fe.x, fe.y], [fe.x + E.x * s, fe.y], -9, fmt(E.x), { horizontal: true }));
-  out.push(dimension([fe.x, fe.y], [fe.x + E.x * s, fe.y], -17, fmt(internal.x), { horizontal: true, reference: true }));
-  // Overall height to the left, internal height further left.
-  out.push(dimension([fe.x, fe.y], [fe.x, fe.y + E.z * s], -9, fmt(E.z), { horizontal: false }));
-  out.push(dimension([fe.x, fe.y], [fe.x, fe.y + E.z * s], -17, fmt(internal.z), { horizontal: false, reference: true }));
-  // End view: overall depth above, internal depth above that.
-  out.push(dimension([ev.x, ev.y], [ev.x + E.y * s, ev.y], -9, fmt(E.y), { horizontal: true }));
-  out.push(dimension([ev.x, ev.y], [ev.x + E.y * s, ev.y], -17, fmt(internal.y), { horizontal: true, reference: true }));
-  // Section: internal height on the right.
-  out.push(dimension([se.x + E.y * s, se.y], [se.x + E.y * s, se.y + E.z * s], 9, fmt(internal.z), { horizontal: false, reference: true }));
-  return out;
+  const hDim = (cell, [a, b], off, text, reference) => ({
+    kind: "h", span: [a, b],
+    from: [cell.x + a * s, cell.y], to: [cell.x + b * s, cell.y],
+    off, text, reference,
+  });
+  const vDim = (cell, [a, b], off, text, reference, atRight = false) => ({
+    kind: "v", span: [a, b],
+    from: [cell.x + (atRight ? cell.w : 0), cell.y + a * s],
+    to: [cell.x + (atRight ? cell.w : 0), cell.y + b * s],
+    off, text, reference,
+  });
+
+  return [
+    // Front elevation: internal width and height against the cavity, overall outside.
+    hDim(c.front, cavFront.h, -NEAR, fmt(internal.x), true),
+    hDim(c.front, [0, E.x], -FAR, fmt(E.x), false),
+    vDim(c.front, cavFront.v, -NEAR, fmt(internal.z), true),
+    vDim(c.front, [0, E.z], -FAR, fmt(E.z), false),
+    // End view: internal and overall depth.
+    hDim(c.end, cavEnd.h, -NEAR, fmt(internal.y), true),
+    hDim(c.end, [0, E.y], -FAR, fmt(E.y), false),
+    // Section: internal height on the right, where the wall build-up is shown.
+    vDim(c.section, cavEnd.v, NEAR, fmt(internal.z), true, true),
+  ].filter((d) => d.span[1] - d.span[0] > 1e-9);
+}
+
+function dimensions(sol, L) {
+  return planDimensions(sol, L).map((d) =>
+    dimension(d.from, d.to, d.off, d.text, { horizontal: d.kind === "h", reference: d.reference }));
 }
 
 const NOTE = "ALL DIMENSIONS IN MILLIMETRES. BRACKETED DIMENSIONS ARE FOR REFERENCE. " +

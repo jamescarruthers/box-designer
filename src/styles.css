@@ -319,3 +319,13 @@ table.cuts .edgework { color: var(--ink-3); }
 .by-material th { text-align: left; color: var(--ink-2); }
 .by-material td { color: var(--ink-3); }
 .by-material .num { text-align: right; }
+
+/* The prominence order, folded to one line until it is overridden. */
+.rank-summary {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px 0;
+  font-size: 10.5px; color: var(--ink-2);
+}
+.rank-summary li { display: inline-flex; align-items: center; }
+.rank-summary li + li::before { content: "›"; color: var(--ink-3); margin: 0 5px; }
+.rank-summary .swatch { width: 7px; height: 7px; margin-right: 4px; }

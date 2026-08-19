@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { solve } from "../src/model/solver.js";
 import { noEdges, uniformEdges } from "../src/model/bevel.js";
-import { buildSheet, layout, pickScale, scaleLabel, edgeNote, SHEET, TITLE_BLOCK, LW, TS, PREFERRED_SCALES, GAP_H, GAP_V, frameRect } from "../src/drawing/sheet.js";
+import { buildSheet, layout, planDimensions, pickScale, scaleLabel, edgeNote, SHEET, TITLE_BLOCK, LW, TS, PREFERRED_SCALES, GAP_H, GAP_V, frameRect } from "../src/drawing/sheet.js";
 
 const sol = solve({ envelope: { x: 236, y: 286, z: 356 }, thickness: 18, doubler: { front: 18 },
   order: ["front", "back", "left", "right", "top", "bottom"] });
@@ -136,6 +136,58 @@ describe("§6 the drawing as a whole", () => {
     expect(built.svg.startsWith("<svg ")).toBe(true);
     expect(built.svg.endsWith("</svg>")).toBe(true);
     expect(built.svg.match(/<svg /g)).toHaveLength(1);
+  });
+});
+
+describe("§6.7 dimensions measure what they say", () => {
+  const cases = [
+    ["plain carcass", { envelope: { x: 236, y: 286, z: 356 }, thickness: 18 }],
+    ["front doubler", { envelope: { x: 236, y: 286, z: 356 }, thickness: 18, doubler: { front: 18 } }],
+    ["clad and doubled", { envelope: { x: 400, y: 300, z: 500 }, thickness: 22, cladding: { front: 6, top: 6 }, doubler: { back: 12, left: 9 } }],
+    ["thin walls", { envelope: { x: 180, y: 220, z: 260 }, thickness: 6 }],
+  ];
+
+  it.each(cases)("%s: every dimension spans the length it prints", (_name, input) => {
+    const s = solve({ ...input, order: ["front", "back", "left", "right", "top", "bottom"] });
+    const plan = planDimensions(s, layout(s.E));
+    expect(plan.length).toBe(7);
+    for (const d of plan) {
+      // This is the bug the drawing had: an internal dimension anchored to the
+      // envelope drew the overall width and printed the internal number on it.
+      expect(d.span[1] - d.span[0]).toBeCloseTo(Number(d.text), 6);
+    }
+  });
+
+  it.each(cases)("%s: internal dimensions are bracketed and sit inside the overall ones", (_name, input) => {
+    const s = solve({ ...input, order: ["front", "back", "left", "right", "top", "bottom"] });
+    const plan = planDimensions(s, layout(s.E));
+    const internal = plan.filter((d) => d.reference);
+    const overall = plan.filter((d) => !d.reference);
+    expect(internal).toHaveLength(4);
+    expect(overall).toHaveLength(3);
+    for (const d of internal) expect(Math.abs(d.off)).toBeLessThan(Math.abs(overall[0].off));
+    // Every internal span is strictly inside the envelope it is drawn against.
+    for (const d of internal) expect(d.span[0]).toBeGreaterThan(0);
+  });
+
+  it("prints the internal sizes the solver reports, not the envelope", () => {
+    const s = solve({ envelope: { x: 236, y: 286, z: 356 }, thickness: 18, doubler: { front: 18 },
+      order: ["front", "back", "left", "right", "top", "bottom"] });
+    const texts = planDimensions(s, layout(s.E)).filter((d) => d.reference).map((d) => Number(d.text));
+    expect(texts).toContain(s.internal.x);
+    expect(texts).toContain(s.internal.y);
+    expect(texts).toContain(s.internal.z);
+    expect(texts).not.toContain(s.E.x);
+    expect(texts).not.toContain(s.E.y);
+  });
+
+  it("drops a dimension the box has no room for", () => {
+    const flat = solve({ envelope: { x: 36, y: 200, z: 200 }, thickness: 18,
+      order: ["front", "back", "left", "right", "top", "bottom"] });
+    expect(flat.internal.x).toBe(0);
+    const plan = planDimensions(flat, layout(flat.E));
+    expect(plan.every((d) => d.span[1] - d.span[0] > 0)).toBe(true);
+    expect(plan.length).toBeLessThan(7);
   });
 });
 
