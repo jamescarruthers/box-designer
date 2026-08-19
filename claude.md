@@ -643,8 +643,8 @@ These are why the geometry is right. Write them first.
 
 ## 10. Known gaps
 
-- **No cutouts.** Driver holes, ports, hinge recesses. This is the biggest one:
-  without them the part templates are rectangles and not worth printing at 1:1.
+- **Cutouts cover drivers and ports only.** Hinge recesses, rebated flush
+  mounts and slot ports are not modelled. See §12.
 - **No rebates, dados, mitres or tongues.** Every joint is a butt joint.
 - **The isometric ignores edge treatments.** A fillet in isometric is an ellipse
   arc and the corner where three meet is a spherical patch. The pictorial shows

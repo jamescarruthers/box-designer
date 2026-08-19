@@ -40,6 +40,12 @@ mainBuild:
     - symbol: BRepAlgoAPI_BooleanOperation
     - symbol: BRepAlgoAPI_BuilderAlgo
     - symbol: BRepMesh_DiscretRoot
+    # MakeCylinder's base. Without it the constructor exists but throws
+    # "unbound types: BRepPrimAPI_MakeOneAxis" the moment it is called.
+    - symbol: BRepPrimAPI_MakeOneAxis
+    - symbol: BRepPrimAPI_MakeSweep
+    # Every boolean constructor takes one, and it has no default binding.
+    - symbol: Message_ProgressRange
     - symbol: HLRBRep_InternalAlgo
     - symbol: NCollection_BaseList
     - symbol: NCollection_BaseMap
@@ -67,6 +73,8 @@ mainBuild:
 
     # Solids
     - symbol: BRepPrimAPI_MakeBox
+    # Driver cutouts, bolt holes and port tubes are all cylinders cut out of a panel.
+    - symbol: BRepPrimAPI_MakeCylinder
     - symbol: BRepPrimAPI_MakeHalfSpace
     - symbol: BRepBuilderAPI_MakeFace
     - symbol: BRepBuilderAPI_Transform
@@ -122,5 +130,18 @@ mainBuild:
     - -sLLD_REPORT_UNDEFINED
     - --no-entry
     # Threading, per battlesquid's POC. Needs COOP/COEP at serve time.
+    #
+    # Four, and not more. Only BRepMesh takes an isInParallel flag; HLRBRep has
+    # no parallel mode, and HLR is the dominant cost of the sheet, so no thread
+    # count reaches the expensive half of the pipeline. Measured on four cores
+    # with tools/spike/threads.mjs, six filleted panels, median of five:
+    # parallel meshing saves 18-22% of the mesh step, and batching the panels
+    # into one compound adds nothing on top — beyond about four workers there
+    # are no faces left to hand out. The pool size is fixed at link time, so it
+    # cannot adapt; four matches the common floor for hardwareConcurrency.
+    #
+    # Do not set it to 0 or 1 while -pthread is on: if OCCT asks for a thread
+    # synchronously with an empty pool, emscripten has to spawn one mid-call,
+    # which can deadlock on the main thread.
     - -pthread
     - -sPTHREAD_POOL_SIZE=4

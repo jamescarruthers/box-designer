@@ -3,6 +3,8 @@
 import React from "react";
 import { fmt, cutListCsv } from "../cutlist/cutlist.js";
 import { panelColour, ACCENT } from "../three/palette.js";
+import { blankCircles, blankBoltCircles } from "../model/fittings.js";
+import { panelBlank } from "../model/solver.js";
 import { sheetYield } from "../cutlist/nest.js";
 
 const Swatch = ({ row, on }) => on
@@ -83,13 +85,17 @@ export default function CutListView({ derived, colourByFace, selected, hovered, 
                   fillOpacity="0.24"
                   stroke={selected === r.panelIndex || hovered === r.panelIndex ? ACCENT : "currentColor"}
                   strokeWidth={longest * 0.006} />
+                <Fittings row={r} longest={longest} />
                 <text x={r.length / 2} y={r.width / 2} textAnchor="middle" dominantBaseline="middle"
                   fontSize={longest * 0.05}>{r.id}</text>
                 <text x={r.length / 2} y={-longest * 0.018} textAnchor="middle" fontSize={longest * 0.035}>{fmt(r.length)}</text>
                 <text x={-longest * 0.018} y={r.width / 2} textAnchor="middle" fontSize={longest * 0.035}
                   transform={`rotate(-90 ${-longest * 0.018} ${r.width / 2})`}>{fmt(r.width)}</text>
               </svg>
-              <figcaption>{r.id} · {r.faceLabel} · {fmt(r.thickness)} mm {r.material}</figcaption>
+              <figcaption>
+                {r.id} · {r.faceLabel} · {fmt(r.thickness)} mm {r.material}
+                {r.fittingNote ? <em className="fitting-note">{r.fittingNote}</em> : null}
+              </figcaption>
             </figure>
           ))}
         </div>
@@ -125,6 +131,37 @@ export default function CutListView({ derived, colourByFace, selected, hovered, 
         </div>
       </section>
     </div>
+  );
+}
+
+/**
+ * §10: "without cutouts the part templates are rectangles and not worth
+ * printing at 1:1." The bolt circle is drawn as a chain line, because it is a
+ * setting-out circle rather than anything the router follows.
+ */
+function Fittings({ row, longest }) {
+  if (!row.fittings?.length) return null;
+  const blank = panelBlank(row.panel);
+  const cut = blankCircles(row.fittings, row.panel, blank);
+  const pcd = blankBoltCircles(row.fittings, row.panel, blank);
+  const w = longest * 0.005;
+  return (
+    <g className="fittings">
+      {pcd.map((c, i) => (
+        <circle key={`p${i}`} cx={c.x} cy={c.y} r={c.d / 2} fill="none"
+          stroke="currentColor" strokeWidth={w * 0.6} strokeDasharray={`${longest * 0.02} ${longest * 0.008} ${longest * 0.004} ${longest * 0.008}`} />
+      ))}
+      {cut.map((c, i) => (
+        <circle key={`c${i}`} cx={c.x} cy={c.y} r={c.d / 2}
+          fill="var(--bg)" stroke={ACCENT} strokeWidth={w} />
+      ))}
+      {cut.filter((c) => c.role !== "bolt").map((c, i) => (
+        <g key={`x${i}`} stroke="currentColor" strokeWidth={w * 0.5} opacity="0.7">
+          <line x1={c.x - c.d / 2 - longest * 0.012} y1={c.y} x2={c.x + c.d / 2 + longest * 0.012} y2={c.y} />
+          <line x1={c.x} y1={c.y - c.d / 2 - longest * 0.012} x2={c.x} y2={c.y + c.d / 2 + longest * 0.012} />
+        </g>
+      ))}
+    </g>
   );
 }
 

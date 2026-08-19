@@ -7,6 +7,7 @@
 // and booleans for sections and, later, cutouts.
 
 import { AXIS, PAIR, AXES, edgeKey } from "../model/constants.js";
+import { fittingCircles, faceAxes, portOuterRadius } from "../model/fittings.js";
 
 /** Every distinct edge of a shape, deduped: the explorer visits each one per face. */
 export function edgesOf(oc, shape) {
@@ -61,10 +62,10 @@ export function panelBox(oc, panel) {
  * so the edge treatment lands on exactly the edges the analytic model says it
  * should, and OCCT is left to make the surface rather than decide the joinery.
  */
-export function panelSolid(oc, panel, bevels = {}) {
+export function panelSolid(oc, panel, bevels = {}, fittings = []) {
   const shape = panelBox(oc, panel);
   const wanted = Object.entries(bevels).filter(([, t]) => t && t.type !== "none" && t.radius > 0);
-  if (!wanted.length) return shape;
+  if (!wanted.length) return fittings.length ? cutFittings(oc, shape, panel, fittings) : shape;
 
   const own = AXIS[panel.face][0];
   const byKind = { fillet: [], chamfer: [] };
@@ -97,7 +98,7 @@ export function panelSolid(oc, panel, bevels = {}) {
     for (const { edge, radius } of byKind.chamfer) mk.Add_2(radius, radius, edge, firstFaceOf(oc, result, edge));
     result = mk.Shape();
   }
-  return result;
+  return fittings.length ? cutFittings(oc, result, panel, fittings) : result;
 }
 
 function firstFaceOf(oc, shape, edge) {
@@ -107,13 +108,62 @@ function firstFaceOf(oc, shape, edge) {
   return oc.TopoDS.Face_1(faces.FindFromIndex(i).First_1());
 }
 
+/** A cylinder on a face's normal, started clear of the panel so the cut is clean. */
+function bore(oc, panel, face, at, radius, { from = "outer", length, overshoot = 1 } = {}) {
+  const [a, s] = AXIS[face];
+  const [p, q] = faceAxes(face);
+  const outer = s < 0 ? panel.box[a][0] : panel.box[a][1];
+  const inner = s < 0 ? panel.box[a][1] : panel.box[a][0];
+  const thickness = Math.abs(panel.box[a][1] - panel.box[a][0]);
+
+  const start = {};
+  start[p] = at.a;
+  start[q] = at.b;
+  start[a] = from === "outer" ? outer + s * overshoot : inner;
+  const height = from === "outer" ? thickness + 2 * overshoot : length;
+
+  const axis = new oc.gp_Ax2_3(
+    new oc.gp_Pnt_3(start.x, start.y, start.z),
+    new oc.gp_Dir_4(a === "x" ? -s : 0, a === "y" ? -s : 0, a === "z" ? -s : 0),
+  );
+  return new oc.BRepPrimAPI_MakeCylinder_3(axis, radius, height).Shape();
+}
+
+/**
+ * §10 Drivers and ports, cut for real.
+ *
+ * Every hole is a cylinder started a millimetre clear of the outer face and run
+ * a millimetre past the inner one: a cut that lands exactly on a face leaves
+ * coincident surfaces, and the boolean then has to decide something it should
+ * never have been asked.
+ */
+export function cutFittings(oc, shape, panel, fittings) {
+  let result = shape;
+  for (const f of fittings) {
+    for (const c of fittingCircles(f)) {
+      if (!(c.d > 0)) continue;
+      result = new oc.BRepAlgoAPI_Cut_3(result, bore(oc, panel, f.face, c.at, c.d / 2), new oc.Message_ProgressRange_1()).Shape();
+    }
+  }
+  return result;
+}
+
+/** A port tube: an annulus standing off the panel's inner face into the cavity. */
+export function portTube(oc, panel, f) {
+  const outer = bore(oc, panel, f.face, f.at, portOuterRadius(f), { from: "inner", length: f.length });
+  const bore_ = bore(oc, panel, f.face, f.at, f.diameter / 2, { from: "inner", length: f.length + 2 });
+  return new oc.BRepAlgoAPI_Cut_3(outer, bore_, new oc.Message_ProgressRange_1()).Shape();
+}
+
 /** All the panels as one compound, which is what HLR wants. */
-export function assembly(oc, panels, bevelsFor) {
+export function assembly(oc, panels, bevelsFor, fittingsFor = () => []) {
   const builder = new oc.BRep_Builder();
   const comp = new oc.TopoDS_Compound();
   builder.MakeCompound(comp);
   for (let i = 0; i < panels.length; i++) {
-    builder.Add(comp, panelSolid(oc, panels[i], bevelsFor(i, panels[i])));
+    const on = fittingsFor(i, panels[i]);
+    builder.Add(comp, panelSolid(oc, panels[i], bevelsFor(i, panels[i]), on));
+    for (const f of on.filter((x) => x.type === "port")) builder.Add(comp, portTube(oc, panels[i], f));
   }
   return comp;
 }
