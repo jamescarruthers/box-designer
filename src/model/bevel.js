@@ -97,9 +97,15 @@ export function bevelIssues(edges, wall, skin) {
   return issues;
 }
 
-/** A short note for the cut list, e.g. "R12 top, chamfer 6 left". */
+/** A short note for the cut list: sides sharing a treatment are listed together. */
 export function panelEdgeNote(bevels) {
-  const parts = Object.entries(bevels).map(([g, t]) =>
-    t.type === "fillet" ? `R${t.radius} ${g}` : `CH${t.radius} ${g}`);
-  return parts.join(", ");
+  const groups = new Map();
+  for (const [g, t] of Object.entries(bevels)) {
+    const k = t.type === "fillet" ? `R${t.radius}` : `CH${t.radius}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(g);
+  }
+  return [...groups.entries()].map(([k, sides]) =>
+    // A panel has four sides; all four alike is the common case and reads better short.
+    `${k} ${sides.length === 4 ? "all" : sides.join(", ")}`).join("; ");
 }

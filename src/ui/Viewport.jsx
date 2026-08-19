@@ -154,7 +154,7 @@ export default function Viewport({ derived, style, colourByFace, explode, select
     }
     state.picks = [];
 
-    const { sol, edges, owners, material } = derived;
+    const { sol, edges, owners, specFor } = derived;
     const E = sol.E;
 
     sol.panels.forEach((panel, index) => {
@@ -164,7 +164,9 @@ export default function Viewport({ derived, style, colourByFace, explode, select
       geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
       geom.computeVertexNormals();
 
-      const colour = colourByFace ? panelColour(panel) : material.colour;
+      // Material colouring is per panel: a Valchromat cladding reads differently
+      // from the birch carcass behind it.
+      const colour = colourByFace ? panelColour(panel) : specFor(panel).colour;
       const isSel = selected === index, isHov = hovered === index;
 
       const mat = new THREE.MeshStandardMaterial({

@@ -1,9 +1,9 @@
 // §7 Control groups: starting point, material, prominence, reinforcement, edge treatment.
 
 import React from "react";
-import { FACES, FACE_LABEL, MATERIALS, PROMINENCE_PRESETS, EDGES, edgeAxis } from "../model/constants.js";
+import { FACES, FACE_LABEL, MATERIALS, PROMINENCE_PRESETS, EDGES, edgeAxis, materialById } from "../model/constants.js";
 import { panelColour } from "../three/palette.js";
-import { setIn } from "./design.js";
+import { setIn, freeFaces, addPanel, removePanel, editPanel, setProjectMaterial, setProjectThickness } from "./design.js";
 import { fmt } from "../cutlist/cutlist.js";
 
 function Group({ title, note, children }) {
@@ -16,12 +16,12 @@ function Group({ title, note, children }) {
   );
 }
 
-function Num({ label, value, onChange, step = 1, min = 0, suffix }) {
+function Num({ label, value, onChange, step = 1, min = 0, suffix, list }) {
   return (
     <label className="field">
       <span>{label}</span>
       <span className="input-wrap">
-        <input type="number" aria-label={label} value={value} step={step} min={min}
+        <input type="number" aria-label={label} value={value} step={step} min={min} list={list}
           onChange={(e) => onChange(e.target.value === "" ? 0 : Number(e.target.value))} />
         {suffix ? <em>{suffix}</em> : null}
       </span>
@@ -47,6 +47,7 @@ export default function Controls({ design, set, derived, colourByFace }) {
 
   return (
     <div className="controls">
+      <StockThicknesses />
       <Group title="Starting point">
         <Segmented ariaLabel="Basis" value={s.basis} onChange={(v) => set(setIn(design, ["start", "basis"], v))}
           options={[{ id: "internal", name: "Internal" }, { id: "external", name: "External" }]} />
@@ -79,7 +80,7 @@ export default function Controls({ design, set, derived, colourByFace }) {
       <Group title="Material">
         <label className="field">
           <span>Sheet</span>
-          <select value={design.material} onChange={(e) => set({ ...design, material: e.target.value, stockIndex: 0 })}>
+          <select value={design.material} onChange={(e) => set(setProjectMaterial(design, e.target.value))}>
             {MATERIALS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </label>
@@ -90,7 +91,8 @@ export default function Controls({ design, set, derived, colourByFace }) {
           </select>
         </label>
         <Num label="Thickness" suffix="mm" step={0.5} value={design.thickness}
-          onChange={(v) => set({ ...design, thickness: v, thicknessBy: Object.fromEntries(FACES.map((f) => [f, v])) })} />
+          list={`th-${derived.material.id}`}
+          onChange={(v) => set(setProjectThickness(design, v))} />
         <label className="check">
           <input type="checkbox" checked={design.perFaceThickness}
             onChange={(e) => set({ ...design, perFaceThickness: e.target.checked })} />
@@ -106,9 +108,9 @@ export default function Controls({ design, set, derived, colourByFace }) {
         ) : null}
         <Num label="Kerf" suffix="mm" step={0.1} value={design.kerf} onChange={(v) => set({ ...design, kerf: v })} />
         <label className="check">
-          <input type="checkbox" checked={design.grainLocked} disabled={!derived.material.grained}
+          <input type="checkbox" checked={design.grainLocked}
             onChange={(e) => set({ ...design, grainLocked: e.target.checked })} />
-          <span>Lock grain along length{derived.material.grained ? "" : " (no grain)"}</span>
+          <span>Lock grain along length, where the sheet has one</span>
         </label>
       </Group>
 
@@ -140,21 +142,9 @@ export default function Controls({ design, set, derived, colourByFace }) {
         </ol>
       </Group>
 
-      <Group title="Reinforcement" note="Cladding lies outside the carcass and grows the box. A doubler lies inside and eats the cavity.">
-        <table className="reinf">
-          <thead><tr><th>Face</th><th>Clad</th><th>Doubler</th></tr></thead>
-          <tbody>
-            {FACES.map((f) => (
-              <tr key={f}>
-                <th scope="row">{swatch(f, "shell")}{FACE_LABEL[f]}</th>
-                <td><input type="number" min="0" step="0.5" value={design.cladding[f]}
-                  onChange={(e) => set(setIn(design, ["cladding", f], Number(e.target.value) || 0))} /></td>
-                <td><input type="number" min="0" step="0.5" value={design.doubler[f]}
-                  onChange={(e) => set(setIn(design, ["doubler", f], Number(e.target.value) || 0))} /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <Group title="Reinforcement" note="Cladding lies outside the carcass and grows the box. A doubler lies inside and eats the cavity. Each panel starts as the project sheet and can then be changed.">
+        <LayerStack design={design} set={set} layer="cladding" title="Cladding" colourByFace={colourByFace} />
+        <LayerStack design={design} set={set} layer="doubler" title="Doublers" colourByFace={colourByFace} />
       </Group>
 
       <Group title="Edge treatment" note="Cut from the outer face after assembly. Blank sizes are unchanged.">
@@ -199,6 +189,62 @@ export default function Controls({ design, set, derived, colourByFace }) {
       </Group>
     </div>
   );
+}
+
+/** A list of added panels for one layer, plus a side picker to add another. */
+function LayerStack({ design, set, layer, title, colourByFace }) {
+  const entries = Object.entries(design[layer] ?? {});
+  const free = freeFaces(design, layer);
+  return (
+    <div className="stack">
+      <div className="stack-head">
+        <h3>{title}</h3>
+        <select className="add" value="" disabled={!free.length}
+          aria-label={`Add ${title.toLowerCase()}`}
+          onChange={(e) => { if (e.target.value) set(addPanel(design, layer, e.target.value)); }}>
+          <option value="">{free.length ? "Add a side…" : "All sides used"}</option>
+          {free.map((f) => <option key={f} value={f}>{FACE_LABEL[f]}</option>)}
+        </select>
+      </div>
+      {entries.length === 0 ? (
+        <p className="empty">None.</p>
+      ) : (
+        <ul className="stack-list">
+          {entries.map(([face, entry]) => {
+            const m = materialById(entry.material);
+            return (
+              <li key={face}>
+                <span className="stack-face">
+                  {colourByFace ? <i className="swatch" style={{ background: panelColour({ face, layer }) }} /> : null}
+                  {FACE_LABEL[face]}
+                </span>
+                <input type="number" min="0" step="0.5" value={entry.thickness}
+                  aria-label={`${title} ${FACE_LABEL[face]} thickness`}
+                  list={`th-${m.id}`}
+                  onChange={(e) => set(editPanel(design, layer, face, { thickness: Number(e.target.value) || 0 }))} />
+                <select value={entry.material}
+                  aria-label={`${title} ${FACE_LABEL[face]} material`}
+                  onChange={(e) => set(editPanel(design, layer, face, { material: e.target.value }))}>
+                  {MATERIALS.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                </select>
+                <button type="button" className="drop" aria-label={`Remove ${title} ${FACE_LABEL[face]}`}
+                  onClick={() => set(removePanel(design, layer, face))}>×</button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** The thicknesses each material is sold in, offered on every thickness input. */
+function StockThicknesses() {
+  return MATERIALS.map((m) => (
+    <datalist id={`th-${m.id}`} key={m.id}>
+      {m.thicknesses.map((t) => <option key={t} value={t} />)}
+    </datalist>
+  ));
 }
 
 function move(design, set, i, d) {

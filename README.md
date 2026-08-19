@@ -37,10 +37,17 @@ with every triangle oriented outward against the panel centroid. Four Fusion-360
 render styles, colour by material or by face, explode, click to select, and a
 hand-rolled orbit camera that survives a switch to another mode.
 
+**Materials.** The carcass sets the project sheet. Cladding and doublers are
+added a side at a time from a dropdown, each inheriting that sheet and then
+editable — a birch carcass can carry a 19 mm Valchromat baffle and a 25 mm MDF
+doubler. Every material has a standard thickness a new panel starts at
+(Valchromat 19 mm, the rest 18 mm) and a list of the thicknesses it is sold in.
+
 **Cut list and sheets.** Sorted by layer then area, numbered after sorting.
 Part templates share one scale keyed to the longest part. Shelf packing, first
-fit decreasing, kerf-aware, grouped by thickness, rotating parts unless the
-grain is locked. CSV export.
+fit decreasing, kerf-aware, grouped by material and thickness, rotating parts
+unless the grain is locked — and grain locking binds only sheets that have one.
+Totals break down by material. CSV export.
 
 **Technical drawing.** A3 landscape, first angle, at a real ISO 5455 preferred
 scale rather than "to fit". Front elevation, end view from the left, section

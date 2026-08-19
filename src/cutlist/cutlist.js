@@ -10,7 +10,7 @@ const LAYER_LABEL = { cladding: "Cladding", shell: "Carcass", doubler: "Doubler"
  * Sort by layer, then by area descending, and number after sorting so the
  * numbering is stable.
  */
-export function buildCutList(sol, edges, owners, { material, grainLocked }) {
+export function buildCutList(sol, edges, owners, { specFor, grainLocked }) {
   const rows = sol.panels
     .map((panel, index) => {
       const blank = panelBlank(panel);
@@ -25,32 +25,53 @@ export function buildCutList(sol, edges, owners, { material, grainLocked }) {
       LAYERS.indexOf(a.panel.layer) - LAYERS.indexOf(b.panel.layer) ||
       b.area - a.area ||
       a.panel.face.localeCompare(b.panel.face))
-    .map((r, i) => ({
-      id: `P${String(i + 1).padStart(2, "0")}`,
-      face: r.panel.face,
-      faceLabel: FACE_LABEL[r.panel.face],
-      layer: r.panel.layer,
-      layerLabel: LAYER_LABEL[r.panel.layer],
-      length: r.blank.length,
-      width: r.blank.width,
-      thickness: r.thickness,
-      area: r.area,
-      material,
-      grain: grainLocked ? "Locked, along length" : "Free",
-      edgeWork: panelEdgeNote(r.bevels) || "—",
-      panel: r.panel,
-      panelIndex: r.index,
-    }));
+    .map((r, i) => {
+      const spec = specFor(r.panel);
+      const locked = grainLocked && spec.grained;
+      return {
+        id: `P${String(i + 1).padStart(2, "0")}`,
+        face: r.panel.face,
+        faceLabel: FACE_LABEL[r.panel.face],
+        layer: r.panel.layer,
+        layerLabel: LAYER_LABEL[r.panel.layer],
+        length: r.blank.length,
+        width: r.blank.width,
+        thickness: r.thickness,
+        area: r.area,
+        materialId: spec.materialId,
+        material: spec.material,
+        colour: spec.colour,
+        grained: spec.grained,
+        grainLocked: locked,
+        grain: locked ? "Locked, along length" : "Free",
+        edgeWork: panelEdgeNote(r.bevels) || "—",
+        panel: r.panel,
+        panelIndex: r.index,
+      };
+    });
 
   return rows;
 }
 
 export function cutListTotals(rows, sheets, closure, exact = closure === 0) {
+  const byMaterial = new Map();
+  for (const r of rows) {
+    const k = `${r.materialId}|${r.thickness}`;
+    const cur = byMaterial.get(k) ?? { materialId: r.materialId, material: r.material, thickness: r.thickness, parts: 0, area: 0, sheets: 0 };
+    cur.parts++;
+    cur.area += r.area / 1e6;
+    byMaterial.set(k, cur);
+  }
+  for (const s of sheets) {
+    const cur = byMaterial.get(`${s.materialId}|${s.thickness}`);
+    if (cur) cur.sheets++;
+  }
   return {
     parts: rows.length,
     area: rows.reduce((a, r) => a + r.area, 0) / 1e6,
     sheets: sheets.length,
     closure: exact ? "exact" : closure.toExponential(3),
+    byMaterial: [...byMaterial.values()].sort((a, b) => b.area - a.area),
   };
 }
 

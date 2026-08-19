@@ -194,7 +194,7 @@ input:focus, select:focus { outline: 1px solid var(--accent); border-color: var(
 
 /* cut list */
 .cutlist-mode {
-  display: grid; grid-template-columns: minmax(360px, 1.15fr) minmax(190px, 0.62fr) minmax(260px, 1fr);
+  display: grid; grid-template-columns: minmax(420px, 1.45fr) minmax(170px, 0.5fr) minmax(250px, 1fr);
   gap: 1px; background: var(--line); height: 100%;
 }
 .col { display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
@@ -215,7 +215,7 @@ input:focus, select:focus { outline: 1px solid var(--accent); border-color: var(
 .scroll { overflow: auto; flex: 1; min-height: 0; }
 
 table.cuts { width: 100%; border-collapse: collapse; }
-table.cuts th, table.cuts td { padding: 3px 8px; text-align: left; white-space: nowrap; }
+table.cuts th, table.cuts td { padding: 3px 6px; text-align: left; white-space: nowrap; }
 table.cuts thead th {
   position: sticky; top: 0; background: var(--bg-2); color: var(--ink-3);
   font-weight: 400; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
@@ -270,7 +270,7 @@ table.cuts .edgework { color: var(--ink-3); }
 
 /* §7 Below 1320 px the parts column drops out first; below 1000 px everything stacks. */
 @media (max-width: 1320px) {
-  .cutlist-mode { grid-template-columns: minmax(360px, 1.2fr) minmax(260px, 1fr); }
+  .cutlist-mode { grid-template-columns: minmax(420px, 1.45fr) minmax(250px, 1fr); }
   .col-parts { display: none; }
 }
 @media (max-width: 1000px) {
@@ -286,3 +286,36 @@ table.cuts .edgework { color: var(--ink-3); }
   cursor: pointer; text-align: left; text-decoration: underline; text-underline-offset: 3px;
 }
 .linkish:hover { color: var(--accent); }
+
+/* Reinforcement: a side picker per layer, then a row per added panel. */
+.stack + .stack { margin-top: 10px; }
+.stack-head { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.stack-head h3 {
+  margin: 0; flex: 1; font-size: 10.5px; font-weight: 400;
+  letter-spacing: 0.06em; color: var(--ink-2);
+}
+.stack-head .add { width: auto; max-width: 130px; padding: 2px 5px; font-size: 10.5px; color: var(--ink-2); }
+.stack-head .add:disabled { opacity: 0.45; }
+.stack .empty { margin: 0; color: var(--ink-3); font-size: 10.5px; }
+.stack-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.stack-list li {
+  display: grid; grid-template-columns: 1fr 54px 100px 16px; gap: 4px; align-items: center;
+  background: var(--bg-3); padding: 3px 4px; border-radius: 2px;
+}
+.stack-face { display: flex; align-items: center; color: var(--ink-2); font-size: 11px; }
+.stack-list input, .stack-list select { padding: 2px 4px; font-size: 10.5px; }
+/* No spinner: the field is narrow and the digits matter more than the arrows. */
+.stack-list input[type="number"] { padding-right: 4px; appearance: textfield; -moz-appearance: textfield; }
+.stack-list input[type="number"]::-webkit-outer-spin-button,
+.stack-list input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.stack-list .drop {
+  background: transparent; border: 0; color: var(--ink-3); cursor: pointer;
+  padding: 0; line-height: 1; font-size: 14px;
+}
+.stack-list .drop:hover { color: var(--accent); }
+
+.by-material { width: 100%; border-collapse: collapse; border-top: 1px solid var(--line); background: var(--bg-2); }
+.by-material th, .by-material td { padding: 3px 11px; font-weight: 400; }
+.by-material th { text-align: left; color: var(--ink-2); }
+.by-material td { color: var(--ink-3); }
+.by-material .num { text-align: right; }
