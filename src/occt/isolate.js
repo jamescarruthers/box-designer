@@ -1,6 +1,9 @@
 // Register the cross-origin isolation worker, and reload once so the page it
 // controls is isolated. A no-op wherever the headers already arrive from the
 // server, which is the Vite dev and preview case.
+//
+// Call this before mounting, never on demand: the reload it may perform
+// discards whatever the caller was in the middle of.
 
 const KEY = "coi-reloaded";
 
@@ -18,7 +21,10 @@ export function ensureCrossOriginIsolated() {
     .then(() => {
       sessionStorage.setItem(KEY, "1");
       window.location.reload();
-      return false;
+      // Never settles in practice: the reload replaces this document. The
+      // pending promise is what stops the caller mounting a UI that is about
+      // to be thrown away.
+      return new Promise(() => {});
     })
     .catch(() => false);
 }
