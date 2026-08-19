@@ -123,7 +123,12 @@ mainBuild:
     - -sUSE_ES6_IMPORT_META=0
     - -sEXPORTED_RUNTIME_METHODS=['FS']
     - -sINITIAL_MEMORY=64MB
-    - -sMAXIMUM_MEMORY=2GB
+    # 512 MB, not 2 GB. Threading needs a shared WebAssembly.Memory, and a
+    # shared memory cannot be moved when it grows, so the browser reserves the
+    # whole maximum at instantiation. A 2 GB reservation was killing the tab
+    # while the kernel loaded. Meshing a carcass uses well under 64 MB, so this
+    # is still generous.
+    - -sMAXIMUM_MEMORY=512MB
     - -sALLOW_MEMORY_GROWTH=1
     # No font or visualisation symbols are bound, so FreeType is dead weight.
     - -sUSE_FREETYPE=0

@@ -105,3 +105,41 @@ describe("the entry point settles isolation before mounting", () => {
     expect(render).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * A stall must always end somewhere. Before this, a kernel that never
+ * instantiated left the status chip on "fetching the kernel" indefinitely.
+ */
+describe("the kernel loader gives up rather than hanging", () => {
+  const loadKernelModule = async (factory, isolate = () => Promise.resolve(true)) => {
+    vi.resetModules();
+    vi.doMock("../src/occt/isolate.js", () => ({ ensureCrossOriginIsolated: isolate }));
+    vi.stubGlobal("document", { baseURI: "https://example.test/app/" });
+    const mod = await import("../src/occt/kernel.js");
+    return mod;
+  };
+
+  it("has a timeout long enough for a slow connection but not unbounded", async () => {
+    const { LOAD_TIMEOUT_MS } = await loadKernelModule();
+    expect(LOAD_TIMEOUT_MS).toBeGreaterThanOrEqual(30_000);
+    expect(LOAD_TIMEOUT_MS).toBeLessThanOrEqual(180_000);
+  });
+
+  it("names an allocation failure, rather than passing a bare RangeError through", async () => {
+    const { describeFailure } = await loadKernelModule();
+    // A shared memory that will not fit surfaces as a RangeError from
+    // WebAssembly.Memory, which on its own tells the user nothing.
+    const oom = describeFailure(new RangeError("Out of memory: wasm memory"));
+    expect(oom.message).toMatch(/could not reserve the memory/);
+    expect(oom.message).toContain("Out of memory");
+
+    expect(describeFailure(new Error("cannot allocate 512MB")).message)
+      .toMatch(/could not reserve the memory/);
+  });
+
+  it("passes an unrelated failure through untouched, so it is not mislabelled", async () => {
+    const { describeFailure } = await loadKernelModule();
+    const original = new TypeError("factory is not a function");
+    expect(describeFailure(original)).toBe(original);
+  });
+});
