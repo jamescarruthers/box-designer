@@ -329,3 +329,6 @@ table.cuts .edgework { color: var(--ink-3); }
 .rank-summary li { display: inline-flex; align-items: center; }
 .rank-summary li + li::before { content: "›"; color: var(--ink-3); margin: 0 5px; }
 .rank-summary .swatch { width: 7px; height: 7px; margin-right: 4px; }
+
+.edge-row.blocked { opacity: 0.45; }
+.edge-row.blocked .edge-key em { color: var(--warning); opacity: 0.8; }
