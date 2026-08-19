@@ -9,7 +9,7 @@ const Swatch = ({ row, on }) => on
   ? <i className="swatch" style={{ background: panelColour(row.panel) }} /> : null;
 
 export default function CutListView({ derived, colourByFace, selected, hovered, onSelect, onHover }) {
-  const { rows, sheets, totals, material } = derived;
+  const { rows, sheets, totals } = derived;
   const longest = Math.max(...rows.map((r) => r.length), 1);
 
   const rowProps = (r) => ({
@@ -29,7 +29,7 @@ export default function CutListView({ derived, colourByFace, selected, hovered, 
         <div className="scroll">
           <table className="cuts">
             <thead>
-              <tr><th>Part</th><th>Face</th><th>Layer</th><th>Length</th><th>Width</th><th>Th.</th><th>Grain</th><th>Edge work</th></tr>
+              <tr><th>Part</th><th>Face</th><th>Layer</th><th>Length</th><th>Width</th><th>Th.</th><th>Material</th><th>Grain</th><th>Edge</th></tr>
             </thead>
             <tbody>
               {rows.map((r) => (
@@ -40,13 +40,28 @@ export default function CutListView({ derived, colourByFace, selected, hovered, 
                   <td className="num">{fmt(r.length)}</td>
                   <td className="num">{fmt(r.width)}</td>
                   <td className="num">{fmt(r.thickness)}</td>
-                  <td>{r.grain === "Free" ? "Free" : "Locked"}</td>
+                  <td>{r.material}</td>
+                  <td>{r.grainLocked ? "Locked" : "Free"}</td>
                   <td className="edgework">{r.edgeWork}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        {totals.byMaterial.length > 1 ? (
+          <table className="by-material">
+            <tbody>
+              {totals.byMaterial.map((m) => (
+                <tr key={`${m.materialId}${m.thickness}`}>
+                  <th scope="row">{m.material} {fmt(m.thickness)} mm</th>
+                  <td className="num">{m.parts} part{m.parts === 1 ? "" : "s"}</td>
+                  <td className="num">{m.area.toFixed(3)} m²</td>
+                  <td className="num">{m.sheets} sheet{m.sheets === 1 ? "" : "s"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : null}
         <dl className="totals">
           <div><dt>Parts</dt><dd>{totals.parts}</dd></div>
           <div><dt>Area</dt><dd>{totals.area.toFixed(3)} m²</dd></div>
@@ -64,7 +79,7 @@ export default function CutListView({ derived, colourByFace, selected, hovered, 
                   so a 344 mm baffle and a 130 mm cleat do not draw the same size. */}
               <svg viewBox={`${-longest * 0.06} ${-longest * 0.06} ${longest * 1.12} ${r.width + longest * 0.12}`}>
                 <rect x="0" y="0" width={r.length} height={r.width}
-                  fill={colourByFace ? panelColour(r.panel) : material.colour}
+                  fill={colourByFace ? panelColour(r.panel) : r.colour}
                   fillOpacity="0.24"
                   stroke={selected === r.panelIndex || hovered === r.panelIndex ? ACCENT : "currentColor"}
                   strokeWidth={longest * 0.006} />
@@ -74,14 +89,14 @@ export default function CutListView({ derived, colourByFace, selected, hovered, 
                 <text x={-longest * 0.018} y={r.width / 2} textAnchor="middle" fontSize={longest * 0.035}
                   transform={`rotate(-90 ${-longest * 0.018} ${r.width / 2})`}>{fmt(r.width)}</text>
               </svg>
-              <figcaption>{r.id} · {r.faceLabel} · {fmt(r.thickness)} mm</figcaption>
+              <figcaption>{r.id} · {r.faceLabel} · {fmt(r.thickness)} mm {r.material}</figcaption>
             </figure>
           ))}
         </div>
       </section>
 
       <section className="col col-sheets">
-        <header><h2>Sheet layouts</h2><span className="hint">{material.name}, grouped by thickness</span></header>
+        <header><h2>Sheet layouts</h2><span className="hint">grouped by material and thickness</span></header>
         <div className="scroll">
           {sheets.map((sh) => (
             <figure key={sh.index} className="sheet">
@@ -91,7 +106,7 @@ export default function CutListView({ derived, colourByFace, selected, hovered, 
                   <g key={i} onMouseEnter={() => onHover(p.row.panelIndex)} onMouseLeave={() => onHover(null)}
                     onClick={() => onSelect(selected === p.row.panelIndex ? null : p.row.panelIndex)}>
                     <rect x={p.x} y={p.y} width={p.w} height={p.h}
-                      fill={colourByFace ? panelColour(p.row.panel) : material.colour}
+                      fill={colourByFace ? panelColour(p.row.panel) : p.row.colour}
                       fillOpacity={selected === p.row.panelIndex || hovered === p.row.panelIndex ? 0.62 : 0.3}
                       stroke={selected === p.row.panelIndex || hovered === p.row.panelIndex ? ACCENT : "#8ea1b4"}
                       strokeWidth="5" />
@@ -101,7 +116,7 @@ export default function CutListView({ derived, colourByFace, selected, hovered, 
                 ))}
               </svg>
               <figcaption>
-                Sheet {sh.index} · {sh.stock[0]} × {sh.stock[1]} · {fmt(sh.thickness)} mm ·
+                Sheet {sh.index} · {sh.material} {fmt(sh.thickness)} mm · {sh.stock[0]} × {sh.stock[1]} ·
                 yield {(sheetYield(sh) * 100).toFixed(0)}%
                 {sh.overflow ? " · a part is larger than the sheet" : ""}
               </figcaption>

@@ -67,13 +67,27 @@ export const FACE_LABEL = {
   right: "Right", top: "Top", bottom: "Bottom",
 };
 
-// §5 Stock sizes.
+// §5 Stock sizes, with the thicknesses each material is normally sold in.
+// `thickness` is the standard a new panel of this material starts at.
 export const MATERIALS = [
-  { id: "mdf", name: "MDF", colour: "#b08a63", stock: [[2440, 1220], [3050, 1220]], grained: false },
-  { id: "birch", name: "Birch ply", colour: "#e0c48c", stock: [[2440, 1220], [1525, 1525]], grained: true },
-  { id: "oakply", name: "Oak-faced ply", colour: "#c69a5e", stock: [[2440, 1220]], grained: true },
-  { id: "pine", name: "Pine", colour: "#d9b485", stock: [[2440, 1220]], grained: true },
-  { id: "valchromat", name: "Valchromat", colour: "#5a5f66", stock: [[2440, 1220]], grained: false },
+  { id: "mdf", name: "MDF", colour: "#b08a63", grained: false,
+    stock: [[2440, 1220], [3050, 1220]],
+    thickness: 18, thicknesses: [3, 6, 9, 12, 15, 18, 22, 25, 30] },
+  { id: "birch", name: "Birch ply", colour: "#e0c48c", grained: true,
+    stock: [[2440, 1220], [1525, 1525]],
+    thickness: 18, thicknesses: [4, 6, 9, 12, 15, 18, 24, 30] },
+  { id: "oakply", name: "Oak-faced ply", colour: "#c69a5e", grained: true,
+    stock: [[2440, 1220]],
+    thickness: 18, thicknesses: [6, 9, 12, 15, 18, 22, 25] },
+  { id: "pine", name: "Pine", colour: "#d9b485", grained: true,
+    stock: [[2440, 1220]],
+    thickness: 18, thicknesses: [12, 15, 18, 20, 22, 25] },
+  // Valchromat is 19 mm as standard, not 18.
+  { id: "valchromat", name: "Valchromat", colour: "#5a5f66", grained: false,
+    stock: [[2440, 1220]],
+    thickness: 19, thicknesses: [8, 12, 16, 19, 25, 30] },
 ];
+
+export const materialById = (id) => MATERIALS.find((m) => m.id === id) ?? MATERIALS[0];
 
 export const DEFAULT_KERF = 3.2;

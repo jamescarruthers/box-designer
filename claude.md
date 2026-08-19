@@ -281,6 +281,13 @@ Sort panels by layer (cladding, shell, doubler), then by area descending. Number
 Each row: part id, face, layer, length, width, thickness, material, grain, edge
 work. Export as CSV. Show totals: part count, area in m², sheet count, and the
 volume closure error — print `exact` when it is zero, which it should always be.
+Where more than one sheet is in play, break the totals down by material and
+thickness as well: that is the line you take to the merchant.
+
+**Material is per panel, not per project.** The carcass sets the project sheet;
+every cladding and doubler panel starts as that sheet and can then be changed.
+A birch carcass with a Valchromat baffle and an MDF doubler is one box and three
+orders.
 
 **Part templates** must share one scale. Give every part the same viewBox width
 keyed to the longest part in the set, so a 344 mm baffle and a 130 mm cleat do
@@ -290,11 +297,23 @@ length, since the viewBox is in millimetres.
 **Nesting.** Shelf packing, first fit decreasing: sort by width descending, place
 along the current shelf, open a new shelf when it will not fit, open a new sheet
 when that fails. Add the kerf (default 3.2 mm) after each placement. Rotate parts
-unless grain is locked. **Group by thickness** — 6 mm cladding cannot share a
-sheet with an 18 mm carcass.
+unless grain is locked — and grain locking is a property of the sheet, so it
+binds a ply panel and not the Valchromat one beside it. **Group by material and
+thickness** — 6 mm cladding cannot share a sheet with an 18 mm carcass, and
+18 mm MDF cannot share one with 18 mm ply.
 
-Stock sizes: MDF 2440 × 1220 and 3050 × 1220; birch ply 2440 × 1220 and
-1525 × 1525; others 2440 × 1220.
+| Material | Stock | Standard | Sold in | Grain |
+|---|---|---|---|---|
+| MDF | 2440 × 1220, 3050 × 1220 | 18 | 3, 6, 9, 12, 15, 18, 22, 25, 30 | no |
+| Birch ply | 2440 × 1220, 1525 × 1525 | 18 | 4, 6, 9, 12, 15, 18, 24, 30 | yes |
+| Oak-faced ply | 2440 × 1220 | 18 | 6, 9, 12, 15, 18, 22, 25 | yes |
+| Pine | 2440 × 1220 | 18 | 12, 15, 18, 20, 22, 25 | yes |
+| Valchromat | 2440 × 1220 | **19** | 8, 12, 16, 19, 25, 30 | no |
+
+Valchromat is 19 mm as standard, not 18. A new panel of any material starts at
+that material's standard thickness. Changing a panel's material moves it to the
+new standard **only if it was still sitting on the old one** — a deliberate
+25 mm survives the switch.
 
 ---
 
@@ -511,7 +530,14 @@ against each other.
 **Drawing** — the sheet, centred, on the dark ground.
 
 Control groups, in order: starting point, material, prominence, reinforcement,
-edge treatment. Warnings run along the bottom of the main area in every mode.
+edge treatment, drawing. Warnings run along the bottom of the main area in every
+mode.
+
+**Reinforcement is a list, not a grid.** Twelve number boxes, ten of them zero,
+is a form for a box that mostly has no cladding. Instead: one stack per layer,
+each with a dropdown of the sides not yet used. Pick a side and a panel appears,
+inheriting the project sheet, with its thickness and material editable in place
+and a cross to drop it. The side picker empties as sides are used up.
 
 Below 1320 px the parts column drops out first; below 1000 px everything stacks.
 

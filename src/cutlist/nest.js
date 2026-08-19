@@ -1,34 +1,44 @@
-// §5 Nesting: shelf packing, first fit decreasing, grouped by thickness.
+// §5 Nesting: shelf packing, first fit decreasing, grouped by material and thickness.
 
 import { DEFAULT_KERF } from "../model/constants.js";
 
 /**
  * Shelf packing. Sort by width descending, place along the current shelf, open
  * a new shelf when it will not fit, open a new sheet when that fails.
- * Kerf is added after each placement. Parts rotate unless grain is locked.
+ * Kerf is added after each placement. Parts rotate unless the grain is locked.
+ *
+ * `stockFor(materialId)` gives the sheet size for each group; a single `stock`
+ * pair is accepted for the one-material case.
  */
-export function nest(rows, { stock, kerf = DEFAULT_KERF, grainLocked = false }) {
-  const [SL, SW] = stock;
+export function nest(rows, { stock, stockFor, kerf = DEFAULT_KERF, grainLocked = false }) {
+  const sizeOf = stockFor ?? (() => stock);
   const sheets = [];
 
-  // Group by thickness — 6 mm cladding cannot share a sheet with an 18 mm carcass.
+  // 6 mm cladding cannot share a sheet with an 18 mm carcass, and 18 mm MDF
+  // cannot share one with 18 mm ply either.
   const groups = new Map();
   for (const r of rows) {
-    const k = r.thickness;
+    const k = `${r.materialId ?? "default"}|${r.thickness}`;
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(r);
   }
 
-  for (const [thickness, group] of [...groups.entries()].sort((a, b) => b[0] - a[0])) {
+  const ordered = [...groups.entries()].sort((a, b) =>
+    b[1][0].thickness - a[1][0].thickness || String(a[0]).localeCompare(String(b[0])));
+
+  for (const [, group] of ordered) {
+    const { materialId, thickness, material } = group[0];
+    const [SL, SW] = sizeOf(materialId);
     const queue = [...group].sort((a, b) => b.width - a.width || b.length - a.length);
     const made = [];
     for (const r of queue) {
-      const options = grainLocked
+      // Rows carry their own lock, already allowing for whether the sheet has a grain.
+      const options = (r.grainLocked ?? grainLocked)
         ? [[r.length, r.width, false]]
         : [[r.length, r.width, false], [r.width, r.length, true]];
-      if (!place(made, r, options, SL, SW, kerf, thickness)) {
-        made.push({ index: sheets.length + made.length + 1, thickness, stock, shelves: [], parts: [] });
-        if (!place(made, r, options, SL, SW, kerf, thickness)) {
+      if (!place(made, r, options, SL, SW, kerf)) {
+        made.push({ materialId, material, thickness, stock: [SL, SW], shelves: [], parts: [] });
+        if (!place(made, r, options, SL, SW, kerf)) {
           made[made.length - 1].overflow = true;             // larger than the sheet
         }
       }
@@ -39,7 +49,7 @@ export function nest(rows, { stock, kerf = DEFAULT_KERF, grainLocked = false }) 
   return sheets.map((s, i) => ({ ...s, index: i + 1, used: usedArea(s), stockArea: s.stock[0] * s.stock[1] }));
 }
 
-function place(sheets, r, options, SL, SW, kerf, thickness) {
+function place(sheets, r, options, SL, SW, kerf) {
   for (const sheet of sheets) {
     for (const [w, h, rotated] of options) {
       if (w > SL || h > SW) continue;
