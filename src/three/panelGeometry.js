@@ -119,6 +119,41 @@ export function inwardCount(positions, centroid) {
   return bad;
 }
 
+/**
+ * §4 The rings that are real edges, as line-segment pairs in three coordinates.
+ *
+ * `EdgesGeometry` finds creases by dihedral angle and so misses the boundary
+ * where a fillet runs tangentially into the flat face it was cut from — the
+ * wireframe ends up with a hole at every round-over, and the offset face has no
+ * outline. These are the loops that are genuinely edges: the outer face, the
+ * inner face, and the depth at which each bevel becomes tangent to its side.
+ */
+export function panelEdgeLoops(panel, bevels = {}, E) {
+  const [a, s] = AXIS[panel.face];
+  const [p, q] = AXES.filter((b) => b !== a);
+  const T = panel.box[a][1] - panel.box[a][0];
+
+  const depths = new Set([0, T]);
+  for (const t of Object.values(bevels)) {
+    if (t && t.type !== "none" && t.radius > 0 && t.radius < T) depths.add(t.radius);
+  }
+
+  const out = [];
+  for (const d of [...depths].sort((u, v) => u - v)) {
+    const rect = d >= T - EPS ? { [p]: panel.box[p], [q]: panel.box[q] } : ringAt(panel, bevels, d);
+    const coord = s < 0 ? panel.box[a][0] + d : panel.box[a][1] - d;
+    const corners = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([ip, iq]) => {
+      const v = { [a]: coord, [p]: rect[p][ip], [q]: rect[q][iq] };
+      return toThree([v.x, v.y, v.z], E);
+    });
+    for (let i = 0; i < 4; i++) out.push(corners[i], corners[(i + 1) % 4]);
+  }
+
+  const positions = new Float32Array(out.length * 3);
+  out.forEach((c, i) => { positions.set(c, i * 3); });
+  return positions;
+}
+
 // §4 Explode offsets, per layer, along the face normal.
 export const EXPLODE_SCALE = { cladding: 1.5, shell: 1.0, doubler: 0.45 };
 

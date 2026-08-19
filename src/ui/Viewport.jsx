@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef } from "react";
 import * as THREE from "three";
-import { panelPositions, explodeOffset } from "../three/panelGeometry.js";
+import { panelPositions, explodeOffset, panelEdgeLoops } from "../three/panelGeometry.js";
 import { panelBevels } from "../model/bevel.js";
 import { panelColour, SELECT_EMISSIVE, ACCENT } from "../three/palette.js";
 
@@ -191,8 +191,28 @@ export default function Viewport({ derived, style, colourByFace, explode, select
       root.add(mesh);
       state.picks.push(mesh);
 
+      // The kernel supplies real B-Rep edges; EdgesGeometry can only infer them
+      // from dihedral angle, which loses the tangent boundary at every fillet.
+      const kernelEdges = solids?.[index]?.edges;
+      const edgeGeometry = () => {
+        const g = new THREE.BufferGeometry();
+        if (kernelEdges) {
+          g.setAttribute("position", new THREE.BufferAttribute(kernelEdges.positions, 3));
+          return g;
+        }
+        // The ring stack: creases by angle, plus the loops EdgesGeometry cannot
+        // see because a fillet meets its flat face tangentially.
+        const creases = new THREE.EdgesGeometry(geom, 24).getAttribute("position").array;
+        const loops = panelEdgeLoops(panel, bevels, E);
+        const merged = new Float32Array(creases.length + loops.length);
+        merged.set(creases, 0);
+        merged.set(loops, creases.length);
+        g.setAttribute("position", new THREE.BufferAttribute(merged, 3));
+        return g;
+      };
+
       if (style !== "shaded") {
-        const eg = new THREE.EdgesGeometry(geom, 24);
+        const eg = edgeGeometry();
         const lm = new THREE.LineBasicMaterial({
           color: new THREE.Color(isSel || isHov ? ACCENT : "#c6d2de"),
           depthTest: style === "wireframe-hlr",
@@ -204,7 +224,7 @@ export default function Viewport({ derived, style, colourByFace, explode, select
         root.add(lines);
         lines.userData.offsetOf = index;
       } else if (isSel || isHov) {
-        const eg = new THREE.EdgesGeometry(geom, 24);
+        const eg = edgeGeometry();
         const lines = new THREE.LineSegments(eg, new THREE.LineBasicMaterial({ color: new THREE.Color(ACCENT), depthTest: false }));
         lines.renderOrder = 2;
         root.add(lines);
