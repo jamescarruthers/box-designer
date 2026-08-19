@@ -20,7 +20,7 @@ export const VIEW_PRESETS = {
 
 const POLAR_MIN = 0.06, POLAR_MAX = Math.PI - 0.06;
 
-export default function Viewport({ derived, style, colourByFace, explode, selected, onSelect, hovered, hidden, camera }) {
+export default function Viewport({ derived, style, colourByFace, explode, selected, onSelect, hovered, hidden, camera, solids }) {
   const host = useRef(null);
   const gl = useRef(null);
 
@@ -159,7 +159,8 @@ export default function Viewport({ derived, style, colourByFace, explode, select
 
     sol.panels.forEach((panel, index) => {
       const bevels = panelBevels(index, panel, edges, owners);
-      const { positions } = panelPositions(panel, bevels, E);
+      // The kernel's triangles when it has them, the ring stack otherwise.
+      const positions = solids?.[index]?.positions ?? panelPositions(panel, bevels, E).positions;
       const geom = new THREE.BufferGeometry();
       geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
       geom.computeVertexNormals();
@@ -221,7 +222,7 @@ export default function Viewport({ derived, style, colourByFace, explode, select
     }
 
     state.invalidate?.();
-  }, [derived, style, colourByFace, explode, selected, hovered, onSelect]);
+  }, [derived, style, colourByFace, explode, selected, hovered, onSelect, solids]);
 
   // Fit the camera when the box size changes.
   const sizeKey = `${derived.sol.E.x}|${derived.sol.E.y}|${derived.sol.E.z}`;

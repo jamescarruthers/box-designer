@@ -708,6 +708,21 @@ uses `import()`. Only a module worker can, so the build script patches
 `new Worker(x)` to `new Worker(x, {type:"module"})` — patched in the script
 rather than by hand, or a rebuild silently undoes it.
 
+### The 3D view
+
+`BRepMesh_IncrementalMesh` and a walk over `Poly_Triangulation`, straight into a
+`BufferGeometry`. §4.4 still applies: every triangle is oriented outward against
+the solid's centroid rather than trusted from the face orientation, which is
+load-bearing here — OCCT hands back both windings, and on a square carcass
+exactly half the triangles come out inward.
+
+Tessellation is driven by **angular** deflection, not chord height: at R12 the
+linear tolerance is slack long before the angular one is.
+
+A filleted carcass meshes to 312 triangles against the ring stack's 200. The
+extra is the blend where two fillets meet, which a stack of rings cannot
+represent at all.
+
 ### What it buys
 
 - **The fillet-tangency rule of §6.4 stops being hand-coded.** HLRBRep separates
@@ -718,6 +733,8 @@ rather than by hand, or a rebuild silently undoes it.
 - **Volume that knows about the bevels.** The analytic model carries them as
   notes, so it cannot: on the 236 × 286 × 356 carcass, 8028.6 cm³ square and
   7956.7 cm³ once R12 fillets are cut.
+- **The 3D view and the drawing finally describe the same solid**, rather than a
+  ring-stack approximation next to a B-Rep one.
 - **Booleans**, which is the road to cutouts.
 
 ### The two engines agree

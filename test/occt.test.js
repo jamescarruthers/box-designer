@@ -16,7 +16,9 @@ import { PROMINENCE_PRESETS } from "../src/model/constants.js";
 import { assembly, volumeOf, panelSolid, edgesOf } from "../src/occt/solids.js";
 import { viewGeometry, hiddenLineRemoval, VIEW_AXES } from "../src/occt/hlr.js";
 import { mergeViewLines, describe as describeLines } from "../src/occt/merge.js";
+import { triangulate, meshPanels } from "../src/occt/mesh.js";
 import { viewLines, segEnds } from "../src/drawing/hlr.js";
+import { panelPositions, inwardCount } from "../src/three/panelGeometry.js";
 
 let oc;
 beforeAll(async () => {
@@ -159,6 +161,58 @@ describe("merging what the kernel emits", () => {
     const arc = { a: [0, 0], b: [10, 10], visible: true };
     expect(mergeViewLines([arc, { ...arc }]).lines).toHaveLength(1);
   });
+});
+
+describe("§4 triangles for the 3D view", () => {
+  const sol = carcass();
+  const owners = () => edgeOwners(sol.env, sol.panels);
+  const bevelsFor = (edges) => (i, p) => panelBevels(i, p, edges, owners());
+
+  it("meshes a square carcass to the same triangle count as the ring stack", () => {
+    const meshed = meshPanels(oc, sol.panels, bevelsFor(noEdges()), sol.E);
+    expect(meshed.reduce((a, m) => a + m.triangles, 0)).toBe(72);   // six boxes, twelve each
+  }, 120000);
+
+  it("gives a filleted box more triangles than the ring stack, having the corner blends", () => {
+    const cont = fullLengthEdges(sol.env, sol.panels, owners());
+    const edges = applicableEdges(uniformEdges("fillet", 12), cont);
+    const kernel = meshPanels(oc, sol.panels, bevelsFor(edges), sol.E)
+      .reduce((a, m) => a + m.triangles, 0);
+    const ring = sol.panels
+      .map((p, i) => panelPositions(p, panelBevels(i, p, edges, owners()), sol.E))
+      .reduce((a, m) => a + m.triangles, 0);
+    expect(kernel).toBeGreaterThan(ring);
+  }, 120000);
+
+  it("§4.4 leaves every triangle facing outward", () => {
+    const cont = fullLengthEdges(sol.env, sol.panels, owners());
+    const edges = applicableEdges(uniformEdges("fillet", 12), cont);
+    for (const m of meshPanels(oc, sol.panels, bevelsFor(edges), sol.E)) {
+      expect(inwardCount(m.positions, m.centroid)).toBe(0);
+      expect(m.flipped).toBeGreaterThan(0);   // OCCT hands back both windings
+    }
+  }, 120000);
+
+  it("puts the mesh in three coordinates, centred on the envelope", () => {
+    const [m] = meshPanels(oc, sol.panels.slice(0, 1), () => ({}), sol.E);
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < m.positions.length; i += 3) {
+      lo = Math.min(lo, m.positions[i]); hi = Math.max(hi, m.positions[i]);
+    }
+    // The front panel spans the full width, so x runs −E.x/2 … +E.x/2.
+    expect(lo).toBeCloseTo(-sol.E.x / 2, 6);
+    expect(hi).toBeCloseTo(sol.E.x / 2, 6);
+  }, 120000);
+
+  it("takes a finer angular deflection for a rounder surface", () => {
+    const cont = fullLengthEdges(sol.env, sol.panels, owners());
+    const edges = applicableEdges(uniformEdges("fillet", 12), cont);
+    const i = sol.panels.findIndex((p) => p.face === "front");
+    const solid = (d) => triangulate(oc, panelSolid(oc, sol.panels[i], panelBevels(i, sol.panels[i], edges, owners())), sol.E, d);
+    // Angle is what drives the tessellation of a fillet, not chord height:
+    // at R12 the linear deflection is slack long before the angular one is.
+    expect(solid({ angular: 0.05 }).triangles).toBeGreaterThan(solid({ angular: 1.2 }).triangles);
+  }, 120000);
 });
 
 describe("§6.2 the projector is calibrated, not guessed", () => {
