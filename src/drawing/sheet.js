@@ -2,7 +2,7 @@
 
 import { buildOrthoView } from "./views.js";
 import { PROJECTIONS } from "./hlr.js";
-import { fittingGeometry } from "./fittings.js";
+import { fittingGeometry, fittingDimensions } from "./fittings.js";
 import { buildSection, cuttingPlaneOnPlan, HATCH } from "./section.js";
 import { buildIsometric } from "./iso.js";
 import { EDGES, edgeAxis } from "../model/constants.js";
@@ -111,6 +111,66 @@ function drawFittings(g, place) {
     out.push(`<circle cx="${n2(p[0])}" cy="${n2(p[1])}" r="${n2(c.r * place.scale)}" ${attrs}/>`);
   }
   return out;
+}
+
+/**
+ * §6.7 A diameter dimension: the line runs through the centre with its arrows
+ * on the circle, pointing outward, and the text sits on a short tail beyond one
+ * end. Never a radius — a hole is a diameter to whoever has to drill it.
+ *
+ * The arrows point out of the circle rather than into it, which is the
+ * convention when the circle is too small to hold them comfortably, and at 1:5
+ * every one of these is.
+ */
+function diameterDimension(centre, r, angleDeg, text, place) {
+  const out = [];
+  const c = place(centre);
+  const R = r * place.scale;
+  const th = (angleDeg * Math.PI) / 180;
+  const u = [Math.cos(th), Math.sin(th)];
+  const p1 = [c[0] - u[0] * R, c[1] - u[1] * R];
+  const p2 = [c[0] + u[0] * R, c[1] + u[1] * R];
+  const tail = [p2[0] + u[0] * 8, p2[1] + u[1] * 8];
+
+  out.push(path(`M${n2(p1[0])} ${n2(p1[1])}L${n2(tail[0])} ${n2(tail[1])}`,
+    `stroke="var(--ink-2)" stroke-width="${LW.dim}" fill="none"`));
+  out.push(arrowHead(p1[0], p1[1], u[0], u[1]), arrowHead(p2[0], p2[1], -u[0], -u[1]));
+
+  const anchor = u[0] < -0.2 ? "end" : u[0] > 0.2 ? "start" : "middle";
+  const pad = anchor === "end" ? -1 : anchor === "start" ? 1 : 0;
+  out.push(`<text x="${n2(tail[0] + pad)}" y="${n2(tail[1] - 1)}" text-anchor="${anchor}" ` +
+    `font-size="${TS.dim}" fill="var(--ink)">${esc(text)}</text>`);
+  return out;
+}
+
+/**
+ * §6.7 A leader: a sloped line touching the circle, a short horizontal shoulder,
+ * and the text sitting on it. For features that repeat, so they are dimensioned
+ * once and counted.
+ */
+function leaderDimension(at, r, angleDeg, text, place) {
+  const out = [];
+  const c = place(at);
+  const th = (angleDeg * Math.PI) / 180;
+  const u = [Math.cos(th), Math.sin(th)];
+  const from = [c[0] + u[0] * r * place.scale, c[1] + u[1] * r * place.scale];
+  const knee = [c[0] + u[0] * (r * place.scale + 9), c[1] + u[1] * (r * place.scale + 9)];
+  const dir = u[0] >= 0 ? 1 : -1;
+  const end = [knee[0] + dir * 5, knee[1]];
+
+  out.push(path(`M${n2(from[0])} ${n2(from[1])}L${n2(knee[0])} ${n2(knee[1])}L${n2(end[0])} ${n2(end[1])}`,
+    `stroke="var(--ink-2)" stroke-width="${LW.dim}" fill="none"`));
+  out.push(arrowHead(from[0], from[1], -u[0], -u[1]));
+  out.push(`<text x="${n2(end[0] + dir)}" y="${n2(end[1] - 1)}" text-anchor="${dir > 0 ? "start" : "end"}" ` +
+    `font-size="${TS.dim}" fill="var(--ink)">${esc(text)}</text>`);
+  return out;
+}
+
+/** §6.7 Every fitting dimension in one view. */
+function drawFittingDimensions(dims, place) {
+  return dims.flatMap((d) => (d.kind === "diameter"
+    ? diameterDimension(d.at, d.r, d.angle, d.text, place)
+    : leaderDimension(d.at, d.r, d.angle, d.text, place)));
 }
 
 function drawGeometry(g, place) {
@@ -229,6 +289,7 @@ export function buildSheet(sol, edges, opts = {}) {
     if (key === "section") body.push(...hatching(geo.section, place));
     body.push(...drawGeometry(geo[key], place));
     body.push(...drawFittings(geo[key], place));
+    body.push(...drawFittingDimensions(fittingDimensions(key, fittings, sol.E), place));
     // The plan carries the cutting-plane symbol, so its label drops clear of it.
     body.push(label(cell, VIEW_TITLE[key], null, key === "plan" ? 15 : 7));
     body.push(`</g>`);

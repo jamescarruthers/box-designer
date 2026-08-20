@@ -5,7 +5,7 @@ import { solve, wallOf, fillFaces, skinOf, boxVolume, DEFAULT_RATIO } from "../m
 import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, partialEdgeIssues } from "../model/bevel.js";
 import { mitreCheck, resolveMitres, applyMitres, mitreIssues, mitreLoss } from "../model/mitre.js";
 import { validate } from "../model/validate.js";
-import { fittingOwners, fittingIssues, fittingNote } from "../model/fittings.js";
+import { fittingOwners, innermostOn, fittingIssues, fittingNote } from "../model/fittings.js";
 import { buildCutList, cutListTotals } from "../cutlist/cutlist.js";
 import { nest } from "../cutlist/nest.js";
 import { buildSheet } from "../drawing/sheet.js";
@@ -214,10 +214,17 @@ export function derive(design) {
     return { materialId: m.id, material: m.name, colour: m.colour, grained: m.grained };
   };
 
-  // A fitting is cut into the outermost panel of its face — the one a driver bolts to.
+  // §10 A hole goes all the way: every panel on the face is cut, cladding and
+  // doubler included. `fittingPanels` is still the outermost of them, because
+  // that is the face a driver bolts to and the surface positions are set out on.
   const fittings = design.fittings ?? [];
-  const fittingPanels = fittingOwners(sol.panels, [...new Set(fittings.map((f) => f.face))]);
-  const fittingsOn = (panel) => fittings.filter((f) => fittingPanels[f.face] === panel);
+  const faces = [...new Set(fittings.map((f) => f.face))];
+  const fittingPanels = fittingOwners(sol.panels, faces);
+  const fittingsOn = (panel) => fittings.filter((f) => f.face === panel.face);
+  // A port's tube hangs off the innermost layer, once, however many it bored.
+  const tubePanels = Object.fromEntries(faces.map((f) => [f, innermostOn(sol.panels, f)]));
+  const tubesOn = (panel) =>
+    fittings.filter((f) => f.type === "port" && tubePanels[f.face] === panel);
 
   const rows = buildCutList(sol, edges, owners, { specFor, grainLocked: design.grainLocked })
     .map((r) => {
@@ -254,7 +261,7 @@ export function derive(design) {
     Object.fromEntries(EDGES.filter((k) => mitreCheck(plain, sol.env, k).ok).map((k) => [k, true]))).accepted;
 
   return { sol, edges, requestedEdges, fullLength, mitrable, requestedMitres, mitreRing, owners, material, rows, sheets, totals, messages,
-    sheet, sectionAt, specFor, fittings, fittingPanels, fittingsOn };
+    sheet, sectionAt, specFor, fittings, fittingPanels, fittingsOn, tubesOn };
 }
 
 export const setIn = (obj, path, value) => {

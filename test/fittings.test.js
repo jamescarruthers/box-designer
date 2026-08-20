@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import { solve, panelBlank } from "../src/model/solver.js";
 import {
   newFitting, fittingCircles, fittingExtent, fittingOwners, fittingOrigin,
+  fittingStack, innermostOn,
   fittingIssues, describeFitting, fittingNote, faceAxes, toBlank, blankCircles,
   portOuterRadius, DEFAULT_DRIVER, DEFAULT_PORT,
 } from "../src/model/fittings.js";
@@ -264,5 +265,73 @@ describe("§10 a fitting has to be somewhere", () => {
   it("cuts no circles for one, so the kernel is never handed a NaN", () => {
     expect(fittingCircles({ ...newFitting("driver", "front"), at: { a: NaN, b: 0 } })).toEqual([]);
     expect(fittingCircles({ ...newFitting("driver", "front"), at: {} })).toEqual([]);
+  });
+});
+
+
+/**
+ * §10 A hole goes all the way.
+ *
+ * Cutting only the outermost panel left a 116 mm cutout opening onto solid
+ * material behind it, which is not a hole — it is a recess.
+ */
+describe("§10 a fitting punches through every layer of its face", () => {
+  const clad = () => derive({
+    ...DEFAULT_DESIGN,
+    cladding: { front: { material: "birch", thickness: 6 } },
+    doubler: { front: { material: "mdf", thickness: 12 } },
+    fittings: [{ id: "d1", type: "driver", face: "front", at: { a: 108.85, b: 163.35 },
+      cutout: 116, pcd: 147, bolts: 5, boltHole: 5 }],
+  });
+
+  it("stacks the panels of a face outermost first", () => {
+    const { sol } = clad();
+    expect(fittingStack(sol.panels, "front").map((p) => p.layer))
+      .toEqual(["cladding", "shell", "doubler"]);
+  });
+
+  it("cuts the cladding, the carcass and the doubler alike", () => {
+    const d = clad();
+    const cut = d.rows.filter((r) => r.fittings.length);
+    expect(cut.map((r) => r.layer).sort()).toEqual(["cladding", "doubler", "shell"]);
+    for (const r of cut) expect(r.fittingNote).toMatch(/Driver ⌀116/);
+  });
+
+  it("leaves the other faces alone", () => {
+    expect(clad().rows.filter((r) => r.face !== "front").every((r) => !r.fittings.length)).toBe(true);
+  });
+
+  it("still sets the fitting out from the outermost panel, which is what it bolts to", () => {
+    const { sol, fittingPanels } = clad();
+    expect(fittingPanels.front.layer).toBe("cladding");
+    expect(fittingOwners(sol.panels, ["front"]).front).toBe(fittingPanels.front);
+  });
+
+  it("hangs a port's tube off the innermost layer, once", () => {
+    const d = derive({
+      ...DEFAULT_DESIGN,
+      doubler: { back: { material: "mdf", thickness: 12 } },
+      fittings: [{ id: "p1", type: "port", face: "back", at: { a: 108.85, b: 80 },
+        diameter: 68, length: 150, wall: 3 }],
+    });
+    const withTube = d.sol.panels.filter((p) => d.tubesOn(p).length);
+    expect(withTube).toHaveLength(1);
+    expect(withTube[0].layer).toBe("doubler");
+    expect(innermostOn(d.sol.panels, "back")).toBe(withTube[0]);
+  });
+
+  it("catches a bore that fits the carcass but runs off the doubler behind it", () => {
+    // The doubler is inset from the panel it backs, so this is a real way to
+    // end up with a hole opening into fresh air — and it used to pass.
+    const sol = solve({ envelope: E, thickness: 18, order: PROMINENCE_PRESETS[0].order });
+    const front = sol.panels.find((p) => p.face === "front");
+    const inset = {
+      ...front, layer: "doubler",
+      box: { ...front.box, x: [front.box.x[0] + 60, front.box.x[1] - 60] },
+    };
+    const f = newFitting("driver", "front", { a: 40, b: 240 });
+    const panels = [...sol.panels, inset];
+    const msgs = fittingIssues([f], panels, fittingOwners(panels, ["front"]), sol.cavity);
+    expect(msgs.some((m) => m.level === "error" && /doubler/.test(m.text))).toBe(true);
   });
 });

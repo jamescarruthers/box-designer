@@ -85,13 +85,16 @@ export function triangulate(oc, shape, E, {
  */
 export function meshPanels(oc, panels, bevelsFor, E, opts = {}) {
   const fittingsFor = opts.fittingsFor ?? (() => []);
+  // Separate from the fittings: the bore goes through every layer of a face,
+  // the tube hangs off the innermost one only.
+  const tubesFor = opts.tubesFor ?? (() => []);
   return panels.map((panel, i) => {
     const on = fittingsFor(i, panel);
     const solid = panelSolid(oc, panel, bevelsFor(i, panel), on);
     const mesh = triangulate(oc, solid, E, opts);
     // §10 A port's tube is a separate body standing off the panel, so it meshes
     // separately and rides along with its panel for selection and exploding.
-    const tubes = on.filter((f) => f.type === "port").map((f) => {
+    const tubes = tubesFor(i, panel).map((f) => {
       const t = portTube(oc, panel, f);
       return { ...triangulate(oc, t, E, opts), edges: edgeSegments(oc, t, E, opts), fitting: f };
     });

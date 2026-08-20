@@ -24,8 +24,9 @@ import { buildSection } from "../drawing/section.js";
  * test on this function to catch it.
  */
 export function kernelViews(oc, sol, edges, owners, opts = {}) {
-  const { sectionAt, tangentEdges = false, fittingsFor = () => [] } = opts;
-  const shape = assembly(oc, sol.panels, (i, p) => panelBevels(i, p, edges, owners), fittingsFor);
+  const { sectionAt, tangentEdges = false, fittingsFor = () => [], tubesFor = () => [] } = opts;
+  const shape = assembly(oc, sol.panels,
+    (i, p) => panelBevels(i, p, edges, owners), fittingsFor, tubesFor);
   const out = {};
   for (const view of ["front", "end", "plan"]) {
     const raw = viewGeometry(oc, shape, view, sol.E, { tangentEdges });

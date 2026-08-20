@@ -33,6 +33,7 @@ export function useKernelSolids(derived, enabled) {
       panels: sol.panels,
       bevels: sol.panels.map((p, i) => panelBevels(i, p, edges, owners)),
       fittings: sol.panels.map((p) => fittingsOn?.(p) ?? []),
+      tubes: sol.panels.map((p) => derived.tubesOn?.(p) ?? []),
       E: sol.E,
     }, {
       // §11 The step it is on, so a slow download reads as progress rather than

@@ -215,15 +215,21 @@ export function portTube(oc, panel, f) {
   return new oc.BRepAlgoAPI_Cut_3(outer, bore_, new oc.Message_ProgressRange_1()).Shape();
 }
 
-/** All the panels as one compound, which is what HLR wants. */
-export function assembly(oc, panels, bevelsFor, fittingsFor = () => []) {
+/**
+ * All the panels as one compound, which is what HLR wants.
+ *
+ * `tubesFor` is separate from `fittingsFor` because a bore goes through every
+ * layer of a face and a port's tube hangs off only the innermost of them. Take
+ * the tubes from the fittings list and a clad, doubled panel grows three
+ * concentric tubes.
+ */
+export function assembly(oc, panels, bevelsFor, fittingsFor = () => [], tubesFor = () => []) {
   const builder = new oc.BRep_Builder();
   const comp = new oc.TopoDS_Compound();
   builder.MakeCompound(comp);
   for (let i = 0; i < panels.length; i++) {
-    const on = fittingsFor(i, panels[i]);
-    builder.Add(comp, panelSolid(oc, panels[i], bevelsFor(i, panels[i]), on));
-    for (const f of on.filter((x) => x.type === "port")) builder.Add(comp, portTube(oc, panels[i], f));
+    builder.Add(comp, panelSolid(oc, panels[i], bevelsFor(i, panels[i]), fittingsFor(i, panels[i])));
+    for (const f of tubesFor(i, panels[i])) builder.Add(comp, portTube(oc, panels[i], f));
   }
   return comp;
 }

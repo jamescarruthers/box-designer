@@ -29,6 +29,7 @@ export function useKernelSheet(derived, design, enabled) {
       owners: derived.owners,
       sectionAt: derived.sectionAt,
       fittings: derived.sol.panels.map((p) => derived.fittingsOn?.(p) ?? []),
+      tubes: derived.sol.panels.map((p) => derived.tubesOn?.(p) ?? []),
     }, {
       signal: cancel.signal,
       onProgress: (progress) => { if (live) setState((s) => ({ ...s, progress })); },
