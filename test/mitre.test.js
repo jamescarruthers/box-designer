@@ -11,7 +11,7 @@ import { describe, it, expect } from "vitest";
 import { solve, boxVolume } from "../src/model/solver.js";
 import { EDGES, PROMINENCE_PRESETS, AXIS } from "../src/model/constants.js";
 import {
-  mitreCheck, mitrableEdges, applyMitres, mitreLoss, mitreBevels, mitreIssues,
+  mitreCheck, mitrableEdges, applyMitres, resolveMitres, mitreLoss, mitreBevels, mitreIssues,
 } from "../src/model/mitre.js";
 import { panelBevels, edgeOwners, panelEdgeNote, insetAt } from "../src/model/bevel.js";
 import { panelPositions } from "../src/three/panelGeometry.js";
@@ -23,6 +23,9 @@ const carcass = (order = PROMINENCE_PRESETS[0].order) =>
   solve({ envelope: { x: 236, y: 286, z: 356 }, thickness: 18, order });
 
 const VERTICALS = ["front|left", "back|left", "front|right", "back|right"];
+// Under the standard prominence the front and back wrap and the other four
+// panels form a tube between them. Its four long corners mitre too.
+const TUBE = ["left|bottom", "left|top", "right|bottom", "right|top"];
 
 const shellOf = (panels, face) => panels.find((p) => p.face === face && p.layer === "shell");
 
@@ -56,22 +59,37 @@ describe("§12 which edges can take a mitre", () => {
     for (const key of VERTICALS) expect(mitreCheck(sol.panels, sol.env, key).ok).toBe(true);
   });
 
-  it("refuses an edge one of the panels does not run, and says which", () => {
+  it("takes the tube between the front and back, which never reaches the envelope", () => {
+    // The reason the envelope test was wrong: these four panels coincide
+    // exactly along y and butt against the front and back at each end.
+    const sol = carcass();
+    for (const key of TUBE) {
+      const check = mitreCheck(sol.panels, sol.env, key);
+      expect(check.ok, `${key}: ${check.why}`).toBe(true);
+    }
+    const left = shellOf(sol.panels, "left"), top = shellOf(sol.panels, "top");
+    expect(left.box.y).toEqual(top.box.y);
+    expect(left.box.y).not.toEqual([sol.env.y[0], sol.env.y[1]]);
+  });
+
+  it("refuses an edge where one panel runs past the other", () => {
     const sol = carcass();
     const blocked = EDGES.filter((k) => !mitreCheck(sol.panels, sol.env, k).ok);
-    expect(blocked.length).toBeGreaterThan(0);
+    // Front and back wrap the full width; the top and bottom do not reach
+    // their ends, so a mitre there would come out in mid-air.
+    expect(blocked.sort()).toEqual(["back|bottom", "back|top", "front|bottom", "front|top"].sort());
     for (const k of blocked) {
-      expect(mitreCheck(sol.panels, sol.env, k).why).toMatch(/does not run the whole edge|no shell panel/);
+      expect(mitreCheck(sol.panels, sol.env, k).why).toMatch(/runs past the other/);
     }
   });
 
-  it("offers 1, 2 or 4 mitrable edges, never some other count", () => {
-    const counts = new Set();
+  it("offers a mitre on eight of the twelve edges, two full rings", () => {
     for (const preset of PROMINENCE_PRESETS) {
       const sol = carcass(preset.order);
-      counts.add(Object.values(mitrableEdges(sol.panels, sol.env)).filter((c) => c.ok).length);
+      const ok = EDGES.filter((k) => mitrableEdges(sol.panels, sol.env)[k].ok);
+      expect(ok.length, preset.id).toBeGreaterThanOrEqual(6);
+      expect(ok.length, preset.id).toBeLessThanOrEqual(8);
     }
-    expect([...counts].every((n) => [1, 2, 4].includes(n))).toBe(true);
   });
 
   it("refuses when the two panels are different thicknesses", () => {
@@ -96,7 +114,7 @@ describe("§12 what a mitre does to the panels", () => {
   });
 
   it("still closes on volume, exactly", () => {
-    for (const keys of [[], ["front|left"], VERTICALS]) {
+    for (const keys of [[], ["front|left"], VERTICALS, TUBE, ["left|top"], [...VERTICALS, ...TUBE]]) {
       const { sol, panels } = mitred(keys);
       const loss = panels.reduce((a, p) => a + mitreLoss(p), 0);
       const solid = panels.reduce((a, p) => a + boxVolume(p.box), 0) - loss;
@@ -154,11 +172,11 @@ describe("§12 the mitre as an edge treatment", () => {
   it("warns, and leaves a butt joint, where the mitre cannot be cut", () => {
     const sol = carcass();
     const bad = EDGES.find((k) => !mitreCheck(sol.panels, sol.env, k).ok);
-    const msgs = mitreIssues(mitrableEdges(sol.panels, sol.env), { [bad]: true });
+    const { applied, rejected } = applyMitres(sol.panels, sol.env, { [bad]: true });
+    expect(applied).toEqual([]);
+    const msgs = mitreIssues(rejected);
     expect(msgs).toHaveLength(1);
     expect(msgs[0].text).toMatch(/Left as a butt joint/);
-    const { applied } = applyMitres(sol.panels, sol.env, { [bad]: true });
-    expect(applied).toEqual([]);
   });
 
   it("is exclusive with a decorative bevel on the same edge", () => {
@@ -238,5 +256,103 @@ describe("§12 mitres in the drawing", () => {
     const iso = buildIsometric({ ...sol, panels });
     const plain = buildIsometric({ ...sol, panels: sol.panels.filter((p) => p.layer === "shell") });
     expect(iso.lines.length).toBeLessThan(plain.lines.length);
+  });
+});
+
+
+/**
+ * Mitres are not independent. Cutting one grows a panel, and a longer panel can
+ * run past a joint another mitre needs — which is how the volume stopped
+ * closing by exactly one thickness cubed per conflicting pair.
+ */
+describe("§12 mitres that rule each other out", () => {
+  it("takes either ring on its own, in full", () => {
+    const sol = carcass();
+    for (const ring of [VERTICALS, TUBE]) {
+      const { applied } = applyMitres(sol.panels, sol.env, Object.fromEntries(ring.map((k) => [k, true])));
+      expect(applied.sort()).toEqual([...ring].sort());
+    }
+  });
+
+  it("refuses the second ring, because a panel takes opposite sides and not adjacent ones", () => {
+    const sol = carcass();
+    const both = Object.fromEntries([...VERTICALS, ...TUBE].map((k) => [k, true]));
+    const { applied, rejected } = applyMitres(sol.panels, sol.env, both);
+    expect(applied.sort()).toEqual([...VERTICALS].sort());
+    expect([...rejected.keys()].sort()).toEqual([...TUBE].sort());
+    for (const why of rejected.values()) expect(why).toMatch(/opposite sides, not adjacent ones/);
+  });
+
+  it("keeps the volume closing when a conflicting pair is asked for", () => {
+    // Both mitres are individually exact; applying both once cost 18³.
+    const sol = carcass();
+    const { panels } = applyMitres(sol.panels, sol.env, { "front|left": true, "left|top": true });
+    const loss = panels.reduce((a, p) => a + mitreLoss(p), 0);
+    const solid = panels.reduce((a, p) => a + boxVolume(p.box), 0) - loss;
+    expect(solid + boxVolume(sol.cavity)).toBeCloseTo(sol.envVolume, 6);
+  });
+
+  it("never lets a panel escape the envelope, whatever is asked for", () => {
+    const sol = carcass();
+    const { panels } = applyMitres(sol.panels, sol.env,
+      Object.fromEntries(EDGES.map((k) => [k, true])));
+    for (const p of panels) {
+      for (const ax of ["x", "y", "z"]) {
+        expect(p.box[ax][0]).toBeGreaterThanOrEqual(sol.env[ax][0]);
+        expect(p.box[ax][1]).toBeLessThanOrEqual(sol.env[ax][1]);
+      }
+    }
+  });
+
+  it("does not depend on the order the edges were asked for", () => {
+    const sol = carcass();
+    const keys = [...VERTICALS, ...TUBE];
+    const one = resolveMitres(sol.panels, sol.env, Object.fromEntries(keys.map((k) => [k, true])));
+    const other = resolveMitres(sol.panels, sol.env,
+      Object.fromEntries([...keys].reverse().map((k) => [k, true])));
+    expect(one.accepted).toEqual(other.accepted);
+  });
+
+  it("leaves one standing when two rule each other out, rather than neither", () => {
+    const sol = carcass();
+    const { applied } = applyMitres(sol.panels, sol.env, { "front|left": true, "left|top": true });
+    expect(applied).toEqual(["front|left"]);
+  });
+});
+
+describe("§12 what the control may still offer", () => {
+  const withMitres = (keys) => derive({
+    ...DEFAULT_DESIGN,
+    edge: { ...DEFAULT_DESIGN.edge, perEdge: true,
+      by: Object.fromEntries(keys.map((k) => [k, { type: "mitre" }])) },
+  });
+
+  it("offers both rings before anything is chosen", () => {
+    const d = withMitres([]);
+    expect(Object.entries(d.mitrable).filter(([, c]) => c.ok).map(([k]) => k).sort())
+      .toEqual([...VERTICALS, ...TUBE].sort());
+  });
+
+  it("closes off the ring that would displace what is already chosen", () => {
+    const d = withMitres(TUBE);
+    expect(d.messages).toEqual([]);
+    for (const k of TUBE) expect(d.mitrable[k].ok, k).toBe(true);
+    for (const k of VERTICALS) {
+      expect(d.mitrable[k].ok, k).toBe(false);
+      expect(d.mitrable[k].why).toMatch(/would undo the/);
+    }
+  });
+
+  it("closes off only the edges the chosen one actually touches", () => {
+    const d = withMitres(["front|left"]);
+    // The left panel is now committed; the right one is still free.
+    expect(d.mitrable["left|top"].ok).toBe(false);
+    expect(d.mitrable["right|top"].ok).toBe(true);
+  });
+
+  it("offers a ring the shortcut can apply without a single warning", () => {
+    const d = withMitres([]);
+    expect(d.mitreRing.length).toBeGreaterThan(0);
+    expect(withMitres(d.mitreRing).messages).toEqual([]);
   });
 });

@@ -17,6 +17,8 @@ import { assembly, volumeOf, panelSolid, edgesOf, edgeMidpoint, cutFittings, por
 import { applyMitres, mitreBevels, mitreLoss } from "../src/model/mitre.js";
 import { newFitting, fittingOwners, portOuterRadius } from "../src/model/fittings.js";
 import { viewGeometry, hiddenLineRemoval, isoGeometry, VIEW_AXES, ISO_VIEW } from "../src/occt/hlr.js";
+import { kernelViews } from "../src/occt/drawing.js";
+import { OPS } from "../src/occt/worker.js";
 import { buildIsometric } from "../src/drawing/iso.js";
 import { mergeViewLines, describe as describeLines } from "../src/occt/merge.js";
 import { triangulate, meshPanels } from "../src/occt/mesh.js";
@@ -414,4 +416,73 @@ describe("§12 mitres, cut for real", () => {
     // Its outer face is x = 0 and it now runs to y = 0, the front of the envelope.
     expect(pts.some((p) => Math.abs(p.x) < 1e-6 && Math.abs(p.y) < 1e-6)).toBe(true);
   }, 120000);
+});
+
+
+/**
+ * §11 The whole drawing job, as the worker runs it.
+ *
+ * `kernelViews` had no test and had been throwing a ReferenceError on every
+ * call — an `opts` that was never declared — so switching the drawing to the
+ * kernel failed outright and quietly fell back. A function the app depends on
+ * entirely needs at least one test that calls it.
+ */
+describe("§11 the drawing job the worker runs", () => {
+  const job = (extra = {}) => {
+    const sol = carcass();
+    const owners = edgeOwners(sol.env, sol.panels);
+    const edges = applicableEdges(uniformEdges("chamfer", 6), fullLengthEdges(sol.env, sol.panels, owners));
+    return { sol, edges, owners, ...extra };
+  };
+
+  it("builds all five views without throwing", () => {
+    const { sol, edges, owners } = job();
+    const { geometry } = kernelViews(oc, sol, edges, owners, {});
+    expect(Object.keys(geometry).sort()).toEqual(["end", "front", "iso", "plan", "section"]);
+    for (const view of ["front", "end", "plan", "iso"]) {
+      expect(geometry[view].lines.length).toBeGreaterThan(0);
+    }
+  }, 180000);
+
+  it("cuts the fittings it is given, by panel index", () => {
+    const { sol, edges, owners } = job();
+    const driver = newFitting("driver", "front", { a: 118, b: 240 });
+    const panels = fittingOwners(sol.panels, ["front"]);
+    const fittings = sol.panels.map((p) => (panels.front === p ? [driver] : []));
+    const plain = kernelViews(oc, sol, edges, owners, {}).geometry;
+    const holed = kernelViews(oc, sol, edges, owners, { fittingsFor: (i) => fittings[i] }).geometry;
+    expect(holed.front.lines.length).toBeGreaterThan(plain.front.lines.length);
+  }, 180000);
+
+  it("draws a bore without labouring over it", () => {
+    // A driver cut into a panel appeared for a while to cost minutes of hidden
+    // line removal. It costs nothing to speak of; what cost minutes was a
+    // fitting with no position, boring at NaN. See tools/spike/hlr-holes.mjs.
+    const { sol, edges, owners } = job();
+    const driver = newFitting("driver", "front", { a: 118, b: 240 });
+    const panels = fittingOwners(sol.panels, ["front"]);
+    const fittings = sol.panels.map((p) => (panels.front === p ? [driver] : []));
+    const t0 = Date.now();
+    kernelViews(oc, sol, edges, owners, { fittingsFor: (i) => fittings[i] });
+    expect(Date.now() - t0).toBeLessThan(20_000);
+  }, 60000);
+
+  it("returns only what can cross a worker boundary", () => {
+    const { sol, edges, owners } = job();
+    const geometry = OPS.views(oc, { sol, edges, owners, sectionAt: sol.E.x / 2, fittings: [] });
+    expect(() => structuredClone(geometry)).not.toThrow();
+  }, 180000);
+
+  it("meshes through the same door the worker uses", () => {
+    const sol = carcass();
+    const owners = edgeOwners(sol.env, sol.panels);
+    const meshes = OPS.mesh(oc, {
+      panels: sol.panels,
+      bevels: sol.panels.map((p, i) => panelBevels(i, p, noEdges(), owners)),
+      fittings: [],
+      E: sol.E,
+    });
+    expect(meshes).toHaveLength(sol.panels.length);
+    expect(meshes.every((m) => m.positions.length > 0)).toBe(true);
+  }, 180000);
 });
