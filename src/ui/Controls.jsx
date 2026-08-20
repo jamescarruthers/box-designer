@@ -48,6 +48,7 @@ function Segmented({ value, options, onChange, ariaLabel }) {
 export default function Controls({ design, set, derived, colourByFace }) {
   const s = design.start;
   const cuttable = Object.values(derived.fullLength).filter(Boolean).length;
+  const mitrable = Object.values(derived.mitrable).filter((c) => c.ok).length;
   return (
     <div className="controls">
       <StockThicknesses />
@@ -144,27 +145,44 @@ export default function Controls({ design, set, derived, colourByFace }) {
           <span>Per edge</span>
         </label>
         {design.edge.perEdge ? (
-          <div className="edge-grid">
-            {EDGES.map((k) => {
-              const cur = design.edge.by[k] ?? { type: "none", radius: design.edge.radius };
-              const ok = derived.fullLength[k];
-              return (
-                <div className={ok ? "edge-row" : "edge-row blocked"} key={k}>
-                  <span className="edge-key">{k.replace("|", " / ")}
-                    <em>{ok ? `runs ${edgeAxis(k)}` : "broken by other panels"}</em></span>
-                  <select value={cur.type} disabled={!ok} aria-label={`${k} treatment`}
-                    onChange={(e) => set(setIn(design, ["edge", "by", k], { ...cur, type: e.target.value }))}>
-                    <option value="none">Square</option>
-                    <option value="chamfer">Chamfer</option>
-                    <option value="fillet">Fillet</option>
-                  </select>
-                  <input type="number" min="0" step="0.5" value={cur.radius} disabled={!ok}
-                    aria-label={`${k} radius`}
-                    onChange={(e) => set(setIn(design, ["edge", "by", k], { ...cur, radius: Number(e.target.value) || 0 }))} />
-                </div>
-              );
-            })}
-          </div>
+          <>
+            <p className="note">
+              {mitrable} of 12 can be mitred: both panels have to run the edge and be the same
+              thickness. A mitre is a joint rather than a decoration, so it replaces the bevel on
+              that edge instead of joining it.
+              {mitrable > 0 ? (
+                <> <button type="button" className="linkish"
+                  onClick={() => set(setIn(design, ["edge", "by"], mitreAll(design, derived)))}>
+                  Mitre all {mitrable}
+                </button></>
+              ) : null}
+            </p>
+            <div className="edge-grid">
+              {EDGES.map((k) => {
+                const cur = design.edge.by[k] ?? { type: "none", radius: design.edge.radius };
+                const ok = derived.fullLength[k];
+                const canMitre = derived.mitrable[k]?.ok;
+                const why = ok ? (canMitre ? `runs ${edgeAxis(k)}` : `no mitre: ${derived.mitrable[k].why}`)
+                  : "broken by other panels";
+                return (
+                  <div className={ok ? "edge-row" : "edge-row blocked"} key={k}>
+                    <span className="edge-key">{k.replace("|", " / ")}<em>{why}</em></span>
+                    <select value={cur.type} disabled={!ok} aria-label={`${k} treatment`}
+                      onChange={(e) => set(setIn(design, ["edge", "by", k], { ...cur, type: e.target.value }))}>
+                      <option value="none">Square</option>
+                      <option value="chamfer">Chamfer</option>
+                      <option value="fillet">Fillet</option>
+                      <option value="mitre" disabled={!canMitre}>Mitre</option>
+                    </select>
+                    <input type="number" min="0" step="0.5" value={cur.radius}
+                      disabled={!ok || cur.type === "mitre"}
+                      aria-label={`${k} radius`}
+                      onChange={(e) => set(setIn(design, ["edge", "by", k], { ...cur, radius: Number(e.target.value) || 0 }))} />
+                  </div>
+                );
+              })}
+            </div>
+          </>
         ) : null}
       </Group>
 
@@ -177,6 +195,15 @@ export default function Controls({ design, set, derived, colourByFace }) {
       </Group>
     </div>
   );
+}
+
+/** §12 Every edge that can take a mitre, mitred; everything else left as it is. */
+function mitreAll(design, derived) {
+  const by = { ...design.edge.by };
+  for (const [k, c] of Object.entries(derived.mitrable)) {
+    if (c.ok) by[k] = { ...(by[k] ?? { radius: design.edge.radius }), type: "mitre" };
+  }
+  return by;
 }
 
 /**

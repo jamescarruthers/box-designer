@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { solve } from "../src/model/solver.js";
+import { PROMINENCE_PRESETS } from "../src/model/constants.js";
 import { noEdges, uniformEdges } from "../src/model/bevel.js";
-import { buildSheet, layout, planDimensions, pickScale, scaleLabel, edgeNote, SHEET, TITLE_BLOCK, LW, TS, PREFERRED_SCALES, GAP_H, GAP_V, frameRect } from "../src/drawing/sheet.js";
+import { applyMitres } from "../src/model/mitre.js";
+import { buildSheet, layout, planDimensions, pickScale, scaleLabel, edgeNote, mitreDrawingNote, SHEET, TITLE_BLOCK, LW, TS, PREFERRED_SCALES, GAP_H, GAP_V, frameRect } from "../src/drawing/sheet.js";
 
 const sol = solve({ envelope: { x: 236, y: 286, z: 356 }, thickness: 18, doubler: { front: 18 },
   order: ["front", "back", "left", "right", "top", "bottom"] });
@@ -196,6 +198,16 @@ describe("§6.4 edge note", () => {
     expect(edgeNote(uniformEdges("fillet", 12))).toBe("ALL EXTERNAL EDGES R12.");
     expect(edgeNote(uniformEdges("chamfer", 6))).toBe("ALL EXTERNAL EDGES CHAMFER 6.");
     expect(edgeNote(noEdges())).toBe("ALL EXTERNAL EDGES SQUARE.");
+  });
+
+  it("§12 notes the mitred joints on their own line", () => {
+    const sol = solve({ envelope: { x: 236, y: 286, z: 356 }, thickness: 18, order: PROMINENCE_PRESETS[0].order });
+    const four = ["front|left", "back|left", "front|right", "back|right"];
+    const of = (keys) => mitreDrawingNote(
+      applyMitres(sol.panels, sol.env, Object.fromEntries(keys.map((k) => [k, true]))).panels);
+    expect(of(four)).toBe("ALL VERTICAL CORNERS MITRED 45°.");
+    expect(of(["front|left"])).toBe("MITRED 45°: FRONT/LEFT.");
+    expect(mitreDrawingNote(sol.panels)).toBe(null);
   });
 
   it("lists the distinct treatments otherwise", () => {

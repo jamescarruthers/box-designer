@@ -80,7 +80,7 @@ export function meshPanels(oc, panels, bevelsFor, E, opts = {}) {
     const on = fittingsFor(i, panel);
     const solid = panelSolid(oc, panel, bevelsFor(i, panel), on);
     const mesh = triangulate(oc, solid, E, opts);
-    // §12 A port's tube is a separate body standing off the panel, so it meshes
+    // §10 A port's tube is a separate body standing off the panel, so it meshes
     // separately and rides along with its panel for selection and exploding.
     const tubes = on.filter((f) => f.type === "port").map((f) => {
       const t = portTube(oc, panel, f);

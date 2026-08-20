@@ -6,6 +6,14 @@ import { insetAt, bevelDepths } from "../model/bevel.js";
 
 const EPS = 1e-9;
 
+/**
+ * §12 At full thickness every chamfer and fillet has run out to nothing, but a
+ * mitre is at its widest: its leg is the whole thickness. So the inner ring is
+ * not "zero inset" — it is the mitres alone.
+ */
+export const mitresOnly = (bevels) =>
+  Object.fromEntries(Object.entries(bevels).filter(([, t]) => t && t.type === "mitre"));
+
 /** The rectangle of a panel's cross-section at depth `d` inward from its outer face. */
 export function ringAt(panel, bevels, d) {
   const a = AXIS[panel.face][0];
@@ -30,7 +38,7 @@ export function ringDepths(panel, bevels) {
   for (const t of Object.values(bevels))
     for (const d of bevelDepths(t.type, t.radius)) if (d < T - EPS) set.add(d);
   const ds = [...set].sort((u, v) => u - v);
-  ds.push(T);                                     // final ring at full thickness, zero inset
+  ds.push(T);                                     // final ring at full thickness
   return ds;
 }
 
@@ -47,7 +55,7 @@ export function panelSolid(panel, bevels = {}) {
   const verts = [], rings = [];
   for (const d of depths) {
     const rect = d >= T - EPS
-      ? { [p]: panel.box[p], [q]: panel.box[q] }   // final ring, zero inset
+      ? ringAt(panel, mitresOnly(bevels), T)       // final ring: mitres only
       : ringAt(panel, bevels, d);
     const coord = s < 0 ? panel.box[a][0] + d : panel.box[a][1] - d;
     // Four corners, consistently ordered around the rectangle.
@@ -140,7 +148,7 @@ export function panelEdgeLoops(panel, bevels = {}, E) {
 
   const out = [];
   for (const d of [...depths].sort((u, v) => u - v)) {
-    const rect = d >= T - EPS ? { [p]: panel.box[p], [q]: panel.box[q] } : ringAt(panel, bevels, d);
+    const rect = d >= T - EPS ? ringAt(panel, mitresOnly(bevels), T) : ringAt(panel, bevels, d);
     const coord = s < 0 ? panel.box[a][0] + d : panel.box[a][1] - d;
     const corners = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([ip, iq]) => {
       const v = { [a]: coord, [p]: rect[p][ip], [q]: rect[q][iq] };

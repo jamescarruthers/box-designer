@@ -645,7 +645,8 @@ These are why the geometry is right. Write them first.
 
 - **Cutouts cover drivers and ports only.** Hinge recesses, rebated flush
   mounts and slot ports are not modelled. See §12.
-- **No rebates, dados, mitres or tongues.** Every joint is a butt joint.
+- **No rebates, dados or tongues.** Apart from the mitre of §12, every joint is a
+  butt joint.
 - **The isometric ignores edge treatments.** A fillet in isometric is an ellipse
   arc and the corner where three meet is a spherical patch. The pictorial shows
   hard corners while the elevations correctly show the radius.
@@ -765,3 +766,112 @@ trimmed build: the trimmed one is compiled `-pthread` and its worker calls
 `require`, which Node rejects in a `"type": "module"` package. Both expose the
 same API, and the adapter takes the kernel as an argument so either will do. The
 trimmed build is checked in the browser instead.
+
+---
+
+## 12. Mitred edges
+
+A butt joint shows one panel's edge grain on the other's face. A mitre brings
+both panels out to the corner and cuts each back 45°, so no end grain shows and
+the outer surface runs unbroken round the corner. Per edge, wherever it can be
+cut.
+
+### The whole idea
+
+**A mitre is a chamfer whose leg is the panel's own thickness, cut the other
+way round.** A decorative chamfer takes material off the outer corner and runs
+out to nothing at depth R; a mitre keeps the outer corner and opens out to a
+full leg at the inner face. One sign in `insetAt`, and every piece of machinery
+that already draws a bevel draws a mitre: the ring stacks of §4, the corner
+lines of §6.4, `BRepFilletAPI` — well, not that last one, see below.
+
+So the model is two steps:
+
+1. Grow the panel that was butting out to the envelope corner. The one that
+   wrapped is already there.
+2. Give both panels a `{ type: "mitre", radius: thickness }` on that side.
+
+Only one of the two grows. Growing both double-counts the corner prism, and
+§2.4 closure catches it immediately — which is how the first attempt was caught.
+
+### When an edge can take one
+
+Three conditions, all of them things a maker would say out loud:
+
+1. **Both faces carry a panel in the same layer.** You cannot mitre to nothing.
+2. **Both panels run the edge's full length.** Otherwise a third panel is in the
+   way partway along and the cut cannot run through. This is the §3 rule, but
+   applied to both panels rather than just whichever owns the outer corner.
+3. **Both are the same thickness.** Then the cut is 45° and the two halves meet.
+   Unequal thicknesses have a mitre at some other angle, but it stops being a
+   saw set to 45 and starts being a calculation per joint.
+
+Under the presets that leaves 1, 2 or 4 mitrable edges: front and back wrapping
+gives the four vertical corners, sides wrapping gives four horizontal ones.
+Every edge is judged against the box as it arrived, before any of them move —
+mitring one edge grows a panel and could make a second one eligible, and then
+the answer would depend on which edge was asked for first.
+
+A mitre and a decorative bevel are **mutually exclusive on one edge**. The mitre
+already cuts that corner at 45°; a fillet on top of it would have to be split
+across two panels that each own half the corner. Choosing Mitre in the per-edge
+control replaces the treatment rather than adding to it.
+
+### What it does not change
+
+The cavity. A mitre moves material between two panels and nowhere else, so
+internal dimensions are identical to the butt-jointed box — the same invariant
+§2.4 states for prominence. Closure is recomputed rather than adjusted: a mitre
+both grows a box and cuts material off it, so the old residual is not a term in
+the new sum.
+
+The envelope, too. The outer corner stays sharp, so no outline moves in any
+view. Blank sizes are the grown outer sizes: cut the panel full, then mitre it.
+
+### In the views
+
+Both panels now reach the corner, so their boxes overlap in a square the size of
+their thickness. Exact rectangle HLR cannot represent a 45° face, so each view
+resolves the overlap first:
+
+- **Both faces on the sides of the view.** The square is in the plane of the
+  drawing and the joint reads as a diagonal across it. The boxes stay
+  overlapping, every line inside the square is trimmed away except the two
+  envelope faces, and the diagonal is drawn in their place — as visible as the
+  butt lines it replaces, since it is at the same place and the same depth.
+- **One face toward the viewer.** The square is edge-on. The panel whose own
+  face is toward the viewer keeps the corner; the other goes back to where it
+  would have butted, which is exactly where its material now ends. Its depth
+  then sorts correctly and the seam it used to draw disappears — which is the
+  visible point of a mitre, seen from the side.
+
+The isometric skips a panel on any plane it is mitred to: it touches that plane
+along a line, not over an area.
+
+### In the kernel
+
+Not a chamfer. A mitre's leg is the whole thickness, so chamfering the inner
+edge would have to consume the entire side face — the face disappears, and
+`BRepFilletAPI` is entitled to refuse. Instead, a boolean against a box turned
+45° about the outer corner line.
+
+Measure `u` inward from the outer face and `v` inward from the mitred side, both
+zero on the corner line; the material to remove is `u > v`. Start with the
+quadrant `u ≥ 0, v ≤ 0` — a box hanging off the side of the panel, in free air —
+and turn it 45° about the corner line, from `u` toward `v`. It sweeps to
+−45°…+45°, whose half inside the panel is exactly `u > v`. The plane `v = 0`
+ends up in the tool's interior rather than on its boundary, so the cut never has
+to decide about a face lying in the panel's own side.
+
+Verified against the arithmetic panel by panel: `volumeOf` matches
+`boxVolume(box) − mitreLoss(panel)` to the last place, and a mitre composes with
+a chamfer on the same panel — the chamfer comes up short by exactly R³/6, the
+integral of the wedge against the sloped end.
+
+### The one binding bug it turned up
+
+`BRepFilletAPI_MakeChamfer.Add_2` is the *symmetric* overload — `(distance,
+edge)`. The four-argument one is `Add_3(d1, d2, edge, face)`. The chamfer path
+had been calling `Add_2` with four arguments since §3 was wired to the kernel,
+which throws a binding error at the first chamfer and had no test to catch it.
+Fixed, and covered.

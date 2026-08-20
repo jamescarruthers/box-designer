@@ -224,6 +224,27 @@ describe("the app", () => {
     expect(screen.getByLabelText("Thickness").value).toBe("19");
   });
 
+  it("§12 mitres one edge from the per-edge control, and says so in the cut list", () => {
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByLabelText("Per edge"));
+    const select = screen.getByLabelText("front|left treatment");
+    expect([...select.options].find((o) => o.value === "mitre").disabled).toBe(false);
+    fireEvent.change(select, { target: { value: "mitre" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    expect(container.textContent).toContain("45°");
+    expect(within(container.querySelector(".totals")).getByText("exact")).toBeTruthy();
+  });
+
+  it("§12 will not offer a mitre on an edge the panels cannot both run", () => {
+    render(<App />);
+    fireEvent.click(screen.getByLabelText("Per edge"));
+    const blocked = ["front|top", "front|bottom", "back|top", "back|bottom"]
+      .map((k) => screen.getByLabelText(`${k} treatment`))
+      .filter((s) => [...s.options].find((o) => o.value === "mitre").disabled);
+    expect(blocked.length).toBeGreaterThan(0);
+  });
+
   it("reports the volume closure as exact", () => {
     const { container } = render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));

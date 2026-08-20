@@ -5,7 +5,7 @@ import { PROJECTIONS } from "./hlr.js";
 import { fittingGeometry } from "./fittings.js";
 import { buildSection, cuttingPlaneOnPlan, HATCH } from "./section.js";
 import { buildIsometric } from "./iso.js";
-import { EDGES } from "../model/constants.js";
+import { EDGES, edgeAxis } from "../model/constants.js";
 import { fmt } from "../cutlist/cutlist.js";
 
 export const SHEET = { w: 420, h: 297, margin: 10, filingMargin: 20 };
@@ -252,7 +252,7 @@ export function buildSheet(sol, edges, opts = {}) {
   body.push(`<g data-dims="1">`, ...dimensions(sol, L), `</g>`);
 
   // Notes and keys.
-  body.push(notes(L, edges));
+  body.push(notes(L, edges, sol.panels));
 
   // Title block.
   body.push(titleBlock(L, { title, material, rev, sheetNo, scale: s }));
@@ -372,11 +372,25 @@ export function edgeNote(edges) {
   }).join(", ")} — SEE VIEWS.`;
 }
 
-function notes(L, edges) {
+/**
+ * §12 Mitred joints, named. A mitre is joinery rather than an edge treatment,
+ * so it gets its own line: the edges themselves are square, and the note that
+ * says so would otherwise be the only thing a reader saw about the corners.
+ */
+export function mitreDrawingNote(panels = []) {
+  const keys = [...new Set(panels.flatMap((p) => (p.mitres ?? []).map((m) => m.edge)))].sort();
+  if (!keys.length) return null;
+  if (keys.length === 4 && keys.every((k) => edgeAxis(k) === "z")) {
+    return "ALL VERTICAL CORNERS MITRED 45°.";
+  }
+  return `MITRED 45°: ${keys.map((k) => k.replace("|", "/").toUpperCase()).join(", ")}.`;
+}
+
+function notes(L, edges, panels) {
   const f = L.frame;
   const x = f.x + 2, y = f.y + f.h - 3;
   const wrapped = wrap(NOTE, 78);
-  const lines = [...wrapped, edgeNote(edges)];
+  const lines = [...wrapped, edgeNote(edges), mitreDrawingNote(panels)].filter(Boolean);
   return lines.map((t, i) =>
     `<text x="${n2(x)}" y="${n2(y - (lines.length - 1 - i) * 3.2)}" font-size="${TS.note}" fill="var(--ink-2)">${esc(t)}</text>`
   ).join("");

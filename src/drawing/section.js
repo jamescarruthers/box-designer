@@ -1,6 +1,7 @@
 // §6.5 Section A–A. Outline views cannot show a laminated wall.
 
 import { PROJECTIONS, hiddenLineRemoval, segEnds, VIEW_EXTENT } from "./hlr.js";
+import { mitresInView, trimMitres } from "./views.js";
 
 export const HATCH = {
   shell:    { id: "hatch-carcass",  angle: 45,  pitch: 2.2, label: "CARCASS" },
@@ -14,8 +15,10 @@ export const HATCH = {
  */
 export function buildSection(sol, cx = sol.E.x / 2) {
   const ext = VIEW_EXTENT.end(sol.E);
-  const cut = sol.panels.filter((p) => p.box.x[0] < cx && cx < p.box.x[1]);
-  const beyond = sol.panels.filter((p) => p.box.x[0] >= cx);
+  // §12 The section is the end view, so mitres resolve the same way here.
+  const mitred = mitresInView("end", sol.panels, ext);
+  const cut = mitred.panels.filter((p) => p.box.x[0] < cx && cx < p.box.x[1]);
+  const beyond = mitred.panels.filter((p) => p.box.x[0] >= cx);
 
   const rects = [...cut, ...beyond].map((p) => ({
     ...PROJECTIONS.end(p.box, sol.E),
@@ -23,9 +26,11 @@ export function buildSection(sol, cx = sol.E.x / 2) {
     panel: p,
   }));
 
-  const lines = hiddenLineRemoval(rects)
+  const trimmed = trimMitres(hiddenLineRemoval(rects), mitred.corners);
+  const lines = trimmed.segs
     .filter((s) => s.visible)
     .map((s) => { const [a, b] = segEnds(s); return { a, b, visible: true, kind: "hlr" }; });
+  lines.push(...trimmed.lines.filter((l) => l.visible));
 
   const hatches = cut.map((p) => {
     const r = PROJECTIONS.end(p.box, sol.E);

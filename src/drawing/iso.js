@@ -18,15 +18,18 @@ const r6 = (n) => Math.round(n * 1e6) / 1e6;
 export function buildIsometric(sol) {
   const { E, panels } = sol;
   const planes = [
-    { free: ["x", "z"], fixed: "y", at: 0, test: (b) => b.y[0] === 0 },
-    { free: ["y", "z"], fixed: "x", at: E.x, test: (b) => b.x[1] === E.x },
-    { free: ["x", "y"], fixed: "z", at: E.z, test: (b) => b.z[1] === E.z },
+    { free: ["x", "z"], fixed: "y", at: 0, face: "front", test: (b) => b.y[0] === 0 },
+    { free: ["y", "z"], fixed: "x", at: E.x, face: "right", test: (b) => b.x[1] === E.x },
+    { free: ["x", "y"], fixed: "z", at: E.z, face: "top", test: (b) => b.z[1] === E.z },
   ];
 
   const seen = new Map();
   for (const pl of planes) {
     for (const p of panels) {
       if (!pl.test(p.box)) continue;
+      // §12 A panel mitred on this face was grown out to the corner and then
+      // cut back to it: it touches the plane along a line, not over an area.
+      if ((p.mitres ?? []).some((m) => m.side === pl.face)) continue;
       const [a, b] = pl.free;
       const corners = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([ia, ib]) => {
         const v = { [pl.fixed]: pl.at, [a]: p.box[a][ia], [b]: p.box[b][ib] };
