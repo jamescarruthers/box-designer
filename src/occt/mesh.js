@@ -13,16 +13,51 @@ import { edgeSegments } from "./edges.js";
 export const LINEAR_DEFLECTION = 0.25;
 export const ANGULAR_DEFLECTION = 0.3;
 
-const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const cross = (u, v) => [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
-const dot = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+/**
+ * §4.4 The signed volume of a triangle mesh: (1/6) Σ a · (b × c).
+ *
+ * The check that a mesh is closed and consistently wound, and unlike "does
+ * every normal point away from the centroid" it holds for a solid with a hole
+ * in it. Positive and equal to the kernel's own volume means every face is the
+ * right way round; a bore whose wall is inside out shows up as a shortfall.
+ */
+export function meshVolume(positions) {
+  let v = 0;
+  for (let i = 0; i < positions.length; i += 9) {
+    const [a, b, c] = [0, 1, 2].map((t) => positions.subarray(i + t * 3, i + t * 3 + 3));
+    v += a[0] * (b[1] * c[2] - b[2] * c[1])
+       - a[1] * (b[0] * c[2] - b[2] * c[0])
+       + a[2] * (b[0] * c[1] - b[1] * c[0]);
+  }
+  return v / 6;
+}
+
+/**
+ * Whether a face is reversed against its own surface.
+ *
+ * `Orientation_1` is the getter — the overloads are numbered, and the setter is
+ * `Orientation_2`. Enum values arrive as objects in one build and as plain
+ * numbers in another, so compare on `.value` when it is there.
+ */
+const isReversed = (oc, face) => {
+  const o = face.Orientation_1();
+  const rev = oc.TopAbs_Orientation.TopAbs_REVERSED;
+  return (o?.value ?? o) === (rev?.value ?? rev);
+};
 
 /**
  * Triangulate one solid into three.js coordinates.
  *
- * §4.4 still applies: every triangle is oriented outward against the solid's
- * centroid rather than trusted from the face orientation. A panel is convex, so
- * the test is exact, and it costs nothing next to the meshing.
+ * Winding comes from the face's own orientation, which is the only thing that
+ * knows. It used to be inferred: flip any triangle whose normal points back
+ * toward the solid's centroid. That works on a convex solid and a panel was one
+ * — until §10 bored a hole through it. The wall of a bore faces *inward*, at
+ * the axis of the hole, so the test flipped every triangle on it and the hole
+ * had no inside: you looked through the panel and saw nothing, because the only
+ * surface there was pointing away from you and culled.
+ *
+ * `toThree` is a rotation of determinant +1, so it carries the winding across
+ * unchanged.
  */
 export function triangulate(oc, shape, E, {
   linear = LINEAR_DEFLECTION, angular = ANGULAR_DEFLECTION, parallel = false,
@@ -42,6 +77,7 @@ export function triangulate(oc, shape, E, {
   new oc.BRepMesh_IncrementalMesh_2(shape, linear, false, angular, parallel);
 
   const tris = [];
+  let reversed = 0;
   const explorer = new oc.TopExp_Explorer_2(shape, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
   while (explorer.More()) {
     const face = oc.TopoDS.Face_1(explorer.Current());
@@ -50,6 +86,8 @@ export function triangulate(oc, shape, E, {
     if (!handle.IsNull()) {
       const poly = handle.get();
       const trsf = loc.Transformation();
+      const flip = isReversed(oc, face);
+      if (flip) reversed++;
       const nodes = [];
       for (let i = 1; i <= poly.NbNodes(); i++) {
         const p = poly.Node(i).Transformed(trsf);
@@ -57,7 +95,8 @@ export function triangulate(oc, shape, E, {
       }
       for (let i = 1; i <= poly.NbTriangles(); i++) {
         const t = poly.Triangle(i);
-        tris.push([nodes[t.Value(1) - 1], nodes[t.Value(2) - 1], nodes[t.Value(3) - 1]]);
+        const [a, b, c] = [t.Value(1) - 1, t.Value(2) - 1, t.Value(3) - 1];
+        tris.push(flip ? [nodes[a], nodes[c], nodes[b]] : [nodes[a], nodes[b], nodes[c]]);
       }
     }
     explorer.Next();
@@ -67,15 +106,11 @@ export function triangulate(oc, shape, E, {
     tris.reduce((a, t) => a + t[0][k] + t[1][k] + t[2][k], 0) / (tris.length * 3 || 1));
 
   const positions = new Float32Array(tris.length * 9);
-  let o = 0, flipped = 0;
+  let o = 0;
   for (const t of tris) {
-    let [a, b, c] = t;
-    const n = cross(sub(b, a), sub(c, a));
-    const m = [0, 1, 2].map((d) => (a[d] + b[d] + c[d]) / 3 - centroid[d]);
-    if (dot(n, m) < 0) { [b, c] = [c, b]; flipped++; }
-    for (const p of [a, b, c]) { positions[o++] = p[0]; positions[o++] = p[1]; positions[o++] = p[2]; }
+    for (const p of t) { positions[o++] = p[0]; positions[o++] = p[1]; positions[o++] = p[2]; }
   }
-  return { positions, triangles: tris.length, flipped, centroid };
+  return { positions, triangles: tris.length, reversed, centroid };
 }
 
 /**
