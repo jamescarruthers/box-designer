@@ -3,11 +3,20 @@ import Controls from "./Controls.jsx";
 import Viewport, { RENDER_STYLES, VIEW_PRESETS } from "./Viewport.jsx";
 import CutListView from "./CutListView.jsx";
 import DrawingView from "./DrawingView.jsx";
-import { DEFAULT_DESIGN, derive } from "./design.js";
+import { DEFAULT_DESIGN, derive, setEdgeTreatment } from "./design.js";
 import { loadDesign, saveDesign, forgetDesign } from "./storage.js";
 import { useKernelSolids } from "./useKernelSolids.js";
 import { kernelProgress } from "../occt/kernel.js";
 import { fmt } from "../cutlist/cutlist.js";
+
+/** §15 The treatments a click can apply. Mitre is here too: without it there
+ *  would be no way to reach one once the list shows only what has been set. */
+export const EDGE_TOOLS = [
+  { id: "none", name: "Square" },
+  { id: "chamfer", name: "Chamfer" },
+  { id: "fillet", name: "Fillet" },
+  { id: "mitre", name: "Mitre" },
+];
 
 const MODES = [
   { id: "view", name: "3D view" },
@@ -27,6 +36,9 @@ export default function App() {
   const [hovered, setHovered] = useState(null);
   const [camera, setCamera] = useState({ preset: "iso", nonce: 0 });
   const [solidEngine, setSolidEngine] = useState("analytic");
+  // §15 The armed edge tool, or null for none. Not part of the design: it is
+  // what the pointer is for at this moment, not something about the box.
+  const [edgeTool, setEdgeTool] = useState(null);
 
   const derived = useMemo(() => {
     try { return { ok: true, ...derive(design) }; }
@@ -38,6 +50,9 @@ export default function App() {
   useEffect(() => { saveDesign(design); }, [design]);
 
   const onSelect = useCallback((i) => setSelected((cur) => (cur === i ? null : i)), []);
+  const onEdgePick = useCallback((key) => {
+    setDesign((d) => setEdgeTreatment(d, key, edgeTool, d.edge.radius));
+  }, [edgeTool]);
   const kernelSolids = useKernelSolids(derived.ok ? derived : null, derived.ok && solidEngine === "kernel");
 
   if (!derived.ok) {
@@ -80,7 +95,8 @@ export default function App() {
           <div className={`pane pane-view ${mode === "view" ? "" : "hidden"}`}>
             <Viewport derived={derived} style={style} colourByFace={colourByFace} explode={explode}
               selected={selected} hovered={hovered} onSelect={onSelect} hidden={mode !== "view"} camera={camera}
-              solids={solidEngine === "kernel" ? kernelSolids.solids : null} />
+              solids={solidEngine === "kernel" ? kernelSolids.solids : null}
+              edgeTool={edgeTool} onEdgePick={onEdgePick} />
             <div className="chips">
               <div className="chip-group">
                 {RENDER_STYLES.map((s) => (
@@ -103,6 +119,17 @@ export default function App() {
                 <button type="button" className={solidEngine === "kernel" ? "on" : ""}
                   onClick={() => setSolidEngine("kernel")}>OpenCASCADE</button>
               </div>
+              {/* §15 Arm a treatment, then click an edge to apply it. Named
+                  apart from the uniform treatment buttons in the controls:
+                  these arm the pointer rather than setting the whole box. */}
+              <div className="chip-group edge-tools">
+                {EDGE_TOOLS.map((t) => (
+                  <button key={t.id} type="button" className={edgeTool === t.id ? "on" : ""}
+                    aria-label={`${t.name} an edge`}
+                    title={`${t.name}: click an edge to apply`}
+                    onClick={() => setEdgeTool(edgeTool === t.id ? null : t.id)}>{t.name}</button>
+                ))}
+              </div>
               <div className="chip-group explode">
                 <label htmlFor="explode">Explode</label>
                 <input id="explode" type="range" min="0" max="120" value={explode}
@@ -110,6 +137,13 @@ export default function App() {
                 <output>{explode}</output>
               </div>
             </div>
+            {edgeTool ? (
+              <div className="edge-arm">
+                {EDGE_TOOLS.find((t) => t.id === edgeTool).name} — click an edge
+                {edgeTool === "none" || edgeTool === "mitre" ? "" : ` at R${fmt(design.edge.radius)}`}
+                <button type="button" className="linkish" onClick={() => setEdgeTool(null)}>done</button>
+              </div>
+            ) : null}
             {solidEngine === "kernel" ? (
               <div className="solid-state">{solidNote(kernelSolids)}</div>
             ) : null}

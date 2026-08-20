@@ -231,6 +231,9 @@ describe("the app", () => {
   it("§12 mitres one edge from the per-edge control, and says so in the cut list", () => {
     const { container } = render(<App />);
     fireEvent.click(screen.getByLabelText("Per edge"));
+    // §15 The list holds what has been done to the box, so an edge is added to
+    // it before it can be given anything — from here, or by clicking it in 3D.
+    fireEvent.change(screen.getByLabelText("Add an edge treatment"), { target: { value: "front|left" } });
     const select = screen.getByLabelText("front|left treatment");
     expect([...select.options].find((o) => o.value === "mitre").disabled).toBe(false);
     fireEvent.change(select, { target: { value: "mitre" } });
@@ -244,9 +247,33 @@ describe("the app", () => {
     render(<App />);
     fireEvent.click(screen.getByLabelText("Per edge"));
     const blocked = ["front|top", "front|bottom", "back|top", "back|bottom"]
-      .map((k) => screen.getByLabelText(`${k} treatment`))
+      .map((k) => {
+        fireEvent.change(screen.getByLabelText("Add an edge treatment"), { target: { value: k } });
+        return screen.getByLabelText(`${k} treatment`);
+      })
       .filter((s) => [...s.options].find((o) => o.value === "mitre").disabled);
     expect(blocked.length).toBeGreaterThan(0);
+  });
+
+  it("§15 arms an edge tool from the viewport, and lists only what has been done", () => {
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByLabelText("Per edge"));
+    // Twelve rows of "Square" was a list of everything that could happen, which
+    // is a list of nothing.
+    expect(container.querySelectorAll(".edge-row")).toHaveLength(0);
+    expect(container.querySelector(".edge-grid")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Fillet an edge" }));
+    expect(container.querySelector(".edge-arm").textContent).toContain("click an edge");
+    // Armed is a state of the pointer, not of the box: nothing is cut yet.
+    expect(container.querySelectorAll(".edge-row")).toHaveLength(0);
+
+    fireEvent.change(screen.getByLabelText("Add an edge treatment"), { target: { value: "front|left" } });
+    expect(container.querySelectorAll(".edge-row")).toHaveLength(1);
+    expect(screen.getByLabelText("front|left treatment").value).toBe("fillet");
+
+    fireEvent.click(screen.getByLabelText("Square front|left"));
+    expect(container.querySelectorAll(".edge-row")).toHaveLength(0);
   });
 
   it("§10 turns a port's tube off from the control", () => {
