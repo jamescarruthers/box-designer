@@ -6,15 +6,7 @@ import { render, screen, fireEvent, cleanup, within } from "@testing-library/rea
 
 vi.mock("three", async (importOriginal) => {
   const actual = await importOriginal();
-  class StubRenderer {
-    constructor() { this.domElement = document.createElement("canvas"); }
-    setPixelRatio() {}
-    setClearColor() {}
-    setSize(w, h) { this.domElement.width = w; this.domElement.height = h; }
-    render() { StubRenderer.renders++; }
-    dispose() {}
-  }
-  StubRenderer.renders = 0;
+  const { StubRenderer } = await import("./stub-renderer.js");
   return { ...actual, WebGLRenderer: StubRenderer };
 });
 

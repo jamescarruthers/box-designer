@@ -1489,3 +1489,78 @@ honest answer about the double is the wrong answer about the millimetre meant by
 it, so `snapTo` settles the quotient to nine places before rounding it — and
 trims the product back afterwards, since `Math.round(2364.4) * 0.1` is
 236.40000000000003, a longer number than the one it was shortening.
+
+---
+
+## 17. The lines in the 3D view
+
+Reported: *"the lines in the 3D view are slightly poor quality"*. Two separate
+faults, neither of them about the colour or the geometry of the lines.
+
+### A GL line is one device pixel, and that is that
+
+`LineBasicMaterial.linewidth` is ignored by every browser — the driver here
+reports an aliased line width range of exactly 1 to 1 — so every edge was one
+device pixel wide. On a 2× display that is half a CSS pixel: thin, dim, and
+stepped on any shallow angle, however much multisampling the context has.
+
+Edges are drawn as screen-space quads now (three's `Line2` family), 1.4 CSS
+pixels wide, with an antialiased boundary of their own rather than one borrowed
+from the driver. The width is scaled by the pixel ratio, because the shader
+measures in the units of the resolution it is given and that resolution has to
+be the drawing buffer — get that wrong and a 2× display draws everything half as
+thick, which is the bug being fixed.
+
+Every fat-line material is kept on the renderer state so a resize can tell it
+the new size. A material that thinks the canvas is the size it was two resizes
+ago draws the wrong width, and nothing else in the app would ever correct it.
+
+Measured on the wireframe styles, ink being how far each pixel sits above the
+dark ground, summed:
+
+| | lit pixels | ink | ink per lit pixel |
+|---|---|---|---|
+| GL lines, 1 device px | 4,234 | 1.07 M | 253 of a possible 692 |
+| quads, 1.4 CSS px | 10,569 | 4.61 M | 436 of a possible 692 |
+
+The second column is the width; the third is the aliasing. A line whose average
+lit pixel is at 37% of full brightness is a line the eye reads as broken.
+
+The faint pass was calibrated by measurement when lines were one pixel wide
+(§4), so widening them meant measuring it again rather than trusting the number.
+Hidden edges went from 63% of the visible pass's ink to 32% — the hierarchy the
+faint pass exists for got *better*, so `HIDDEN_OPACITY` stays at 0.07.
+
+### The other half was not the lines at all
+
+The near and far planes were 1 and 100000, around a box a third of a metre
+across seen from a metre away. The depth buffer's precision goes on the *ratio*
+between the planes, not the distance between them, so at 1:100000 there was
+almost none of it left where the box actually was — and a panel and the edge
+drawn along that panel landed on the same depth value. That is what made an edge
+flicker in and out along its length as the box turned, and no amount of line
+quality fixes it, because the line was not the thing that was wrong.
+
+`nearFar` fits the planes to what is in front of the camera: about 3:1 in
+practice. The box's radius grows with the explode slider and with wherever the
+view has been panned to, and both are counted, or a panned or exploded box
+clips.
+
+The faces also take a one-unit polygon offset, so an edge lying on a face wins
+the depth test along its whole length rather than stippling in and out of the
+shading it lies on.
+
+### What it costs
+
+19% more time per orbit frame under **software** rendering (SwiftShader, 2.2
+megapixels a frame), where fill rate is the whole cost and a quad covers about
+three times the pixels of a line. On a GPU the difference is not measurable
+here. `tools/spike/measure-lines.mjs` measures the ink,
+`tools/spike/lines-scenes.mjs` draws the awkward cases — fillets, the kernel's
+own B-Rep edges, a port tube, an exploded box — and times the orbit.
+
+### The stub that only took orders
+
+The renderer is stubbed in jsdom, and the stub had `setPixelRatio` but no
+`getPixelRatio`: it accepted orders and answered no questions, which is fine
+until the code asks one. It lives in `test/stub-renderer.js` now, answering both.

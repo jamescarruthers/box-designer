@@ -2,34 +2,54 @@
 
 import React, { useEffect, useRef } from "react";
 import * as THREE from "three";
+import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
+import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { panelPositions, explodeOffset, panelEdgeLoops } from "../three/panelGeometry.js";
 import { panelBevels } from "../model/bevel.js";
 import { edgePasses, showsFaces, needsDepth, EDGE_COLOUR } from "../three/edges.js";
 import { edgeProxies, pickableEdges, pickRadius, hintSize } from "../three/edgePick.js";
 import { toThree } from "../three/panelGeometry.js";
 import { panelColour, SELECT_EMISSIVE, ACCENT } from "../three/palette.js";
+import { lineWidthFor, nearFar, sceneRadius } from "../three/lines.js";
 
 /** §4 The two depth comparisons the edge passes use. */
 const DEPTH_FUNC = { "less-equal": THREE.LessEqualDepth, greater: THREE.GreaterDepth };
 
 /**
- * §4 Add a body's edges in every pass its style asks for. Shared by the panels
+ * §17 Add a body's edges in every pass its style asks for. Shared by the panels
  * and by a port's tube, which is a body of its own.
+ *
+ * Drawn as screen-space quads rather than GL lines, so they have a width and an
+ * antialiased edge. Every material made here is handed back to `state` so its
+ * resolution can be kept level with the drawing buffer: a fat line is sized in
+ * the shader, and a shader that thinks the canvas is the wrong size draws the
+ * wrong width.
  */
-function addEdges(root, geometryOrPositions, index, style, accent = false) {
-  const eg = geometryOrPositions instanceof THREE.BufferGeometry
-    ? geometryOrPositions
-    : new THREE.BufferGeometry().setAttribute(
-      "position", new THREE.BufferAttribute(geometryOrPositions, 3));
+function addEdges(state, root, geometryOrPositions, index, style, accent = false) {
+  const positions = geometryOrPositions instanceof THREE.BufferGeometry
+    ? geometryOrPositions.getAttribute("position").array
+    : geometryOrPositions;
+  if (!positions?.length) return;
+
+  const eg = new LineSegmentsGeometry();
+  eg.setPositions(positions instanceof Float32Array ? positions : new Float32Array(positions));
+
   for (const pass of edgePasses(style, { accent })) {
-    const lines = new THREE.LineSegments(eg, new THREE.LineBasicMaterial({
+    const material = new LineMaterial({
       color: new THREE.Color(pass.accent ? ACCENT : EDGE_COLOUR),
+      linewidth: lineWidthFor(state.renderer.getPixelRatio()),
+      worldUnits: false,
       depthTest: pass.depthTest,
       depthFunc: DEPTH_FUNC[pass.depthFunc] ?? THREE.LessEqualDepth,
       depthWrite: pass.depthWrite ?? true,
       transparent: true,
       opacity: pass.opacity,
-    }));
+    });
+    state.renderer.getDrawingBufferSize(material.resolution);
+    state.lineMaterials.push(material);
+
+    const lines = new LineSegments2(eg, material);
     // The faint pass last, so it lies over the shading rather than under.
     lines.renderOrder = pass.name === "hidden" ? 3 : 2;
     lines.userData.offsetOf = index;
@@ -84,7 +104,10 @@ export default function Viewport({ derived, style, colourByFace, explode, select
       // §15 The edge tool's own layer: invisible proxies to hit, and the key
       // under the pointer. Kept on `state` so the pointer handlers, which are
       // installed once, can see the current set without being rebuilt.
-      edgeProxies: [], edgeHover: null, onEdgePick: null, edgeTool: null };
+      edgeProxies: [], edgeHover: null, onEdgePick: null, edgeTool: null,
+      // §17 Every fat-line material in the scene. They are sized in the shader
+      // from a resolution they are told, so a resize has to tell them.
+      lineMaterials: [], radius: 1 };
     gl.current = state;
 
     const place = () => {
@@ -94,6 +117,16 @@ export default function Viewport({ derived, style, colourByFace, explode, select
         sph.dist * Math.sin(sph.pol) * Math.cos(sph.az));
       camera.position.copy(p.add(target));
       camera.lookAt(target);
+
+      // §17 The depth planes follow the camera. Left at 1 and 100000 the buffer
+      // spends its precision on empty space, and two surfaces a millimetre
+      // apart — a panel and the edge drawn along it — cannot be told apart.
+      const { near, far } = nearFar(sph.dist, state.radius + target.length());
+      if (near !== camera.near || far !== camera.far) {
+        camera.near = near;
+        camera.far = far;
+        camera.updateProjectionMatrix();
+      }
     };
     state.place = place;
 
@@ -105,6 +138,12 @@ export default function Viewport({ derived, style, colourByFace, explode, select
         renderer.setSize(w, h, false);
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
+      }
+      // Cheap, and the alternative is a line that keeps its old width until
+      // something else happens to rebuild the scene.
+      const buffer = renderer.getDrawingBufferSize(new THREE.Vector2());
+      for (const m of state.lineMaterials) {
+        if (!m.resolution.equals(buffer)) m.resolution.copy(buffer);
       }
       place();
       renderer.render(scene, camera);
@@ -270,6 +309,10 @@ export default function Viewport({ derived, style, colourByFace, explode, select
       c.material?.dispose?.();
     }
     state.picks = [];
+    state.lineMaterials = [];
+    // Exploding the box moves panels away from its centre, so the far plane
+    // has to know about it as well as the box's own size.
+    state.radius = sceneRadius(derived.sol.E, explode);
 
     const { sol, edges, owners, specFor } = derived;
     const E = sol.E;
@@ -295,6 +338,12 @@ export default function Viewport({ derived, style, colourByFace, explode, select
         // colouring is for. Lift the emissive instead.
         emissive: new THREE.Color(isSel ? SELECT_EMISSIVE : 0x000000),
         emissiveIntensity: isSel ? 1 : 0,
+        // §17 A hair further away than it really is, so the edge drawn along a
+        // face wins the depth test along its whole length instead of stippling
+        // in and out of the shading it lies on.
+        polygonOffset: true,
+        polygonOffsetFactor: 1,
+        polygonOffsetUnits: 1,
         transparent: style === "shaded-edges",
         opacity: style === "shaded-edges" ? 0.94 : 1,
         depthWrite: true,
@@ -323,7 +372,7 @@ export default function Viewport({ derived, style, colourByFace, explode, select
         root.add(tm);
         // And its edges, or the tube is invisible in both wireframe styles —
         // where its faces are drawn into the depth buffer and nowhere else.
-        if (tube.edges) addEdges(root, tube.edges.positions, index, style);
+        if (tube.edges) addEdges(state, root, tube.edges.positions, index, style);
       }
 
       const kernelEdges = solids?.[index]?.edges;
@@ -345,7 +394,7 @@ export default function Viewport({ derived, style, colourByFace, explode, select
       };
 
       if (edgePasses(style, { accent: isSel || isHov }).length) {
-        addEdges(root, edgeGeometry(), index, style, isSel || isHov);
+        addEdges(state, root, edgeGeometry(), index, style, isSel || isHov);
       }
     });
 
@@ -367,6 +416,7 @@ export default function Viewport({ derived, style, colourByFace, explode, select
     const state = gl.current;
     if (!state) return;
     const E = derived.sol.E;
+    state.radius = sceneRadius(E);
     state.sph.dist = 2.7 * Math.max(E.x, E.y, E.z);
     state.target.set(0, 0, 0);
     state.invalidate?.();
