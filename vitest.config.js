@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: "node",
-    environmentMatchGlobs: [["test/app.test.jsx", "jsdom"], ["test/isolate.test.js", "jsdom"], ["test/render.test.js", "jsdom"], ["test/kernel-worker.test.js", "jsdom"]],
+    environmentMatchGlobs: [["test/app.test.jsx", "jsdom"], ["test/isolate.test.js", "jsdom"], ["test/render.test.js", "jsdom"], ["test/kernel-worker.test.js", "jsdom"], ["test/kernel-ui.test.jsx", "jsdom"]],
     testTimeout: 60000,
   },
 });

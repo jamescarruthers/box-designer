@@ -39,6 +39,10 @@ export default function App() {
   // §15 The armed edge tool, or null for none. Not part of the design: it is
   // what the pointer is for at this moment, not something about the box.
   const [edgeTool, setEdgeTool] = useState(null);
+  // A stall terminates the worker, so trying again is a real thing to do rather
+  // than a hopeful one — and switching the engine off and on again to get it is
+  // a trick you have to know.
+  const [attempt, setAttempt] = useState(0);
 
   const derived = useMemo(() => {
     try { return { ok: true, ...derive(design) }; }
@@ -53,7 +57,8 @@ export default function App() {
   const onEdgePick = useCallback((key) => {
     setDesign((d) => setEdgeTreatment(d, key, edgeTool, d.edge.radius));
   }, [edgeTool]);
-  const kernelSolids = useKernelSolids(derived.ok ? derived : null, derived.ok && solidEngine === "kernel");
+  const kernelSolids = useKernelSolids(derived.ok ? derived : null,
+    derived.ok && solidEngine === "kernel", attempt);
 
   if (!derived.ok) {
     return <div className="app fatal"><p>The box cannot be solved: {String(derived.error?.message ?? derived.error)}</p></div>;
@@ -145,7 +150,13 @@ export default function App() {
               </div>
             ) : null}
             {solidEngine === "kernel" ? (
-              <div className="solid-state">{solidNote(kernelSolids)}</div>
+              <div className="solid-state">
+                {solidNote(kernelSolids)}
+                {kernelSolids.status === "failed" ? (
+                  <button type="button" className="linkish"
+                    onClick={() => setAttempt((n) => n + 1)}>Try again</button>
+                ) : null}
+              </div>
             ) : null}
             {selectedRow ? (
               <div className="selection">

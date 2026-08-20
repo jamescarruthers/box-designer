@@ -363,6 +363,10 @@ table.cuts .edgework { color: var(--ink-3); }
   background: rgb(20 24 29 / 0.9); border: 1px solid var(--line-2);
   padding: 4px 10px; border-radius: 3px; color: var(--ink-3); font-size: 10.5px; font-style: italic;
 }
+/* The note itself is not in the way of the box behind it, but the way back
+   from a failed kernel has to be clickable — the canvas takes every pointer
+   event the overlay declines. */
+.solid-state button { pointer-events: auto; margin-left: 8px; }
 
 .parts .fittings { color: var(--ink-3); }
 .fitting-note { display: block; font-style: normal; color: var(--ink-2); }

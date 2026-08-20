@@ -28,6 +28,11 @@ export const LOAD_TIMEOUT_MS = 90_000;
 
 /** What each step of a job is called where a person will read it. */
 export const PHASE_LABEL = {
+  // Not a step the worker takes: a job the client is holding back because the
+  // worker is busy with another one. Named all the same, because "nothing at
+  // all is happening" and "your turn is coming" look identical otherwise, and
+  // the second is what a second click on the engine toggle produces.
+  queued: "waiting for the kernel",
   fetching: "fetching the kernel",
   compiling: "compiling the kernel",
   starting: "starting the kernel",
