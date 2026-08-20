@@ -356,3 +356,60 @@ describe("§12 what the control may still offer", () => {
     expect(withMitres(d.mitreRing).messages).toEqual([]);
   });
 });
+
+
+/**
+ * §12 A mitre with cladding on the box.
+ *
+ * The corner a mitred panel grows to is the other panel's outer face. Those are
+ * the same thing on a bare carcass, so the envelope stood in for it — until
+ * cladding went on, which sits outside the shell and moves the envelope without
+ * moving the shell's own corner. The mitred panel then grew straight through
+ * the cladding. Found by a storage test that happened to save a clad, mitred
+ * box; §2.4 had been calling it a bug all along, correctly.
+ */
+describe("§12 mitres under cladding", () => {
+  const clad = (extra, keys) => derive({
+    ...DEFAULT_DESIGN,
+    ...extra,
+    edge: { ...DEFAULT_DESIGN.edge, perEdge: true,
+      by: Object.fromEntries(keys.map((k) => [k, { type: "mitre" }])) },
+  });
+  const SKINS = [
+    ["bare", {}],
+    ["cladding on the front", { cladding: { front: { material: "birch", thickness: 6 } } }],
+    ["cladding all round", { cladding: Object.fromEntries(
+      ["front", "back", "left", "right", "top", "bottom"].map((f) => [f, { material: "birch", thickness: 6 }])) }],
+    ["cladding and a doubler", {
+      cladding: { front: { material: "birch", thickness: 6 } },
+      doubler: { back: { material: "mdf", thickness: 12 } },
+    }],
+  ];
+
+  it.each(SKINS)("closes on volume with %s", (_label, extra) => {
+    for (const keys of [VERTICALS, TUBE, ["front|left"]]) {
+      const d = clad(extra, keys);
+      expect(d.sol.closureExact).toBe(true);
+      expect(d.messages.filter((m) => m.level === "error")).toEqual([]);
+    }
+  });
+
+  it("stops the grown panel at the carcass corner, not at the cladding's", () => {
+    const d = clad({ cladding: { front: { material: "birch", thickness: 6 } } }, ["front|left"]);
+    const shell = (face) => d.sol.panels.find((p) => p.face === face && p.layer === "shell");
+    // The cladding occupies y 0–6; the shell front starts where it ends.
+    expect(shell("front").box.y[0]).toBe(6);
+    expect(shell("left").box.y[0]).toBe(6);
+    expect(shell("left").box.y[0]).not.toBe(d.sol.env.y[0]);
+  });
+
+  it("never lets a mitred panel overlap the cladding in front of it", () => {
+    const d = clad({ cladding: { front: { material: "birch", thickness: 6 } } }, VERTICALS);
+    const cladding = d.sol.panels.find((p) => p.layer === "cladding");
+    for (const p of d.sol.panels.filter((q) => q.layer === "shell")) {
+      const overlaps = ["x", "y", "z"].every((ax) =>
+        Math.min(p.box[ax][1], cladding.box[ax][1]) - Math.max(p.box[ax][0], cladding.box[ax][0]) > 1e-9);
+      expect(overlaps, `${p.face} runs into the cladding`).toBe(false);
+    }
+  });
+});
