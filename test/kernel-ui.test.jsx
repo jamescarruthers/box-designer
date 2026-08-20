@@ -14,14 +14,7 @@ import { render, screen, fireEvent, cleanup, act, waitFor } from "@testing-libra
 
 vi.mock("three", async (importOriginal) => {
   const actual = await importOriginal();
-  class StubRenderer {
-    constructor() { this.domElement = document.createElement("canvas"); }
-    setPixelRatio() {}
-    setClearColor() {}
-    setSize(w, h) { this.domElement.width = w; this.domElement.height = h; }
-    render() {}
-    dispose() {}
-  }
+  const { StubRenderer } = await import("./stub-renderer.js");
   return { ...actual, WebGLRenderer: StubRenderer };
 });
 
