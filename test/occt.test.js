@@ -21,7 +21,7 @@ import { kernelViews } from "../src/occt/drawing.js";
 import { OPS } from "../src/occt/worker.js";
 import { buildIsometric } from "../src/drawing/iso.js";
 import { mergeViewLines, describe as describeLines } from "../src/occt/merge.js";
-import { triangulate, meshPanels } from "../src/occt/mesh.js";
+import { triangulate, meshPanels, meshVolume } from "../src/occt/mesh.js";
 import { edgeSegments } from "../src/occt/edges.js";
 import { viewLines, segEnds } from "../src/drawing/hlr.js";
 import { panelPositions, inwardCount } from "../src/three/panelGeometry.js";
@@ -296,13 +296,51 @@ describe("§4 triangles for the 3D view", () => {
     expect(kernel).toBeGreaterThan(ring);
   }, 120000);
 
-  it("§4.4 leaves every triangle facing outward", () => {
+  /**
+   * §4.4 The mesh must be closed and consistently wound, and the way to know is
+   * its own volume — not "does every normal point away from the centroid".
+   *
+   * That was the test, and it was the bug. It holds only on a convex solid, and
+   * a panel stopped being one the moment §10 bored a hole through it: the wall
+   * of a bore faces inward, at the axis of the hole, so the check flipped every
+   * triangle on it. The hole had no inside. You looked through the panel and saw
+   * nothing, because the only surface there pointed away and was culled.
+   */
+  it("§4.4 winds every face so the mesh encloses the volume the kernel says", () => {
     const cont = fullLengthEdges(sol.env, sol.panels, owners());
-    const edges = applicableEdges(uniformEdges("fillet", 12), cont);
-    for (const m of meshPanels(oc, sol.panels, bevelsFor(edges), sol.E)) {
-      expect(inwardCount(m.positions, m.centroid)).toBe(0);
-      expect(m.flipped).toBeGreaterThan(0);   // OCCT hands back both windings
+    const filleted = applicableEdges(uniformEdges("fillet", 12), cont);
+    const front = fittingOwners(sol.panels, ["front"]).front;
+    const i = sol.panels.indexOf(front);
+    const driver = newFitting("driver", "front", { a: 118, b: 240 });
+
+    const cases = [
+      ["plain", noEdges(), []],
+      ["filleted", filleted, []],
+      ["bored", noEdges(), [driver]],
+      ["bored and filleted", filleted, [driver]],
+    ];
+    for (const [what, edges, fittings] of cases) {
+      const shape = panelSolid(oc, front, panelBevels(i, front, edges, owners()), fittings);
+      const mesh = meshVolume(triangulate(oc, shape, sol.E).positions);
+      // Positive: inside out and it would come back negative.
+      expect(mesh, what).toBeGreaterThan(0);
+      // And within the chord height of the real thing.
+      expect(Math.abs(mesh - volumeOf(oc, shape)) / mesh, what).toBeLessThan(0.005);
     }
+  }, 180000);
+
+  it("§4.4 keeps a convex panel entirely outward-facing, which it still should be", () => {
+    const [m] = meshPanels(oc, sol.panels.slice(0, 1), () => ({}), sol.E);
+    expect(inwardCount(m.positions, m.centroid)).toBe(0);
+  }, 120000);
+
+  it("§4.4 turns a bore's wall inward, which is what gives the hole an inside", () => {
+    const front = fittingOwners(sol.panels, ["front"]).front;
+    const driver = newFitting("driver", "front", { a: 118, b: 240 });
+    const shape = panelSolid(oc, front, {}, [driver]);
+    const m = triangulate(oc, shape, sol.E);
+    expect(inwardCount(m.positions, m.centroid)).toBeGreaterThan(0);
+    expect(m.reversed).toBeGreaterThan(0);   // OCCT hands back both orientations
   }, 120000);
 
   it("puts the mesh in three coordinates, centred on the envelope", () => {

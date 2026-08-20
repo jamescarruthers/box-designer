@@ -869,6 +869,35 @@ Reproduced with `serve-plain.mjs dist 5095 90000` and one input changed
 mid-download: before, dead at ninety seconds and never recovering; after, the
 download runs to completion at 118 s.
 
+### A hole needs an inside
+
+The cutouts had no wall. You looked into a driver's bore and saw straight
+through the panel, because the only surface there was pointing away from you and
+was culled.
+
+§4.4 said "orient every triangle outward against the centroid", and the mesh
+adapter did that literally: flip any triangle whose normal points back toward
+the middle of the solid. That is exact **on a convex solid**, which a panel was
+— until a hole went through it. The wall of a bore faces inward, at the axis of
+the hole, so the test flipped every triangle on it and turned the one surface
+that gives the hole an inside inside out.
+
+Winding now comes from the face's own orientation, which is the only thing that
+knows: `Orientation_1()` against `TopAbs_REVERSED`, and swap two indices. It is
+right for any topology rather than for convex ones. (`toThree` is a rotation of
+determinant +1, so it carries the winding across unchanged.)
+
+The test that was meant to catch this was enforcing it. "Every normal points
+away from the centroid" is the convexity assumption written down as an
+assertion, so a bore that had been turned inside out passed. The invariant that
+actually holds is the mesh's own **signed volume**: closed and consistently
+wound means it equals the volume the kernel reports, and a wall the wrong way
+round shows up as a shortfall. Checked plain, filleted, bored, and bored and
+filleted, all within the chord height.
+
+The analytic ring stack keeps the centroid test, and is right to: it has no
+holes, so its panels really are convex.
+
 ### A hole goes all the way
 
 A fitting was cut into the outermost panel of its face and no further. On a
