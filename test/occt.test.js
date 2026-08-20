@@ -8,12 +8,13 @@
  * precisely so either will do.
  */
 import { describe, it, expect, beforeAll } from "vitest";
-import { solve } from "../src/model/solver.js";
+import { solve, boxVolume } from "../src/model/solver.js";
 import {
   noEdges, uniformEdges, edgeOwners, fullLengthEdges, applicableEdges, panelBevels,
 } from "../src/model/bevel.js";
 import { PROMINENCE_PRESETS } from "../src/model/constants.js";
-import { assembly, volumeOf, panelSolid, edgesOf, cutFittings, portTube } from "../src/occt/solids.js";
+import { assembly, volumeOf, panelSolid, edgesOf, edgeMidpoint, cutFittings, portTube } from "../src/occt/solids.js";
+import { applyMitres, mitreBevels, mitreLoss } from "../src/model/mitre.js";
 import { newFitting, fittingOwners, portOuterRadius } from "../src/model/fittings.js";
 import { viewGeometry, hiddenLineRemoval, isoGeometry, VIEW_AXES, ISO_VIEW } from "../src/occt/hlr.js";
 import { buildIsometric } from "../src/drawing/iso.js";
@@ -213,7 +214,7 @@ const facesOf = (shape) => {
   return n;
 };
 
-describe("§12 fittings, cut for real", () => {
+describe("§10 fittings, cut for real", () => {
   const sol = carcass();
   const panel = () => fittingOwners(sol.panels, ["front"]).front;
   const vol = (shape) => volumeOf(oc, shape);
@@ -366,4 +367,51 @@ describe("§6.2 the projector is calibrated, not guessed", () => {
     expect(VIEW_AXES.end.h(0, E)).toBe(200);            // back on the left edge
     expect(VIEW_AXES.plan.v(200, E)).toBe(0);           // back along the top edge
   });
+});
+
+describe("§12 mitres, cut for real", () => {
+  const VERTICALS = ["front|left", "back|left", "front|right", "back|right"];
+  const mitredCarcass = (keys = VERTICALS) => {
+    const sol = carcass();
+    const { panels } = applyMitres(sol.panels, sol.env, Object.fromEntries(keys.map((k) => [k, true])));
+    return { ...sol, panels };
+  };
+
+  it("removes exactly the triangular prism the arithmetic says it does", () => {
+    const sol = mitredCarcass();
+    for (const p of sol.panels) {
+      const want = boxVolume(p.box) - mitreLoss(p);
+      expect(volumeOf(oc, panelSolid(oc, p, mitreBevels(p)))).toBeCloseTo(want, 6);
+    }
+  }, 120000);
+
+  it("closes on volume against the kernel, mitres and all", () => {
+    const sol = mitredCarcass();
+    const shape = assembly(oc, sol.panels, (i, p) => mitreBevels(p));
+    const solid = sol.panels.reduce((a, p) => a + boxVolume(p.box) - mitreLoss(p), 0);
+    expect(volumeOf(oc, shape)).toBeCloseTo(solid, 3);
+    expect(solid + boxVolume(sol.cavity)).toBeCloseTo(sol.envVolume, 6);
+  }, 120000);
+
+  it("cuts a mitre and a decorative bevel on the same panel without disturbing either", () => {
+    const sol = mitredCarcass(["front|left"]);
+    const front = sol.panels.find((p) => p.face === "front");
+    const bevels = { ...mitreBevels(front), top: { type: "chamfer", radius: 6 } };
+    const both = volumeOf(oc, panelSolid(oc, front, bevels));
+    const mitreOnly = volumeOf(oc, panelSolid(oc, front, mitreBevels(front)));
+    // A chamfer takes R²/2 per millimetre of run — but the mitred end is no
+    // longer square, so at depth d into the panel the material starts R... at d,
+    // and the wedge is short by ∫(R−d)·d dd = R³/6.
+    const R = 6, run = front.box.x[1] - front.box.x[0];
+    expect(mitreOnly - both).toBeCloseTo((R * R / 2) * run - (R ** 3) / 6, 3);
+  }, 120000);
+
+  it("keeps the outer surface: the mitred panel still reaches the envelope corner", () => {
+    const sol = mitredCarcass(["front|left"]);
+    const left = sol.panels.find((p) => p.face === "left");
+    const shape = panelSolid(oc, left, mitreBevels(left));
+    const pts = edgesOf(oc, shape).map((e) => edgeMidpoint(oc, e).point);
+    // Its outer face is x = 0 and it now runs to y = 0, the front of the envelope.
+    expect(pts.some((p) => Math.abs(p.x) < 1e-6 && Math.abs(p.y) < 1e-6)).toBe(true);
+  }, 120000);
 });

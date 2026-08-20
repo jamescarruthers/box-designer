@@ -1,8 +1,9 @@
 // The design state, and everything derived from it.
 
 import { FACES, MATERIALS, PROMINENCE_PRESETS, DEFAULT_KERF, rankFromOrder, materialById } from "../model/constants.js";
-import { solve, wallOf, fillFaces, skinOf, DEFAULT_RATIO } from "../model/solver.js";
+import { solve, wallOf, fillFaces, skinOf, boxVolume, DEFAULT_RATIO } from "../model/solver.js";
 import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, partialEdgeIssues } from "../model/bevel.js";
+import { mitrableEdges, applyMitres, mitreBevels, mitreIssues, mitreLoss } from "../model/mitre.js";
 import { validate } from "../model/validate.js";
 import { fittingOwners, fittingIssues, fittingNote } from "../model/fittings.js";
 import { buildCutList, cutListTotals } from "../cutlist/cutlist.js";
@@ -98,13 +99,28 @@ export function editPanel(design, layer, face, patch) {
 export const layerThickness = (entries) =>
   fillFaces(Object.fromEntries(Object.entries(entries ?? {}).map(([f, e]) => [f, e.thickness || 0])));
 
+/**
+ * The decorative treatments only. A mitre is a joint rather than a decoration,
+ * and the two are mutually exclusive on one edge: the mitre already cuts that
+ * corner at 45°, and a fillet on top of it would have to be split across two
+ * panels that each own half the corner.
+ */
 export function edgeMap(design) {
   if (!design.edge.perEdge) {
     return design.edge.type === "none" ? noEdges() : uniformEdges(design.edge.type, design.edge.radius);
   }
   const base = noEdges();
-  for (const [k, v] of Object.entries(design.edge.by)) base[k] = v;
+  for (const [k, v] of Object.entries(design.edge.by)) {
+    base[k] = v.type === "mitre" ? { type: "none", radius: 0 } : v;
+  }
   return base;
+}
+
+/** Which edges the design asks to mitre. */
+export function mitreMap(design) {
+  if (!design.edge.perEdge) return {};
+  return Object.fromEntries(
+    Object.entries(design.edge.by).filter(([, v]) => v.type === "mitre").map(([k]) => [k, true]));
 }
 
 export function thicknessMap(design) {
@@ -136,6 +152,23 @@ export function derive(design) {
   const wall = wallOf(cladding, thickness, doubler);
 
   const sol = solve({ start: design.start, thickness, cladding, doubler, rank });
+
+  // §12 Mitres redistribute material between two panels: the one that butted
+  // grows out to the corner and both are cut back 45°. Applied before anything
+  // measures a panel, so the cut list and the views see the mitred sizes.
+  const requestedMitres = mitreMap(design);
+  const mitrable = mitrableEdges(sol.panels, sol.env);
+  if (Object.keys(requestedMitres).length) {
+    const { panels } = applyMitres(sol.panels, sol.env, requestedMitres);
+    sol.panels = panels;
+    // Recomputed, not adjusted. A mitre both grows a box and cuts material off
+    // it, so the old residual is no longer a term in the new sum. The cavity is
+    // untouched: a mitre moves material between two panels and nowhere else.
+    sol.mitreLoss = panels.reduce((a, p) => a + mitreLoss(p), 0);
+    const solid = panels.reduce((a, p) => a + boxVolume(p.box), 0) - sol.mitreLoss;
+    sol.closure = sol.envVolume - (solid + boxVolume(sol.cavity));
+    sol.closureExact = Math.abs(sol.closure) <= 1e-9 * sol.envVolume;
+  }
   sol.skin = skinOf(cladding, thickness);
   sol.wall = wall;
 
@@ -171,6 +204,7 @@ export function derive(design) {
   const messages = [
     ...validate(sol, edges),
     ...partialEdgeIssues(requestedEdges, fullLength),
+    ...mitreIssues(mitrable, requestedMitres),
     ...fittingIssues(fittings, sol.panels, fittingPanels, sol.cavity),
   ];
   const sectionAt = design.sectionAt ?? sol.E.x / 2;
@@ -185,7 +219,7 @@ export function derive(design) {
     fittings, fittingPanels,
   });
 
-  return { sol, edges, requestedEdges, fullLength, owners, material, rows, sheets, totals, messages,
+  return { sol, edges, requestedEdges, fullLength, mitrable, requestedMitres, owners, material, rows, sheets, totals, messages,
     sheet, sectionAt, specFor, fittings, fittingPanels, fittingsOn };
 }
 

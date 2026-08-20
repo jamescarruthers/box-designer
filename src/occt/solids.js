@@ -64,8 +64,13 @@ export function panelBox(oc, panel) {
  */
 export function panelSolid(oc, panel, bevels = {}, fittings = []) {
   const shape = panelBox(oc, panel);
-  const wanted = Object.entries(bevels).filter(([, t]) => t && t.type !== "none" && t.radius > 0);
-  if (!wanted.length) return fittings.length ? cutFittings(oc, shape, panel, fittings) : shape;
+  const all = Object.entries(bevels).filter(([, t]) => t && t.type !== "none" && t.radius > 0);
+  const mitres = all.filter(([, t]) => t.type === "mitre");
+  const wanted = all.filter(([, t]) => t.type !== "mitre");
+  if (!wanted.length) {
+    const cut = cutMitres(oc, shape, panel, mitres);
+    return fittings.length ? cutFittings(oc, cut, panel, fittings) : cut;
+  }
 
   const own = AXIS[panel.face][0];
   const byKind = { fillet: [], chamfer: [] };
@@ -95,17 +100,72 @@ export function panelSolid(oc, panel, bevels = {}, fittings = []) {
   }
   if (byKind.chamfer.length) {
     const mk = new oc.BRepFilletAPI_MakeChamfer(result);
-    for (const { edge, radius } of byKind.chamfer) mk.Add_2(radius, radius, edge, firstFaceOf(oc, result, edge));
+    // Add_2 is the symmetric one: equal legs, no face argument. The four-argument
+    // overload is Add_3, and calling it under the wrong name is a binding error
+    // at the first chamfer rather than anything the geometry would explain.
+    for (const { edge, radius } of byKind.chamfer) mk.Add_2(radius, edge);
     result = mk.Shape();
   }
+  result = cutMitres(oc, result, panel, mitres);
   return fittings.length ? cutFittings(oc, result, panel, fittings) : result;
 }
 
-function firstFaceOf(oc, shape, edge) {
-  const faces = new oc.TopTools_IndexedDataMapOfShapeListOfShape_1();
-  oc.TopExp.MapShapesAndAncestors(shape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_FACE, faces);
-  const i = faces.FindIndex(edge);
-  return oc.TopoDS.Face_1(faces.FindFromIndex(i).First_1());
+const vec = (axis, s) => ({ x: axis === "x" ? s : 0, y: axis === "y" ? s : 0, z: axis === "z" ? s : 0 });
+const cross3 = (a, b) => ({
+  x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x,
+});
+
+/**
+ * §12 The tool that cuts one mitre: a box turned 45° about the outer corner.
+ *
+ * Not a chamfer. A mitre's leg is the panel's whole thickness, so chamfering
+ * the inner edge would have to consume the entire side face — the face
+ * disappears, and BRepFilletAPI is entitled to refuse. A boolean against a
+ * rotated box asks nothing awkward.
+ *
+ * Measure u inward from the outer face and v inward from the mitred side, both
+ * zero on the corner line. The material to remove is u > v. Start with the
+ * quadrant u ≥ 0, v ≤ 0 — a box hanging off the side of the panel, in free air
+ * — and turn it 45° about the corner line, from u toward v. It sweeps to
+ * −45°…+45°, whose half inside the panel is exactly u > v. The plane v = 0 ends
+ * up in the tool's interior rather than on its boundary, so the cut never has
+ * to decide about a face lying in the panel's own side.
+ */
+export function mitreTool(oc, panel, side, leg) {
+  const [oa, os] = AXIS[panel.face];
+  const [sa, ss] = AXIS[side];
+  const run = AXES.find((b) => b !== oa && b !== sa);
+  const outer = os < 0 ? panel.box[oa][0] : panel.box[oa][1];
+  const face = ss < 0 ? panel.box[sa][0] : panel.box[sa][1];
+  const du = -os, dv = -ss;                      // inward, from each of the two faces
+  const K = 4 * leg;                             // comfortably past the corner square
+
+  const lo = {}, hi = {};
+  lo[oa] = Math.min(outer, outer + du * K); hi[oa] = Math.max(outer, outer + du * K);
+  lo[sa] = Math.min(face, face - dv * K);   hi[sa] = Math.max(face, face - dv * K);
+  lo[run] = panel.box[run][0] - 1;          hi[run] = panel.box[run][1] + 1;
+
+  const box = new oc.BRepPrimAPI_MakeBox_4(
+    new oc.gp_Pnt_3(lo.x, lo.y, lo.z), new oc.gp_Pnt_3(hi.x, hi.y, hi.z)).Shape();
+
+  const axis = cross3(vec(oa, du), vec(sa, dv));
+  const corner = { [oa]: outer, [sa]: face, [run]: panel.box[run][0] };
+  const trsf = new oc.gp_Trsf_1();
+  trsf.SetRotation_1(
+    new oc.gp_Ax1_2(new oc.gp_Pnt_3(corner.x, corner.y, corner.z),
+      new oc.gp_Dir_4(axis.x, axis.y, axis.z)),
+    Math.PI / 4);
+  return new oc.BRepBuilderAPI_Transform_2(box, trsf, true).Shape();
+}
+
+/** §12 Every mitre on one panel, cut in turn. */
+export function cutMitres(oc, shape, panel, mitres) {
+  let result = shape;
+  for (const [side, t] of mitres) {
+    result = new oc.BRepAlgoAPI_Cut_3(
+      result, mitreTool(oc, panel, side, t.radius), new oc.Message_ProgressRange_1()).Shape();
+  }
+  return result;
 }
 
 /** A cylinder on a face's normal, started clear of the panel so the cut is clean. */

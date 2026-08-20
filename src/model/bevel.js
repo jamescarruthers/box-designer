@@ -1,12 +1,20 @@
 // §3 Edge treatments. Cut from the outer face, inward. Blank sizes unchanged.
 
 import { AXIS, PAIR, AXES, EDGES, edgeKey, edgeAxis } from "./constants.js";
+import { mitreBevels } from "./mitre.js";
 
 export const TREATMENTS = ["none", "chamfer", "fillet"];
 
-/** inset(0) = R, inset(R) = 0, measured inward from the outer face. */
+/**
+ * inset(0) = R, inset(R) = 0, measured inward from the outer face.
+ *
+ * §12 A mitre runs the other way: the outer face keeps the corner and the cut
+ * opens out toward the inner one, reaching its leg at full depth. Same family,
+ * same machinery, opposite sign.
+ */
 export function insetAt(type, R, d) {
   if (!(R > 0) || type === "none") return 0;
+  if (type === "mitre") return Math.min(d, R);
   if (d >= R) return 0;
   if (type === "chamfer") return R - d;
   return R - Math.sqrt(Math.max(0, 2 * R * d - d * d));   // fillet
@@ -15,7 +23,7 @@ export function insetAt(type, R, d) {
 /** Depths sampled from the outer face inward. One step for a chamfer, eight for a fillet. */
 export function bevelDepths(type, R) {
   if (!(R > 0) || type === "none") return [0];
-  const n = type === "chamfer" ? 1 : 8;
+  const n = type === "fillet" ? 8 : 1;   // a mitre, like a chamfer, is one plane
   return Array.from({ length: n + 1 }, (_, i) => (R * i) / n);
 }
 
@@ -108,7 +116,9 @@ export function partialEdgeIssues(edges, full) {
  */
 export function panelBevels(panelIndex, panel, edges, owners) {
   const a = AXIS[panel.face][0];
-  const out = {};
+  // §12 Mitres belong to the panel rather than to the envelope edge — both
+  // panels of a mitred joint are cut, not just whichever owns the outer corner.
+  const out = mitreBevels(panel);
   for (const b of AXES) {
     if (b === a) continue;
     for (const g of PAIR[b]) {
@@ -146,7 +156,7 @@ export function bevelIssues(edges, wall, skin) {
 export function panelEdgeNote(bevels) {
   const groups = new Map();
   for (const [g, t] of Object.entries(bevels)) {
-    const k = t.type === "fillet" ? `R${t.radius}` : `CH${t.radius}`;
+    const k = t.type === "fillet" ? `R${t.radius}` : t.type === "mitre" ? "45°" : `CH${t.radius}`;
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(g);
   }
