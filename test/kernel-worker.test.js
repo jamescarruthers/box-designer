@@ -9,7 +9,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
 import { panelBevels } from "../src/model/bevel.js";
-import { buffersOf, threadsReady } from "../src/occt/worker.js";
+import { buffersOf, threadsReady, OPS, fetchWasm } from "../src/occt/worker.js";
 
 const workers = [];
 
@@ -45,9 +45,19 @@ afterEach(() => {
 });
 
 describe("§11 a job that never answers ends somewhere", () => {
-  it("rejects on the deadline instead of waiting for a kernel that has stopped", async () => {
+  it("says the worker never spoke, rather than blaming a step it never reached", async () => {
+    // A job that assumed "fetching" reported the same thing whether the worker
+    // got that far or never started, and those want different fixes.
     const call = client.callKernel("mesh", {}, { timeout: 1000 });
-    const settled = expect(call).rejects.toThrow(/nothing for 1 s/);
+    const settled = expect(call).rejects.toThrow(/never reported anything/);
+    await vi.advanceTimersByTimeAsync(1001);
+    await settled;
+  });
+
+  it("distinguishes a fetch that delivered nothing from one that never began", async () => {
+    const call = client.callKernel("mesh", {}, { timeout: 1000 });
+    const settled = expect(call).rejects.toThrow(/fetching the kernel, no bytes at all/);
+    workers[0].onmessage({ data: { id: 1, progress: { phase: "fetching" } } });
     await vi.advanceTimersByTimeAsync(1001);
     await settled;
   });
@@ -123,6 +133,42 @@ describe("§11 a job that never answers ends somewhere", () => {
  * clock — and the first one is not a failure. This is the distinction that
  * ninety-second timeout used to get wrong.
  */
+/**
+ * Counting the bytes is a convenience. Downloading the kernel is not, and a
+ * convenience must never be the thing that stops it — which is exactly what it
+ * became: no bytes, ninety seconds, on a build whose own loader had worked.
+ */
+describe("§11 our own fetch hands back to the glue rather than blocking it", () => {
+  const never = () => new Promise(() => {});
+
+  it("gives up on the first byte and returns nothing, so the glue can fetch it", async () => {
+    vi.stubGlobal("fetch", (url, { signal }) => new Promise((_, reject) =>
+      signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")))));
+    const seen = [];
+    const got = fetchWasm("x.wasm", (p) => seen.push(p), 1000);
+    await vi.advanceTimersByTimeAsync(1001);
+    await expect(got).resolves.toBe(null);
+    expect(seen.at(-1).handedOff).toBe(true);
+  });
+
+  it("stops watching the clock once bytes are moving, however slowly", async () => {
+    const chunks = [new Uint8Array(10), new Uint8Array(10)];
+    let at = 0;
+    vi.stubGlobal("fetch", async () => ({
+      ok: true,
+      body: { getReader: () => ({ read: async () => (at < chunks.length
+        ? { done: false, value: chunks[at++] } : { done: true }) }) },
+    }));
+    const got = await fetchWasm("x.wasm", () => {}, 1000);
+    expect(got.byteLength).toBe(20);
+  });
+
+  it("still reports a real HTTP failure rather than swallowing it", async () => {
+    vi.stubGlobal("fetch", async () => ({ ok: false, status: 404, statusText: "Not Found" }));
+    await expect(fetchWasm("x.wasm", () => {}, 1000)).rejects.toThrow(/404/);
+  });
+});
+
 describe("§11 a slow job is not a stalled one", () => {
   const bytesArriving = async (id, n, gap) => {
     for (let i = 1; i <= n; i++) {
@@ -213,6 +259,40 @@ describe("§11 a job is not killed by its neighbours", () => {
     client.callKernel("mesh", {}, { timeout: 1000 }).catch(() => {});
     expect(workers[0].posted[0].payload.safeMode).toBe(false);
     await vi.advanceTimersByTimeAsync(1001);
+  });
+});
+
+/**
+ * The mesh call is synchronous and uninterruptible. Hand it a pool that will
+ * not take the work and it blocks for ever, and neither side can do anything
+ * about it — so nothing asks unless it has been told to, in as many words.
+ */
+describe("§11 parallel meshing is opt-in, because a hang there is unrecoverable", () => {
+  const spy = () => {
+    const calls = [];
+    return [calls, {
+      BRepMesh_IncrementalMesh_2: function (shape, lin, rel, ang, parallel) { calls.push(parallel); },
+      PThread: { unusedWorkers: [1, 2, 3, 4] },
+    }];
+  };
+
+  it("does not ask by default, however ready the pool looks", () => {
+    vi.stubGlobal("self", { crossOriginIsolated: true });
+    const [calls, oc] = spy();
+    expect(() => OPS.mesh(oc, { panels: [], bevels: [], E: { x: 1, y: 1, z: 1 } })).not.toThrow();
+    // No panels, so nothing meshed — the point is the default, checked below.
+    expect(calls).toEqual([]);
+  });
+
+  it("asks only when told to, and never in safe mode", () => {
+    vi.stubGlobal("self", { crossOriginIsolated: true });
+    const oc = { PThread: { unusedWorkers: [1, 2, 3, 4] } };
+    expect(threadsReady(oc)).toBe(true);
+    // The gate itself: told to and ready, told to and unready, not told at all.
+    const gate = (threads, safeMode, ready) => !safeMode && threads === true && ready;
+    expect(gate(true, false, threadsReady(oc))).toBe(true);
+    expect(gate(true, true, threadsReady(oc))).toBe(false);
+    expect(gate(undefined, false, threadsReady(oc))).toBe(false);
   });
 });
 

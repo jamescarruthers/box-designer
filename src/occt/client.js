@@ -104,7 +104,10 @@ export function callKernel(op, payload, { timeout = LOAD_TIMEOUT_MS, transfer = 
     const id = ++seq;
     waiting.set(id, {
       resolve, reject, onProgress, timeout,
-      progress: { phase: "fetching" },
+      // Nothing assumed. A job that starts life saying "fetching" reports the
+      // same thing whether the worker got that far or never spoke at all, and
+      // those are different faults with different fixes.
+      progress: {},
       timer: setTimeout(() => expire(id), timeout),
     });
     // A superseded job must be dropped, not merely ignored. Left in the queue

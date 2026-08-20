@@ -31,39 +31,57 @@ let kernel = null;
  */
 export const PHASES = ["fetching", "compiling", "starting", "working"];
 
+/** How long to wait for the first byte before giving up on our own fetch. */
+export const FIRST_BYTE_MS = 20_000;
+
 /**
  * Fetch the wasm ourselves rather than letting the glue do it, so the bytes can
- * be counted on the way past. Handed to the factory as `wasmBinary`, so this is
- * the only time it is downloaded.
+ * be counted on the way past. Handed to the factory as `wasmBinary`.
  *
  * Only bytes received, never a percentage: the body arrives decompressed while
  * Content-Length is the gzipped figure, and a progress bar that reads 260% is
  * worse than no progress bar.
+ *
+ * Returns null rather than throwing if nothing at all arrives in time, and then
+ * the glue fetches the wasm the way it always did. Counting the bytes is a
+ * convenience; downloading the kernel is not, and a convenience must not be the
+ * thing that stops it. Reported from the field: no bytes, ninety seconds, on a
+ * build where the glue's own loader had been working.
  */
-async function fetchWasm(url, report) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`${response.status} ${response.statusText} fetching ${url}`);
-  if (!response.body) return response.arrayBuffer();
+export async function fetchWasm(url, report, firstByte = FIRST_BYTE_MS) {
+  const abort = new AbortController();
+  const giveUp = setTimeout(() => abort.abort(), firstByte);
+  try {
+    const response = await fetch(url, { signal: abort.signal });
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText} fetching ${url}`);
+    if (!response.body) { clearTimeout(giveUp); return response.arrayBuffer(); }
 
-  const reader = response.body.getReader();
-  const chunks = [];
-  let loaded = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    loaded += value.length;
-    report({ phase: "fetching", loaded });
+    const reader = response.body.getReader();
+    const chunks = [];
+    let loaded = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      clearTimeout(giveUp);                  // it is moving; let it take as long as it takes
+      chunks.push(value);
+      loaded += value.length;
+      report({ phase: "fetching", loaded });
+    }
+    const out = new Uint8Array(loaded);
+    let at = 0;
+    for (const c of chunks) { out.set(c, at); at += c.length; }
+    return out.buffer;
+  } catch (e) {
+    if (abort.signal.aborted) {
+      report({ phase: "fetching", handedOff: true });
+      return null;                           // let the glue do it
+    }
+    throw e;
+  } finally {
+    clearTimeout(giveUp);
   }
-  const out = new Uint8Array(loaded);
-  let at = 0;
-  for (const c of chunks) { out.set(c, at); at += c.length; }
-  return out.buffer;
 }
 
-/** Load once, share the promise. `dir` is resolved by the client against the
- *  page's own base: a worker has no `document`, and the pthread worker inside
- *  the kernel resolves `./occt-box.js` against its own URL. */
 const loadWatchers = new Set();
 const announce = (progress) => { for (const w of loadWatchers) w(progress); };
 
@@ -82,7 +100,8 @@ function load(dir, report) {
       ]);
       announce({ phase: "starting", isolated: self.crossOriginIsolated === true });
       return factory({
-        wasmBinary,
+        // Absent when our own fetch produced nothing: the glue then fetches it.
+        ...(wasmBinary ? { wasmBinary } : {}),
         // The wasm arrives as `wasmBinary`, so the glue should never fetch it —
         // but if some path still does, it must still resolve against the page.
         locateFile: (path) =>
@@ -118,12 +137,13 @@ export function buffersOf(value, out = []) {
 }
 
 export const OPS = {
-  mesh(oc, { panels, bevels, E, fittings, safeMode }) {
+  mesh(oc, { panels, bevels, E, fittings, safeMode, threads }) {
     return meshPanels(oc, panels, (i) => bevels[i] ?? {}, E, {
       fittingsFor: (i) => fittings?.[i] ?? [],
       // Threads are worth 18-22% of this step and nothing at all elsewhere, so
-      // they are never worth a hang. `safeMode` is set after one has happened.
-      parallel: !safeMode && threadsReady(oc),
+      // they are never worth a hang — and a hang here cannot be recovered from,
+      // only waited out. Opt in explicitly; nothing in the app does.
+      parallel: !safeMode && threads === true && threadsReady(oc),
     });
   },
 
@@ -146,7 +166,12 @@ if (typeof self !== "undefined" && typeof self.postMessage === "function" && !("
     const watch = (p) => { phase = p.phase; report(p); };
     try {
       const oc = await load(dir, watch);
-      watch({ phase: "working", isolated: self.crossOriginIsolated === true, threaded: threadsReady(oc) });
+      watch({
+        phase: "working",
+        isolated: self.crossOriginIsolated === true,
+        // What this job will actually use, not what the machine could offer.
+        threaded: payload?.threads === true && threadsReady(oc),
+      });
       const result = OPS[op](oc, payload);
       self.postMessage({ id, ok: true, result }, buffersOf(result));
     } catch (error) {

@@ -43,6 +43,7 @@ const mb = (bytes) => `${(bytes / 1e6).toFixed(1)} MB`;
  */
 export function kernelProgress(progress = {}) {
   const step = PHASE_LABEL[progress.phase] ?? "starting the kernel";
+  if (progress.handedOff) return "fetching the kernel the long way";
   return progress.loaded ? `${step}, ${mb(progress.loaded)}` : step;
 }
 
@@ -53,8 +54,15 @@ export function kernelProgress(progress = {}) {
  */
 export function describeStall(progress = {}, timeout = LOAD_TIMEOUT_MS) {
   const secs = Math.round(timeout / 1000);
+  // No phase at all means the worker never sent a word — it did not start, or
+  // it never reached its own first line. Quite different from stalling in one.
+  if (!progress.phase) {
+    return new Error(`the kernel worker never reported anything in ${secs} s: ` +
+      "it did not start, or its script never loaded");
+  }
   const step = PHASE_LABEL[progress.phase] ?? "starting up";
-  const got = progress.loaded ? `, ${mb(progress.loaded)} in` : "";
+  const got = progress.loaded ? `, ${mb(progress.loaded)} in`
+    : progress.phase === "fetching" ? ", no bytes at all" : "";
   const why = progress.phase === "starting" && progress.isolated === false
     ? " — this browser is not cross-origin isolated, which the threaded build needs"
     : "";
