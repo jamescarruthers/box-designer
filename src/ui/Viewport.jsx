@@ -4,7 +4,11 @@ import React, { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { panelPositions, explodeOffset, panelEdgeLoops } from "../three/panelGeometry.js";
 import { panelBevels } from "../model/bevel.js";
+import { edgePasses, showsFaces, needsDepth, EDGE_COLOUR } from "../three/edges.js";
 import { panelColour, SELECT_EMISSIVE, ACCENT } from "../three/palette.js";
+
+/** §4 The two depth comparisons the edge passes use. */
+const DEPTH_FUNC = { "less-equal": THREE.LessEqualDepth, greater: THREE.GreaterDepth };
 
 export const RENDER_STYLES = [
   { id: "shaded", name: "Shaded" },
@@ -183,11 +187,13 @@ export default function Viewport({ derived, style, colourByFace, explode, select
         depthWrite: true,
       });
 
-      const showFaces = style !== "wireframe";
+      // Rendered even when the faces are not shown: hidden edges need
+      // something to be hidden by, and that something is the depth buffer.
+      const showFaces = showsFaces(style);
       const mesh = new THREE.Mesh(geom, mat);
       mesh.userData.index = index;
-      if (style === "wireframe-hlr") { mat.colorWrite = false; }
-      mesh.visible = showFaces;
+      if (!showFaces) { mat.colorWrite = false; }
+      mesh.visible = showFaces || needsDepth(style);
       root.add(mesh);
       state.picks.push(mesh);
 
@@ -200,7 +206,7 @@ export default function Viewport({ derived, style, colourByFace, explode, select
         tg.computeVertexNormals();
         const tm = new THREE.Mesh(tg, mat.clone());
         tm.userData.offsetOf = index;
-        tm.visible = showFaces;
+        tm.visible = showFaces || needsDepth(style);   // depth, for the same reason
         root.add(tm);
       }
 
@@ -222,24 +228,23 @@ export default function Viewport({ derived, style, colourByFace, explode, select
         return g;
       };
 
-      if (style !== "shaded") {
+      const passes = edgePasses(style, { accent: isSel || isHov });
+      if (passes.length) {
         const eg = edgeGeometry();
-        const lm = new THREE.LineBasicMaterial({
-          color: new THREE.Color(isSel || isHov ? ACCENT : "#c6d2de"),
-          depthTest: style === "wireframe-hlr",
-          transparent: true,
-          opacity: isSel || isHov ? 1 : 0.85,
-        });
-        const lines = new THREE.LineSegments(eg, lm);
-        lines.renderOrder = 2;
-        root.add(lines);
-        lines.userData.offsetOf = index;
-      } else if (isSel || isHov) {
-        const eg = edgeGeometry();
-        const lines = new THREE.LineSegments(eg, new THREE.LineBasicMaterial({ color: new THREE.Color(ACCENT), depthTest: false }));
-        lines.renderOrder = 2;
-        root.add(lines);
-        lines.userData.offsetOf = index;
+        for (const pass of passes) {
+          const lines = new THREE.LineSegments(eg, new THREE.LineBasicMaterial({
+            color: new THREE.Color(pass.accent ? ACCENT : EDGE_COLOUR),
+            depthTest: pass.depthTest,
+            depthFunc: DEPTH_FUNC[pass.depthFunc] ?? THREE.LessEqualDepth,
+            depthWrite: pass.depthWrite ?? true,
+            transparent: true,
+            opacity: pass.opacity,
+          }));
+          // The faint pass last, so it lies over the shading rather than under.
+          lines.renderOrder = pass.name === "hidden" ? 3 : 2;
+          lines.userData.offsetOf = index;
+          root.add(lines);
+        }
       }
     });
 
