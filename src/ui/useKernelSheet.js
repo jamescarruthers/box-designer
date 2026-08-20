@@ -16,7 +16,8 @@ export function useKernelSheet(derived, design, enabled) {
   useEffect(() => {
     if (!enabled) { setState({ status: "idle" }); return; }
     let live = true;
-    setState((s) => ({ status: s.sheet ? "refreshing" : "loading", sheet: s.sheet }));
+    setState((s) => ({ status: s.sheet ? "refreshing" : "loading", sheet: s.sheet,
+      progress: { phase: "fetching" } }));
 
     const t0 = performance.now();
     callKernel("views", {
@@ -25,6 +26,8 @@ export function useKernelSheet(derived, design, enabled) {
       owners: derived.owners,
       sectionAt: derived.sectionAt,
       fittings: derived.sol.panels.map((p) => derived.fittingsOn?.(p) ?? []),
+    }, {
+      onProgress: (progress) => { if (live) setState((s) => ({ ...s, progress })); },
     })
       .then((geometry) => {
         if (!live) return;

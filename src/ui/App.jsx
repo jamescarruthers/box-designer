@@ -5,6 +5,7 @@ import CutListView from "./CutListView.jsx";
 import DrawingView from "./DrawingView.jsx";
 import { DEFAULT_DESIGN, derive } from "./design.js";
 import { useKernelSolids } from "./useKernelSolids.js";
+import { kernelProgress } from "../occt/kernel.js";
 import { fmt } from "../cutlist/cutlist.js";
 
 const MODES = [
@@ -136,9 +137,9 @@ export default function App() {
 }
 
 function solidNote(k) {
-  if (k.status === "loading") return "fetching the kernel, 4 MB…";
+  if (k.status === "loading") return `${kernelProgress(k.progress)}…`;
   if (k.status === "refreshing") return "remeshing…";
-  if (k.status === "failed") return "kernel unavailable — showing the ring-stack solids";
+  if (k.status === "failed") return `${k.error?.message ?? "kernel unavailable"} — showing the ring-stack solids`;
   if (k.status === "ready") return `B-Rep, ${k.triangles} triangles, ${k.ms} ms${k.threaded ? ", threaded" : ""}`;
   return "";
 }
