@@ -276,6 +276,15 @@ describe("the app", () => {
     expect(screen.getByLabelText("Thickness").value).toBe("18");
   });
 
+  it("§14 offers a DXF of the sheet layouts", () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    expect(screen.getByRole("button", { name: "Export DXF" })).toBeTruthy();
+    // The download path is stubbed in this environment; that it builds without
+    // throwing on a real derived design is the part worth asserting here.
+    fireEvent.click(screen.getByRole("button", { name: "Export DXF" }));
+  });
+
   it("reports the volume closure as exact", () => {
     const { container } = render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));

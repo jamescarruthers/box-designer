@@ -124,7 +124,7 @@ export default function App() {
 
           {mode === "cuts" ? (
             <div className="pane pane-cuts">
-              <CutListView derived={derived} colourByFace={colourByFace}
+              <CutListView derived={derived} title={design.title} colourByFace={colourByFace}
                 selected={selected} hovered={hovered} onSelect={onSelect} onHover={setHovered} />
             </div>
           ) : null}

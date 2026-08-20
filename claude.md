@@ -1276,3 +1276,56 @@ the two features in the same box to see it.
 It grows to the other panel's outer face now, which is what the corner always
 was. Both targets are read before either panel moves, or growing the first would
 shift the corner the second is aiming at.
+
+
+---
+
+## 14. The sheet layouts as DXF
+
+R12 ASCII, because everything reads it — thirty-year-old CAM seats included —
+and nothing here needs anything newer. Millimetres, 1:1, no scaling anywhere: a
+file that arrives at the wrong size is worse than one that does not arrive.
+
+**What goes in is what gets cut, and nothing else.** Part outlines as closed
+polylines, the fitting cutouts and bolt holes as circles, the stock boundary for
+reference, and text. Four layers, so the shop can order the work — holes before
+the profile, or the profile alone with the rest switched off:
+
+| layer | what it is |
+|---|---|
+| `OUTLINE` | the part profiles, closed |
+| `HOLES` | cutouts and bolt holes |
+| `SHEET` | the stock boundary, reference only |
+| `LABEL` | part ids and a caption per sheet; cuts nothing |
+
+Two things are deliberately absent. **The bolt circle**, because it is a
+setting-out circle rather than a path, and a file handed to a machine should not
+contain a circle nobody meant to cut — it is dimensioned on the A3 drawing
+instead. And **the bevels and mitres**, which cannot be in it: a blank is a
+rectangle, and the 45° is a saw set over after the parts come off the sheet. The
+cut list's edge column carries that work.
+
+One file rather than one per sheet, with the sheets laid left to right and each
+captioned with its material and size. A browser asking three times in a row
+whether you would like to save a file is its own kind of unhelpful, and a shop
+opening one file to find three labelled sheets side by side knows exactly what
+it is looking at.
+
+### Coordinates
+
+Blank coordinates run x along the length and **y down** from the top edge, which
+is how `toBlank` gives them and how the templates draw them; the nest places
+parts in the same top-down frame. DXF is Y-up, so the sheet is flipped once at
+the end rather than every point being reasoned about twice. A rotated part is
+turned a quarter turn clockwise — its top-left corner goes to the footprint's
+top-right and its length runs down the sheet.
+
+### Checking it
+
+A DXF that parses can still put a hole in the wrong part, so the tests read the
+file back and check the geometry: every part inside its sheet, every hole inside
+its part, and every outline the size the cut list says. The driver's position is
+cross-checked against the **panel box** rather than against the placement
+function, so the test can actually disagree with the code. And
+`tools/spike/dxf-preview.mjs` draws a DXF as an SVG, because some of this is
+only obvious when looked at.
