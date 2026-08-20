@@ -10,17 +10,18 @@ import { callKernel } from "../occt/client.js";
 import { isolated } from "../occt/kernel.js";
 import { buildSheet } from "../drawing/sheet.js";
 
-export function useKernelSheet(derived, design, enabled) {
+export function useKernelSheet(derived, design, enabled, attempt = 0) {
   const [state, setState] = useState({ status: "idle" });
 
   useEffect(() => {
     if (!enabled) { setState({ status: "idle" }); return; }
     let live = true;
-    // Superseded jobs are cancelled, not just ignored: one left in the queue
-    // keeps its watchdog and can tear the worker down long after nobody wants it.
+    // Superseded jobs are cancelled, not just ignored. One still waiting its
+    // turn goes altogether; one the worker has already started cannot be
+    // recalled, but its answer is thrown away rather than drawn.
     const cancel = new AbortController();
     setState((s) => ({ status: s.sheet ? "refreshing" : "loading", sheet: s.sheet,
-      progress: { phase: "fetching" } }));
+      progress: { phase: "queued" } }));
 
     const t0 = performance.now();
     callKernel("views", {
@@ -56,7 +57,7 @@ export function useKernelSheet(derived, design, enabled) {
       });
 
     return () => { live = false; cancel.abort(); };
-  }, [enabled, derived, design.title]);
+  }, [enabled, derived, design.title, attempt]);
 
   return state;
 }

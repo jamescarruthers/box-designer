@@ -10,6 +10,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
 import { panelBevels } from "../src/model/bevel.js";
 import { buffersOf, threadsReady, OPS, fetchWasm } from "../src/occt/worker.js";
+import { kernelProgress } from "../src/occt/kernel.js";
 
 const workers = [];
 
@@ -218,29 +219,103 @@ describe("§11 a slow job is not a stalled one", () => {
  * then says redrawing for ever" happens.
  */
 describe("§11 a job is not killed by its neighbours", () => {
-  it("drops a superseded job instead of leaving its watchdog armed", async () => {
+  it("drops a superseded job that had not started, watchdog and all", async () => {
+    // The worker never saw it, so there is nothing to wait for and nothing that
+    // can come back later and kill a worker that is doing fine.
+    const running = client.callKernel("mesh", {}, { timeout: 10_000 });
+    running.catch(() => {});
+    const cancel = new AbortController();
+    const call = client.callKernel("views", {}, { timeout: 1000, signal: cancel.signal });
+    const settled = expect(call).rejects.toThrow(/superseded/);
+    cancel.abort();
+    await settled;
+
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(workers[0].terminated).toBe(false);
+    expect(workers[0].posted.map((m) => m.op)).toEqual(["mesh"]);
+  });
+
+  it("keeps watching work the worker has already begun, cancelled or not", async () => {
+    // Nobody wants the answer, but an OCCT boolean is one synchronous call with
+    // no way in: the worker is still inside it, and if it never comes out the
+    // watchdog is the only thing that will notice.
     const cancel = new AbortController();
     const call = client.callKernel("mesh", {}, { timeout: 1000, signal: cancel.signal });
     const settled = expect(call).rejects.toThrow(/superseded/);
     cancel.abort();
     await settled;
-    // Its timer is gone with it, so it cannot come back and kill the worker.
-    await vi.advanceTimersByTimeAsync(5000);
-    expect(workers[0].terminated).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(1001);
+    expect(workers[0].terminated).toBe(true);
   });
 
-  it("keeps a healthy job alive while a cancelled one would have expired", async () => {
-    const cancel = new AbortController();
-    const doomed = client.callKernel("mesh", {}, { timeout: 1000, signal: cancel.signal });
-    doomed.catch(() => {});
-    const wanted = client.callKernel("views", {}, { timeout: 10_000 });
+  it("does not hold a queued job's deadline against another job's work", async () => {
+    // The fault behind "it does not reliably switch on and off again": six
+    // clicks meant six meshes queued inside the worker, each one's deadline
+    // running while somebody else's job had the thread.
+    const first = client.callKernel("mesh", {}, { timeout: 1000 });
+    first.catch(() => {});
+    const second = client.callKernel("mesh", {}, { timeout: 1000 });
     let settled = false;
-    wanted.then(() => { settled = true; }, () => { settled = true; });
+    second.then(() => { settled = true; }, () => { settled = true; });
 
-    cancel.abort();
-    await vi.advanceTimersByTimeAsync(5000);
+    // The first job is alive and downloading; the second has not been sent.
+    for (let i = 1; i <= 10; i++) {
+      workers[0].onmessage({ data: { id: 1, progress: { phase: "fetching", loaded: i * 400_000 } } });
+      await vi.advanceTimersByTimeAsync(900);
+    }
     expect(settled).toBe(false);
-    expect(workers[0].terminated).toBe(false);
+    expect(workers[0].posted).toHaveLength(1);
+
+    // Only once the first answers does the second go over, clock and all.
+    workers[0].onmessage({ data: { id: 1, ok: true, result: {} } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(workers[0].posted).toHaveLength(2);
+    expect(settled).toBe(false);
+  });
+
+  it("tells a waiting job it is waiting, and what for", async () => {
+    // Switched on, switched off, switched on again while the kernel is still
+    // coming down: the second job has not been sent anywhere, and saying
+    // nothing for the rest of a 9 MB download is what reads as a dead toggle.
+    const first = client.callKernel("mesh", {}, { timeout: 10_000 });
+    first.catch(() => {});
+    const seen = [];
+    const second = client.callKernel("mesh", {}, { timeout: 10_000, onProgress: (p) => seen.push(p) });
+    second.catch(() => {});
+
+    workers[0].onmessage({ data: { id: 1, progress: { phase: "fetching", loaded: 4_000_000 } } });
+    expect(seen.at(-1)).toMatchObject({ phase: "fetching", loaded: 4_000_000 });
+
+    // Once the kernel is up and the worker is meshing somebody else's box, the
+    // honest answer is a place in the queue, not "working".
+    workers[0].onmessage({ data: { id: 1, progress: { phase: "working" } } });
+    expect(seen.at(-1).phase).toBe("queued");
+    expect(kernelProgress(seen.at(-1))).toBe("waiting for the kernel, 4.0 MB");
+    await vi.advanceTimersByTimeAsync(10_001);
+  });
+
+  it("does not blame a job for a download that was somebody else's", async () => {
+    const first = client.callKernel("mesh", {}, { timeout: 1000 });
+    first.catch(() => {});
+    const second = client.callKernel("mesh", {}, { timeout: 1000 });
+    const settled = expect(second).rejects.toThrow(/never reported anything/);
+
+    workers[0].onmessage({ data: { id: 1, progress: { phase: "fetching", loaded: 9_000_000 } } });
+    workers[0].onmessage({ data: { id: 1, ok: true, result: {} } });
+    await vi.advanceTimersByTimeAsync(1001);
+    await settled;
+  });
+
+  it("hands the worker the next job the moment one is answered", async () => {
+    StubWorker.reply = (m) => ({ id: m.id, ok: true, result: m.op });
+    const three = [
+      client.callKernel("mesh", {}, { timeout: 1000 }),
+      client.callKernel("views", {}, { timeout: 1000 }),
+      client.callKernel("mesh", {}, { timeout: 1000 }),
+    ];
+    await expect(Promise.all(three)).resolves.toEqual(["mesh", "views", "mesh"]);
+    expect(workers).toHaveLength(1);
   });
 
   it("stops asking for threads once the geometry has hung on them", async () => {

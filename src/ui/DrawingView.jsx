@@ -7,7 +7,8 @@ import { kernelProgress } from "../occt/kernel.js";
 
 export default function DrawingView({ derived, design }) {
   const [engine, setEngine] = useState("analytic");
-  const kernel = useKernelSheet(derived, design, engine === "kernel");
+  const [attempt, setAttempt] = useState(0);
+  const kernel = useKernelSheet(derived, design, engine === "kernel", attempt);
 
   // Fall back to the analytic sheet while the kernel loads, or if it fails.
   const sheet = engine === "kernel" && kernel.sheet ? kernel.sheet : derived.sheet;
@@ -26,7 +27,13 @@ export default function DrawingView({ derived, design }) {
           <button type="button" className={engine === "kernel" ? "on" : ""}
             onClick={() => setEngine("kernel")}>OpenCASCADE</button>
         </span>
-        <span className="engine-state">{engineNote(engine, showing, kernel)}</span>
+        <span className="engine-state">
+          {engineNote(engine, showing, kernel)}
+          {engine === "kernel" && kernel.status === "failed" ? (
+            <button type="button" className="linkish"
+              onClick={() => setAttempt((n) => n + 1)}>Try again</button>
+          ) : null}
+        </span>
         <button type="button" onClick={() => downloadSvg(sheet.svg)}>Export SVG</button>
       </div>
       <div className="sheet-holder" dangerouslySetInnerHTML={{ __html: sheet.svg }} />

@@ -874,6 +874,48 @@ Reproduced with `serve-plain.mjs dist 5095 90000` and one input changed
 mid-download: before, dead at ninety seconds and never recovering; after, the
 download runs to completion at 118 s.
 
+### One job at a time, and it says so while it waits
+
+Reported next: the engine *"is not reliably switching on and off again"*. Three
+faults, all in what a waiting job does.
+
+- **Every job was posted the moment it was asked for.** The worker is
+  single-threaded and the work is synchronous, so six clicks of the toggle meant
+  six full meshes queued inside the worker where nothing on this side could see
+  them — each with its watchdog running against a silence that was somebody
+  else's work. On a box big enough to spend seconds a mesh, the last one's
+  deadline expires, the worker is torn down mid-job, and the toggle does nothing
+  at all until the whole 9.3 MB kernel has been fetched again. `client.js` holds
+  the queue itself now and hands the worker one job at a time. The deadline
+  starts when the job is posted, not when it is asked for.
+- **A waiting job said nothing.** Switch on, switch off, switch on again during
+  the download and the second job has not been sent anywhere — so the status
+  line froze on whatever it opened with for the rest of a minute-long fetch,
+  which is exactly what a dead toggle looks like. A queued job now hears the
+  load it is waiting on (`fetching the kernel, 7.6 MB…`) and, once the worker is
+  busy with somebody else's geometry, its place in the queue (`waiting for the
+  kernel…`).
+- **A failure was a dead end.** The only way back was knowing to switch the
+  engine off and on again. Both status lines offer *Try again*, which is a new
+  attempt rather than a retry of the old job. `.solid-state` is
+  `pointer-events: none` so the note does not sit in front of the box — which
+  made the button unclickable until the button opted back in.
+
+Cancelling is not what it looks like either. A job still waiting its turn is
+dropped outright, watchdog and all. A job the worker has already begun cannot be
+recalled — an OCCT boolean is one synchronous call with no way in — so it keeps
+its place and its watchdog, and its answer is thrown away when it arrives. That
+is why cancelling can still terminate a worker: not because the job was
+cancelled, but because the worker really did stop.
+
+Verified in a browser rather than argued about: `tools/spike/toggle-kernel.mjs`
+flaps the toggle, pulls the rug part-way through a load and edits the box under
+a running mesh; `tools/spike/toggle-slow.mjs` does it over a 250 kB/s line where
+the kernel takes 45 s, and `tools/spike/kernel-retry.mjs` blocks the wasm
+outright and then takes the way back. Six quick edits with two fittings fitted
+cost 890 ms of meshing before and 324 ms after — five of the six were work
+nobody was waiting for.
+
 ### A hole needs an inside
 
 The cutouts had no wall. You looked into a driver's bore and saw straight
