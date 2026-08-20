@@ -5,7 +5,7 @@ import { solve, wallOf, fillFaces, skinOf, boxVolume, DEFAULT_RATIO } from "../m
 import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, partialEdgeIssues } from "../model/bevel.js";
 import { mitreCheck, resolveMitres, applyMitres, mitreIssues, mitreLoss } from "../model/mitre.js";
 import { validate } from "../model/validate.js";
-import { fittingOwners, innermostOn, fittingIssues, fittingNote } from "../model/fittings.js";
+import { fittingOwners, innermostOn, fittingIssues, fittingNote, hasTube } from "../model/fittings.js";
 import { buildCutList, cutListTotals } from "../cutlist/cutlist.js";
 import { nest } from "../cutlist/nest.js";
 import { buildSheet } from "../drawing/sheet.js";
@@ -224,7 +224,7 @@ export function derive(design) {
   // A port's tube hangs off the innermost layer, once, however many it bored.
   const tubePanels = Object.fromEntries(faces.map((f) => [f, innermostOn(sol.panels, f)]));
   const tubesOn = (panel) =>
-    fittings.filter((f) => f.type === "port" && tubePanels[f.face] === panel);
+    fittings.filter((f) => hasTube(f) && tubePanels[f.face] === panel);
 
   const rows = buildCutList(sol, edges, owners, { specFor, grainLocked: design.grainLocked })
     .map((r) => {

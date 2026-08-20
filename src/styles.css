@@ -331,6 +331,9 @@ table.cuts .edgework { color: var(--ink-3); }
 .rank-summary .swatch { width: 7px; height: 7px; margin-right: 4px; }
 
 .edge-row.blocked { opacity: 0.45; }
+/* A field whose value does not apply — a tube's length with no tube fitted. */
+.field.disabled { opacity: 0.45; }
+
 /* §12 A mitre's leg is the panel's thickness, so its radius box is not a choice. */
 .edge-row:not(.blocked) input:disabled { opacity: 0.45; }
 .edge-row.blocked .edge-key em { color: var(--warning); opacity: 0.8; }

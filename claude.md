@@ -915,6 +915,29 @@ The position is not dimensioned here. It is already on the cut-list template,
 measured from the panel's own low corner, which is where it is wanted: the
 elevation is for what the hole is, the template is for where to mark it.
 
+### The tube behind a port is optional
+
+Not every port has one. A short port in a thick baffle is a plain hole, and a
+bought tube is often left off the drawing and fitted on assembly. So a port
+carries a `tube` flag, and when it is off there is no tube body in the 3D view,
+no tube circle in the face-on view, and the bore stops at the inner face like a
+driver's cutout does.
+
+The bore is the same either way. It **is** the tube's inside diameter,
+continuous from the outer face of the panel to the end of the tube, which is why
+the control now labels it *Inside ⌀* rather than *Bore ⌀*: one number, and it is
+the one that tunes the port. Length and wall belong to the tube and are disabled
+without one, and the length is quoted on the drawing — `⌀68 × 150` — only when
+there is a tube to have it.
+
+Read as `tube !== false` rather than `tube === true`, so a port saved before the
+option existed keeps its tube instead of quietly losing it.
+
+The tube also draws its own edges now. It is a separate body from the panel, and
+the viewport was only ever adding edges for panels — so in both wireframe styles
+the tube's faces went into the depth buffer and nowhere else, and the tube was
+invisible in exactly the views where you would look for it.
+
 ### A fitting with no position
 
 `newFitting(type, face)` used to leave `at.a` and `at.b` undefined, so `bore()`

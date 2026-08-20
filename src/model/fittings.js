@@ -24,10 +24,25 @@ export const DEFAULT_DRIVER = {
 
 export const DEFAULT_PORT = {
   type: "port",
-  diameter: 68,       // internal diameter of the tube
+  tube: true,         // whether a tube is fitted behind the hole
+  diameter: 68,       // inside diameter: the bore, through the panel and the tube alike
   length: 150,        // tube length, measured from the inner face of the panel
-  wall: 3,            // tube wall thickness
+  wall: 3,            // tube wall thickness, which gives the outside diameter
 };
+
+/**
+ * Whether a port carries a tube.
+ *
+ * Not every port does. A short one in a thick baffle is a plain hole, and a
+ * bought tube is often left off the drawing and fitted on assembly. The bore is
+ * the same either way — it is the tube's inside diameter, continuous from the
+ * outer face of the panel to the end of the tube — so this changes what is
+ * drawn and modelled behind the panel, and nothing about the hole.
+ *
+ * Read as "not false" rather than "true" so a port saved before the option
+ * existed keeps its tube instead of quietly losing it.
+ */
+export const hasTube = (f) => f?.type === "port" && f.tube !== false;
 
 export const FITTING_DEFAULTS = { driver: DEFAULT_DRIVER, port: DEFAULT_PORT };
 
@@ -171,7 +186,7 @@ export function fittingIssues(fittings, panels, owners, cavity) {
       msgs.push({ level: "warning",
         text: `${label}: the bolt holes break into the cutout — PCD ${f.pcd} against a ${f.cutout} mm hole.` });
     }
-    if (f.type === "port") {
+    if (hasTube(f)) {
       const depth = cavity ? cavity[AXIS[f.face][0]][1] - cavity[AXIS[f.face][0]][0] : Infinity;
       if (f.length > depth) {
         msgs.push({ level: "warning",
@@ -193,9 +208,8 @@ export function fittingIssues(fittings, panels, owners, cavity) {
 }
 
 export function describeFitting(f) {
-  return f.type === "port"
-    ? `Port ⌀${f.diameter} × ${f.length}`
-    : `Driver ⌀${f.cutout}, ${f.bolts} × ⌀${f.boltHole} on ${f.pcd} PCD`;
+  if (f.type !== "port") return `Driver ⌀${f.cutout}, ${f.bolts} × ⌀${f.boltHole} on ${f.pcd} PCD`;
+  return hasTube(f) ? `Port ⌀${f.diameter} × ${f.length}` : `Port ⌀${f.diameter}, no tube`;
 }
 
 /** A short note for the cut list. */

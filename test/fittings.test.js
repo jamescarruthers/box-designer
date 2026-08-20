@@ -3,11 +3,11 @@ import { describe, it, expect } from "vitest";
 import { solve, panelBlank } from "../src/model/solver.js";
 import {
   newFitting, fittingCircles, fittingExtent, fittingOwners, fittingOrigin,
-  fittingStack, innermostOn,
+  fittingStack, innermostOn, hasTube, DEFAULT_PORT,
   fittingIssues, describeFitting, fittingNote, faceAxes, toBlank, blankCircles,
-  portOuterRadius, DEFAULT_DRIVER, DEFAULT_PORT,
+  portOuterRadius, DEFAULT_DRIVER,
 } from "../src/model/fittings.js";
-import { fittingGeometry, FACE_ON, toView } from "../src/drawing/fittings.js";
+import { fittingGeometry, fittingDimensions, FACE_ON, toView } from "../src/drawing/fittings.js";
 import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
 import { PROMINENCE_PRESETS } from "../src/model/constants.js";
 
@@ -333,5 +333,73 @@ describe("§10 a fitting punches through every layer of its face", () => {
     const panels = [...sol.panels, inset];
     const msgs = fittingIssues([f], panels, fittingOwners(panels, ["front"]), sol.cavity);
     expect(msgs.some((m) => m.level === "error" && /doubler/.test(m.text))).toBe(true);
+  });
+});
+
+
+/**
+ * §10 A port with no tube.
+ *
+ * Not every port has one: a short port in a thick baffle is a plain hole, and a
+ * bought tube is often left off the drawing and fitted on assembly. The bore is
+ * the same either way, so this changes what is behind the panel and nothing
+ * about the hole.
+ */
+describe("§10 the tube behind a port is optional", () => {
+  const port = (tube) => ({ id: "p1", type: "port", face: "back", at: { a: 108.85, b: 80 },
+    diameter: 68, length: 150, wall: 3, ...(tube === undefined ? {} : { tube }) });
+  const withPort = (tube) => derive({ ...DEFAULT_DESIGN, fittings: [port(tube)] });
+
+  it("fits one by default", () => {
+    expect(DEFAULT_PORT.tube).toBe(true);
+    expect(hasTube(newFitting("port", "back", { a: 60, b: 60 }))).toBe(true);
+  });
+
+  it("keeps the tube on a port saved before the option existed", () => {
+    // `tube` undefined must not quietly mean "no tube".
+    expect(hasTube(port(undefined))).toBe(true);
+  });
+
+  it("builds no tube body when it is turned off", () => {
+    const off = withPort(false);
+    expect(off.sol.panels.reduce((a, p) => a + off.tubesOn(p).length, 0)).toBe(0);
+    const on = withPort(true);
+    expect(on.sol.panels.reduce((a, p) => a + on.tubesOn(p).length, 0)).toBe(1);
+  });
+
+  it("still cuts the same hole", () => {
+    const holes = (d) => d.rows.find((r) => r.fittings.length).fittings[0].diameter;
+    expect(holes(withPort(false))).toBe(holes(withPort(true)));
+  });
+
+  it("says so in the cut list rather than quoting a length it has not got", () => {
+    expect(describeFitting(port(false))).toBe("Port ⌀68, no tube");
+    expect(describeFitting(port(true))).toBe("Port ⌀68 × 150");
+  });
+
+  it("quotes the length on the drawing only when there is a tube", () => {
+    const dim = (tube) => fittingDimensions("front", [port(tube)], E)[0].text;
+    expect(dim(true)).toBe("⌀68 × 150");
+    expect(dim(false)).toBe("⌀68");
+  });
+
+  it("draws no tube circle in the face-on view without one", () => {
+    const roles = (tube) => fittingGeometry("front", [port(tube)],
+      solve({ envelope: E, thickness: 18, order: PROMINENCE_PRESETS[0].order }).panels,
+      { back: solve({ envelope: E, thickness: 18, order: PROMINENCE_PRESETS[0].order })
+        .panels.find((p) => p.face === "back") }, E).circles.map((c) => c.role);
+    expect(roles(true)).toContain("tube");
+    expect(roles(false)).not.toContain("tube");
+  });
+
+  it("does not warn that a tube it has not got is longer than the cavity", () => {
+    const long = { ...port(false), length: 10_000 };
+    const sol = solve({ envelope: E, thickness: 18, order: PROMINENCE_PRESETS[0].order });
+    const msgs = fittingIssues([long], sol.panels, fittingOwners(sol.panels, ["back"]), sol.cavity);
+    expect(msgs.some((m) => /longer than/.test(m.text))).toBe(false);
+
+    const fitted = { ...long, tube: true };
+    expect(fittingIssues([fitted], sol.panels, fittingOwners(sol.panels, ["back"]), sol.cavity)
+      .some((m) => /longer than/.test(m.text))).toBe(true);
   });
 });

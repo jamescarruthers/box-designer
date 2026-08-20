@@ -5,7 +5,7 @@
 // dimensioned and marked out, so that is where the bolt circle goes.
 
 import { AXIS } from "../model/constants.js";
-import { fittingCircles, faceAxes, portOuterRadius } from "../model/fittings.js";
+import { fittingCircles, faceAxes, portOuterRadius, hasTube } from "../model/fittings.js";
 import { fmt } from "../cutlist/cutlist.js";
 
 /** Which view looks square-on at each face, and which way round it is. */
@@ -46,8 +46,9 @@ export function fittingGeometry(view, fittings, panels, owners, E) {
       if (f.type === "driver") {
         boltCircles.push({ at: toView(f.at, f.face, view, E), r: f.pcd / 2, fitting: f });
       }
-      if (f.type === "port") {
-        // The tube behind the panel, seen end-on.
+      if (hasTube(f)) {
+        // The tube behind the panel, seen end-on. Nothing to draw without one:
+        // the bore's own circle is already there.
         circles.push({ at: toView(f.at, f.face, view, E), r: portOuterRadius(f), visible: false, role: "tube", fitting: f });
       }
     } else {
@@ -65,13 +66,15 @@ export function fittingGeometry(view, fittings, panels, owners, E) {
 function edgeOnLines(f, panel, view, E) {
   const [a, s] = AXIS[f.face];
   const bore = f.type === "port" ? f.diameter : f.cutout;
+  const tube = hasTube(f);
   const out = [];
 
   const outer = s < 0 ? panel.box[a][0] : panel.box[a][1];
   const inner = s < 0 ? panel.box[a][1] : panel.box[a][0];
-  const tubeEnd = f.type === "port" ? inner - s * f.length : inner;
+  // Without a tube the bore stops at the inner face, like a driver's cutout.
+  const tubeEnd = tube ? inner - s * f.length : inner;
 
-  for (const [radius, to] of f.type === "port"
+  for (const [radius, to] of tube
     ? [[bore / 2, tubeEnd], [portOuterRadius(f), tubeEnd]]
     : [[bore / 2, inner]]) {
     for (const side of [-1, 1]) {
@@ -138,8 +141,10 @@ export function fittingDimensions(view, fittings, E) {
     const a = (which) => spread(DIM_ANGLE[which], f.face);
 
     if (f.type === "port") {
+      // The length belongs to the tube, so it is only quoted when there is one.
       out.push({ kind: "diameter", at, r: f.diameter / 2, angle: a("bore"),
-        text: `⌀${fmt(f.diameter)}`, fitting: f });
+        text: hasTube(f) ? `⌀${fmt(f.diameter)} × ${fmt(f.length)}` : `⌀${fmt(f.diameter)}`,
+        fitting: f });
       continue;
     }
 

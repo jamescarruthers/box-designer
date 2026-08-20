@@ -250,8 +250,9 @@ describe("§6.7 the fittings are dimensioned", () => {
     expect(bore.r).toBe(driver.cutout / 2);      // the renderer draws 2r across
   });
 
-  it("gives a port its bore and nothing it has not got", () => {
-    expect(dims("front", [port]).map((x) => x.text)).toEqual(["⌀68"]);
+  it("gives a port its bore, and its tube length only when it has a tube", () => {
+    expect(dims("front", [port]).map((x) => x.text)).toEqual(["⌀68 × 150"]);
+    expect(dims("front", [{ ...port, tube: false }]).map((x) => x.text)).toEqual(["⌀68"]);
   });
 
   it("only dimensions in the view that looks at the face square-on", () => {
