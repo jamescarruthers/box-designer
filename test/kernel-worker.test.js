@@ -9,7 +9,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
 import { panelBevels } from "../src/model/bevel.js";
-import { buffersOf } from "../src/occt/worker.js";
+import { buffersOf, threadsReady } from "../src/occt/worker.js";
 
 const workers = [];
 
@@ -163,6 +163,70 @@ describe("§11 a slow job is not a stalled one", () => {
     // The byte count carries forward, rather than being lost at the next step.
     expect(seen[2].loaded).toBe(1_000_000);
     await vi.advanceTimersByTimeAsync(1001);
+  });
+});
+
+/**
+ * Three ways a job can be killed by something that is not its own fault. Each
+ * of these was live, and the second and third between them are how "draws once,
+ * then says redrawing for ever" happens.
+ */
+describe("§11 a job is not killed by its neighbours", () => {
+  it("drops a superseded job instead of leaving its watchdog armed", async () => {
+    const cancel = new AbortController();
+    const call = client.callKernel("mesh", {}, { timeout: 1000, signal: cancel.signal });
+    const settled = expect(call).rejects.toThrow(/superseded/);
+    cancel.abort();
+    await settled;
+    // Its timer is gone with it, so it cannot come back and kill the worker.
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(workers[0].terminated).toBe(false);
+  });
+
+  it("keeps a healthy job alive while a cancelled one would have expired", async () => {
+    const cancel = new AbortController();
+    const doomed = client.callKernel("mesh", {}, { timeout: 1000, signal: cancel.signal });
+    doomed.catch(() => {});
+    const wanted = client.callKernel("views", {}, { timeout: 10_000 });
+    let settled = false;
+    wanted.then(() => { settled = true; }, () => { settled = true; });
+
+    cancel.abort();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(settled).toBe(false);
+    expect(workers[0].terminated).toBe(false);
+  });
+
+  it("stops asking for threads once the geometry has hung on them", async () => {
+    expect(client.inSafeMode()).toBe(false);
+    const call = client.callKernel("mesh", {}, { timeout: 1000 });
+    call.catch(() => {});
+    workers[0].onmessage({ data: { id: 1, progress: { phase: "working" } } });
+    await vi.advanceTimersByTimeAsync(1001);
+
+    expect(client.inSafeMode()).toBe(true);
+    client.callKernel("mesh", {}, { timeout: 1000 }).catch(() => {});
+    expect(workers[1].posted[0].payload.safeMode).toBe(true);
+  });
+
+  it("asks for threads normally until then", async () => {
+    client.callKernel("mesh", {}, { timeout: 1000 }).catch(() => {});
+    expect(workers[0].posted[0].payload.safeMode).toBe(false);
+    await vi.advanceTimersByTimeAsync(1001);
+  });
+});
+
+describe("§11 threads are used only when they are really there", () => {
+  it("will not ask for parallel meshing without an actual pool", () => {
+    vi.stubGlobal("self", { crossOriginIsolated: true });
+    expect(threadsReady({ PThread: { unusedWorkers: [] } })).toBe(false);
+    expect(threadsReady({})).toBe(false);
+    expect(threadsReady({ PThread: { unusedWorkers: [1, 2, 3, 4] } })).toBe(true);
+  });
+
+  it("will not ask for it without isolation either", () => {
+    vi.stubGlobal("self", { crossOriginIsolated: false });
+    expect(threadsReady({ PThread: { unusedWorkers: [1, 2, 3, 4] } })).toBe(false);
   });
 });
 

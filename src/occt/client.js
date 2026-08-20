@@ -22,6 +22,14 @@ let worker = null;
 let seq = 0;
 const waiting = new Map();
 
+/**
+ * Set once a job has stalled in `working`, and passed to every job after it.
+ * The only thing in there that can block indefinitely is BRepMesh waiting on a
+ * thread pool that never took the work, and threads are worth 18-22% of the
+ * mesh step. So having seen one hang, stop asking.
+ */
+let safeMode = false;
+
 /** Resolved against the page, not the worker: the worker has no `document`. */
 const kernelDir = () => new URL("occt/", document.baseURI).href;
 
@@ -76,6 +84,8 @@ function advance(id, progress) {
 function expire(id) {
   const entry = waiting.get(id);
   if (!entry) return;
+  // The geometry only hangs on a thread that never arrives. Do without.
+  if (entry.progress?.phase === "working") safeMode = true;
   const stalled = describeStall(entry.progress, entry.timeout);
   console.error("OpenCASCADE stalled:", stalled.message, entry.progress);
   settle(id, (e) => e.reject(stalled));
@@ -89,7 +99,7 @@ function expire(id) {
  * come back transferred the same way. `onProgress` is called with
  * `{ phase, loaded, isolated }` as the job moves.
  */
-export function callKernel(op, payload, { timeout = LOAD_TIMEOUT_MS, transfer = [], onProgress } = {}) {
+export function callKernel(op, payload, { timeout = LOAD_TIMEOUT_MS, transfer = [], onProgress, signal } = {}) {
   return new Promise((resolve, reject) => {
     const id = ++seq;
     waiting.set(id, {
@@ -97,13 +107,21 @@ export function callKernel(op, payload, { timeout = LOAD_TIMEOUT_MS, transfer = 
       progress: { phase: "fetching" },
       timer: setTimeout(() => expire(id), timeout),
     });
+    // A superseded job must be dropped, not merely ignored. Left in the queue
+    // it keeps its watchdog, and a job nobody is waiting for that times out
+    // still tears down the worker and every healthy job with it.
+    signal?.addEventListener("abort", () => settle(id, (e) =>
+      e.reject(new Error("superseded"))), { once: true });
     try {
-      ensureWorker().postMessage({ id, op, dir: kernelDir(), payload }, transfer);
+      ensureWorker().postMessage({ id, op, dir: kernelDir(), payload: { ...payload, safeMode } }, transfer);
     } catch (error) {
       settle(id, (e) => e.reject(describeFailure(error)));
     }
   });
 }
+
+/** Whether the last stall made us stop asking for threads. */
+export const inSafeMode = () => safeMode;
 
 /** How many jobs are outstanding — the UI shows nothing else about the worker. */
 export const pendingJobs = () => waiting.size;

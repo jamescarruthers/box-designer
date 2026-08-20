@@ -19,11 +19,15 @@ export function useKernelSolids(derived, enabled) {
   useEffect(() => {
     if (!enabled) { setState({ status: "idle" }); return; }
     let live = true;
+    // Superseded jobs are cancelled, not just ignored: one left in the queue
+    // keeps its watchdog and can tear the worker down long after nobody wants it.
+    const cancel = new AbortController();
     setState((s) => ({ status: s.solids ? "refreshing" : "loading", solids: s.solids,
       progress: { phase: "fetching" } }));
 
     const { sol, edges, owners, fittingsOn } = derived;
     const t0 = performance.now();
+    let ran = {};
 
     callKernel("mesh", {
       panels: sol.panels,
@@ -33,7 +37,8 @@ export function useKernelSolids(derived, enabled) {
     }, {
       // §11 The step it is on, so a slow download reads as progress rather than
       // as a hang — which is exactly how it used to read.
-      onProgress: (progress) => { if (live) setState((s) => ({ ...s, progress })); },
+      signal: cancel.signal,
+      onProgress: (progress) => { ran = progress; if (live) setState((s) => ({ ...s, progress })); },
     })
       .then((solids) => {
         if (!live) return;
@@ -41,16 +46,20 @@ export function useKernelSolids(derived, enabled) {
           status: "ready", solids,
           ms: Math.round(performance.now() - t0),
           triangles: solids.reduce((a, m) => a + m.triangles, 0),
-          // Meshing asks for parallel, so with isolation this really was threaded.
-          threaded: isolated(),
+          // What the worker actually did. Cross-origin isolation only says
+          // threads are allowed; it does not say the pool came up, and asking
+          // for parallel meshing when it has not is how the kernel hangs.
+          threaded: ran.threaded === true,
+          isolated: ran.isolated ?? isolated(),
         });
       })
       .catch((error) => {
+        if (!live) return;                       // superseded, not failed
         console.error("OpenCASCADE solids failed:", error);
         if (live) setState({ status: "failed", error });
       });
 
-    return () => { live = false; };
+    return () => { live = false; cancel.abort(); };
   }, [enabled, derived]);
 
   return state;

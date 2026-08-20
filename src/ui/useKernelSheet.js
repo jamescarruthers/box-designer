@@ -16,6 +16,9 @@ export function useKernelSheet(derived, design, enabled) {
   useEffect(() => {
     if (!enabled) { setState({ status: "idle" }); return; }
     let live = true;
+    // Superseded jobs are cancelled, not just ignored: one left in the queue
+    // keeps its watchdog and can tear the worker down long after nobody wants it.
+    const cancel = new AbortController();
     setState((s) => ({ status: s.sheet ? "refreshing" : "loading", sheet: s.sheet,
       progress: { phase: "fetching" } }));
 
@@ -27,6 +30,7 @@ export function useKernelSheet(derived, design, enabled) {
       sectionAt: derived.sectionAt,
       fittings: derived.sol.panels.map((p) => derived.fittingsOn?.(p) ?? []),
     }, {
+      signal: cancel.signal,
       onProgress: (progress) => { if (live) setState((s) => ({ ...s, progress })); },
     })
       .then((geometry) => {
@@ -45,11 +49,12 @@ export function useKernelSheet(derived, design, enabled) {
         setState({ status: "ready", sheet, ms: Math.round(performance.now() - t0), isolated: isolated() });
       })
       .catch((error) => {
+        if (!live) return;                       // superseded, not failed
         console.error("OpenCASCADE sheet failed:", error);
         if (live) setState({ status: "failed", error });
       });
 
-    return () => { live = false; };
+    return () => { live = false; cancel.abort(); };
   }, [enabled, derived, design.title]);
 
   return state;

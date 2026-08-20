@@ -140,6 +140,13 @@ function solidNote(k) {
   if (k.status === "loading") return `${kernelProgress(k.progress)}…`;
   if (k.status === "refreshing") return "remeshing…";
   if (k.status === "failed") return `${k.error?.message ?? "kernel unavailable"} — showing the ring-stack solids`;
-  if (k.status === "ready") return `B-Rep, ${k.triangles} triangles, ${k.ms} ms${k.threaded ? ", threaded" : ""}`;
+  if (k.status === "ready") {
+    // Says which it was, both ways round. "Threads unavailable" is the answer
+    // to why a Pages deployment is slower than a local one, and there is no
+    // way to see it otherwise: GitHub Pages cannot send COOP and COEP, so the
+    // service worker is the only thing supplying them and it can quietly fail.
+    const how = k.threaded ? "threaded" : k.isolated ? "one thread" : "one thread, not isolated";
+    return `B-Rep, ${k.triangles} triangles, ${k.ms} ms, ${how}`;
+  }
   return "";
 }
