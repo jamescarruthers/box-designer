@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { FACES, FACE_LABEL, MATERIALS, PROMINENCE_PRESETS, EDGES, edgeAxis, materialById } from "../model/constants.js";
 import { panelColour } from "../three/palette.js";
-import { setIn, freeFaces, addPanel, removePanel, editPanel, setProjectMaterial, setProjectThickness } from "./design.js";
+import { setIn, freeFaces, addPanel, removePanel, editPanel, setProjectMaterial, setProjectThickness, setEdgeTreatment, treatedEdges } from "./design.js";
 import { newFitting, describeFitting, faceAxes, hasTube, FITTING_DEFAULTS } from "../model/fittings.js";
 import { fmt } from "../cutlist/cutlist.js";
 
@@ -51,6 +51,9 @@ export default function Controls({ design, set, derived, colourByFace }) {
   const cuttable = Object.values(derived.fullLength).filter(Boolean).length;
   const mitrable = Object.values(derived.mitrable).filter((c) => c.ok).length;
   const ring = derived.mitreRing.length;
+  // §15 Only what has been done to the box. Twelve rows of "Square" was a list
+  // of everything that could happen, which is not a list of anything.
+  const applied = treatedEdges(design);
   return (
     <div className="controls">
       <StockThicknesses />
@@ -149,10 +152,10 @@ export default function Controls({ design, set, derived, colourByFace }) {
         {design.edge.perEdge ? (
           <>
             <p className="note">
-              {mitrable} of 12 can be mitred now: the two panels have to meet along the whole
+              Click an edge in the 3D view with a treatment armed to add one here.
+              {" "}{mitrable} of 12 can take a mitre: the two panels have to meet along the whole
               edge and be the same thickness, and a panel takes mitres on opposite sides, not
-              adjacent ones — so choosing one closes others off. A mitre is a joint rather than a
-              decoration, and replaces the bevel on that edge instead of joining it.
+              adjacent ones — so choosing one closes others off.
               {ring > 0 ? (
                 <> <button type="button" className="linkish"
                   onClick={() => set(setIn(design, ["edge", "by"], mitreAll(design, derived)))}>
@@ -160,36 +163,49 @@ export default function Controls({ design, set, derived, colourByFace }) {
                 </button></>
               ) : null}
             </p>
-            <div className="edge-grid">
-              {EDGES.map((k) => {
-                const cur = design.edge.by[k] ?? { type: "none", radius: design.edge.radius };
-                // The two are gated separately. A bevel needs one panel running
-                // the whole edge (§3); a mitre needs the two panels to run it
-                // together (§12) — the tube between the front and back satisfies
-                // the second and not the first, so one control cannot use one
-                // answer for both.
-                const canBevel = derived.fullLength[k];
-                const canMitre = derived.mitrable[k]?.ok;
-                return (
-                  <div className={canBevel || canMitre ? "edge-row" : "edge-row blocked"} key={k}>
-                    <span className="edge-key">{k.replace("|", " / ")}
-                      <em>{edgeNote(k, canBevel, canMitre, derived)}</em></span>
-                    <select value={cur.type} disabled={!canBevel && !canMitre}
-                      aria-label={`${k} treatment`}
-                      onChange={(e) => set(setIn(design, ["edge", "by", k], { ...cur, type: e.target.value }))}>
-                      <option value="none">Square</option>
-                      <option value="chamfer" disabled={!canBevel}>Chamfer</option>
-                      <option value="fillet" disabled={!canBevel}>Fillet</option>
-                      <option value="mitre" disabled={!canMitre}>Mitre</option>
-                    </select>
-                    <input type="number" min="0" step="0.5" value={cur.radius}
-                      disabled={!canBevel || cur.type === "mitre"}
-                      aria-label={`${k} radius`}
-                      onChange={(e) => set(setIn(design, ["edge", "by", k], { ...cur, radius: Number(e.target.value) || 0 }))} />
-                  </div>
-                );
-              })}
-            </div>
+            <label className="field">
+              <span>Add an edge</span>
+              <select value="" aria-label="Add an edge treatment"
+                onChange={(e) => { if (e.target.value) set(addEdge(design, derived, e.target.value)); }}>
+                <option value="">Choose an edge…</option>
+                {EDGES.filter((k) => !applied.some(([a]) => a === k)).map((k) => (
+                  <option key={k} value={k}
+                    disabled={!derived.fullLength[k] && !derived.mitrable[k]?.ok}>
+                    {k.replace("|", " / ")}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {applied.length === 0 ? (
+              <p className="note empty">Every edge is square.</p>
+            ) : (
+              <div className="edge-grid">
+                {applied.map(([k, cur]) => {
+                  const canBevel = derived.fullLength[k];
+                  const canMitre = derived.mitrable[k]?.ok;
+                  return (
+                    <div className="edge-row" key={k}>
+                      <span className="edge-key">{k.replace("|", " / ")}
+                        <em>{edgeNote(k, canBevel, canMitre, derived)}</em></span>
+                      <select value={cur.type} aria-label={`${k} treatment`}
+                        onChange={(e) => set(setEdgeTreatment(design, k, e.target.value, cur.radius))}>
+                        <option value="none">Square</option>
+                        <option value="chamfer" disabled={!canBevel}>Chamfer</option>
+                        <option value="fillet" disabled={!canBevel}>Fillet</option>
+                        <option value="mitre" disabled={!canMitre}>Mitre</option>
+                      </select>
+                      <input type="number" min="0" step="0.5" value={cur.radius ?? design.edge.radius}
+                        disabled={cur.type === "mitre"}
+                        aria-label={`${k} radius`}
+                        onChange={(e) => set(setEdgeTreatment(design, k, cur.type, Number(e.target.value) || 0))} />
+                      <button type="button" className="drop" aria-label={`Square ${k}`}
+                        title="Back to square"
+                        onClick={() => set(setEdgeTreatment(design, k, "none"))}>×</button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </>
         ) : null}
       </Group>
@@ -205,10 +221,30 @@ export default function Controls({ design, set, derived, colourByFace }) {
   );
 }
 
-/** What is available on one edge, and why the rest is not. */
+/**
+ * §15 The treatment a newly added edge starts with: whatever the uniform
+ * setting is if that edge can take it, else the only thing it can take. Adding
+ * an edge and being told it cannot have what it was given would be a poor
+ * welcome.
+ */
+function addEdge(design, derived, key) {
+  const canBevel = derived.fullLength[key];
+  const wanted = design.edge.type !== "none" && canBevel ? design.edge.type : null;
+  const type = wanted ?? (canBevel ? "fillet" : "mitre");
+  return setEdgeTreatment(design, key, type, design.edge.radius);
+}
+
+/**
+ * What is available on one edge, and why the rest is not.
+ *
+ * The reason is cut to its first clause: the full one explains the rule as well
+ * as the case, and five lines of rule under one row buried the row. The rule is
+ * in the note above the list, where it is said once.
+ */
 function edgeNote(key, canBevel, canMitre, derived) {
+  const brief = (why) => String(why ?? "").split(" — ")[0];
   if (canBevel && canMitre) return `runs ${edgeAxis(key)}`;
-  if (canBevel) return `bevel only — ${derived.mitrable[key].why}`;
+  if (canBevel) return `bevel only — ${brief(derived.mitrable[key].why)}`;
   if (canMitre) return "mitre only — no one panel runs this edge";
   return "broken by other panels";
 }

@@ -5,6 +5,8 @@ import * as THREE from "three";
 import { panelPositions, explodeOffset, panelEdgeLoops } from "../three/panelGeometry.js";
 import { panelBevels } from "../model/bevel.js";
 import { edgePasses, showsFaces, needsDepth, EDGE_COLOUR } from "../three/edges.js";
+import { edgeProxies, pickableEdges, pickRadius, hintSize } from "../three/edgePick.js";
+import { toThree } from "../three/panelGeometry.js";
 import { panelColour, SELECT_EMISSIVE, ACCENT } from "../three/palette.js";
 
 /** §4 The two depth comparisons the edge passes use. */
@@ -49,7 +51,7 @@ export const VIEW_PRESETS = {
 
 const POLAR_MIN = 0.06, POLAR_MAX = Math.PI - 0.06;
 
-export default function Viewport({ derived, style, colourByFace, explode, selected, onSelect, hovered, hidden, camera, solids }) {
+export default function Viewport({ derived, style, colourByFace, explode, selected, onSelect, hovered, hidden, camera, solids, edgeTool, onEdgePick }) {
   const host = useRef(null);
   const gl = useRef(null);
 
@@ -78,7 +80,11 @@ export default function Viewport({ derived, style, colourByFace, explode, select
     const root = new THREE.Group();
     scene.add(root);
 
-    const state = { renderer, scene, camera, target, sph, root, picks: [], raf: 0, needs: true };
+    const state = { renderer, scene, camera, target, sph, root, picks: [], raf: 0, needs: true,
+      // §15 The edge tool's own layer: invisible proxies to hit, and the key
+      // under the pointer. Kept on `state` so the pointer handlers, which are
+      // installed once, can see the current set without being rebuilt.
+      edgeProxies: [], edgeHover: null, onEdgePick: null, edgeTool: null };
     gl.current = state;
 
     const place = () => {
@@ -113,8 +119,29 @@ export default function Viewport({ derived, style, colourByFace, explode, select
       drag = { x: e.clientX, y: e.clientY, pan: e.shiftKey, moved: 0 };
       el.setPointerCapture?.(e.pointerId);
     };
+    const rayAt = (e) => {
+      const r = el.getBoundingClientRect();
+      ray.setFromCamera(new THREE.Vector2(
+        ((e.clientX - r.left) / r.width) * 2 - 1,
+        -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+      return ray;
+    };
+    const edgeUnder = (e) => {
+      if (!state.edgeTool || !state.edgeProxies.length) return null;
+      const hit = rayAt(e).intersectObjects(state.edgeProxies, false)[0];
+      return hit ? hit.object.userData.edgeKey : null;
+    };
+
     const move = (e) => {
-      if (!drag) return;
+      if (!drag) {
+        // §15 Highlight what a click would land on. Only while the tool is
+        // armed: without it the pointer is for turning the box, and an edge
+        // lighting up under it would be an invitation to nothing.
+        const key = edgeUnder(e);
+        if (key !== state.edgeHover) { state.edgeHover = key; state.drawEdgeHint?.(); invalidate(); }
+        el.style.cursor = key ? "pointer" : "";
+        return;
+      }
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       drag.x = e.clientX; drag.y = e.clientY;
       drag.moved += Math.abs(dx) + Math.abs(dy);
@@ -140,11 +167,12 @@ export default function Viewport({ derived, style, colourByFace, explode, select
     };
     const ray = new THREE.Raycaster();
     const pick = (e) => {
-      const r = el.getBoundingClientRect();
-      ray.setFromCamera(new THREE.Vector2(
-        ((e.clientX - r.left) / r.width) * 2 - 1,
-        -((e.clientY - r.top) / r.height) * 2 + 1), camera);
-      const hit = ray.intersectObjects(state.picks, false)[0];
+      // An armed tool takes the click; an edge is the smaller target and the
+      // panel behind it is always there to fall back on.
+      const key = edgeUnder(e);
+      if (key) { state.onEdgePick?.(key); return; }
+      if (state.edgeTool) return;                  // armed but missed: change nothing
+      const hit = rayAt(e).intersectObjects(state.picks, false)[0];
       state.onSelect?.(hit ? hit.object.userData.index : null);
     };
 
@@ -169,6 +197,66 @@ export default function Viewport({ derived, style, colourByFace, explode, select
       gl.current = null;
     };
   }, []);
+
+  /**
+   * §15 The edge layer: an invisible proxy on every edge the armed tool can
+   * treat, and a line on whichever one the pointer is over.
+   *
+   * Its own effect, because it changes on a different rhythm from the panels —
+   * arming a tool must not remesh the box, and turning the box must not rebuild
+   * the proxies.
+   */
+  useEffect(() => {
+    const state = gl.current;
+    if (!state) return;
+    state.onEdgePick = onEdgePick;
+    state.edgeTool = edgeTool ?? null;
+
+    for (const m of state.edgeProxies) state.scene.remove(m);
+    state.edgeProxies = [];
+    if (state.edgeHint) { state.scene.remove(state.edgeHint); state.edgeHint = null; }
+
+    if (!edgeTool) { state.edgeHover = null; state.needs = true; return; }
+
+    const { sol } = derived;
+    const allowed = pickableEdges(edgeTool, derived);
+    const r = pickRadius(sol.E);
+    const byKey = new Map();
+    for (const proxy of edgeProxies(sol.env, sol.E, r)) {
+      if (!allowed[proxy.key]?.ok) continue;
+      byKey.set(proxy.key, proxy);
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(...proxy.size),
+        // Invisible, but still hit: three raycasts an object whatever its
+        // material says, and only skips it if the object itself is not there.
+        new THREE.MeshBasicMaterial({ visible: false }));
+      mesh.position.set(...proxy.centre);
+      mesh.userData.edgeKey = proxy.key;
+      state.scene.add(mesh);
+      state.edgeProxies.push(mesh);
+    }
+
+    // Redrawn on every hover change rather than rebuilt: one bar, six faces.
+    state.drawEdgeHint = () => {
+      if (state.edgeHint) { state.scene.remove(state.edgeHint); state.edgeHint = null; }
+      const proxy = state.edgeHover ? byKey.get(state.edgeHover) : null;
+      if (!proxy) return;
+      const bar = new THREE.Mesh(
+        new THREE.BoxGeometry(...hintSize(proxy, r)),
+        new THREE.MeshBasicMaterial({
+          color: new THREE.Color(ACCENT), transparent: true, opacity: 0.9,
+          // Over the box rather than in it: the edge being offered is the point,
+          // and half of it disappearing behind a panel would only confuse.
+          depthTest: false,
+        }));
+      bar.position.set(...proxy.centre);
+      bar.renderOrder = 5;
+      state.scene.add(bar);
+      state.edgeHint = bar;
+    };
+    state.drawEdgeHint();
+    state.needs = true;
+  }, [derived, edgeTool, onEdgePick]);
 
   // Rebuild the panels whenever the box, the styling or the selection changes.
   useEffect(() => {

@@ -116,6 +116,41 @@ export function edgeMap(design) {
   return base;
 }
 
+/**
+ * §15 Set one edge's treatment, from a click in the 3D view.
+ *
+ * Switching to per-edge mode seeds `by` from whatever the uniform setting was,
+ * so the click changes the edge it was aimed at and nothing else. Coming from a
+ * box with a 12 mm fillet all round, clicking one edge square must leave the
+ * other eleven filleted — not reset the lot because the mode changed.
+ *
+ * "none" removes the entry rather than storing a square one: the list is meant
+ * to be what has been done to the box, and a row saying "square" is a row
+ * saying nothing.
+ */
+export function setEdgeTreatment(design, key, type, radius) {
+  const seed = design.edge.perEdge
+    ? design.edge.by
+    : Object.fromEntries(EDGES
+      .filter(() => design.edge.type !== "none")
+      .map((k) => [k, { type: design.edge.type, radius: design.edge.radius }]));
+
+  const by = { ...seed };
+  if (type === "none") delete by[key];
+  else by[key] = { type, radius: radius ?? by[key]?.radius ?? design.edge.radius };
+
+  return { ...design, edge: { ...design.edge, perEdge: true, by } };
+}
+
+/** §15 The edges that have actually been given a treatment. */
+export function treatedEdges(design) {
+  if (!design.edge.perEdge) {
+    return design.edge.type === "none" ? [] : EDGES.map((k) => [k, { type: design.edge.type, radius: design.edge.radius }]);
+  }
+  return EDGES.filter((k) => design.edge.by[k] && design.edge.by[k].type !== "none")
+    .map((k) => [k, design.edge.by[k]]);
+}
+
 /** Which edges the design asks to mitre. */
 export function mitreMap(design) {
   if (!design.edge.perEdge) return {};

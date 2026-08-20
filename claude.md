@@ -605,7 +605,7 @@ Two columns. Controls on the left (about 314 px), main area on the right
 switching between three modes:
 
 **3D view** — viewport with floating chips for render style, colour mode, view
-presets and an explode slider.
+presets, solid engine, edge tools (§15) and an explode slider.
 
 **Cut list & sheets** — three columns side by side: cut list, part templates,
 sheet layouts. Hovering a part highlights it in all three and in the 3D view.
@@ -623,6 +623,11 @@ is a form for a box that mostly has no cladding. Instead: one stack per layer,
 each with a dropdown of the sides not yet used. Pick a side and a panel appears,
 inheriting the project sheet, with its thickness and material editable in place
 and a cross to drop it. The side picker empties as sides are used up.
+
+**Edge treatments are applied by clicking the edge.** The chips arm a
+treatment; the next click on an edge in the viewport applies it, and the
+control's list holds what has been done rather than everything that could be
+(§15).
 
 **Prominence is a preset until it is not.** A preset covers most boxes, so the
 six-face order stays folded away behind it. A summary line always shows the order
@@ -1329,3 +1334,70 @@ cross-checked against the **panel box** rather than against the placement
 function, so the test can actually disagree with the code. And
 `tools/spike/dxf-preview.mjs` draws a DXF as an SVG, because some of this is
 only obvious when looked at.
+
+## 15. Applying an edge treatment by clicking the edge
+
+The per-edge control used to list all twelve edges, every one of them offering
+Square, Chamfer, Fillet and Mitre, and eleven of them saying Square. A list of
+everything that could happen is not a list of anything. It is now a list of what
+has been done to the box: an edge appears once it has a treatment and leaves
+again when it goes back to square.
+
+That needs a way in that is not the list, and the obvious one is the box itself.
+Arm a treatment from the chips under the viewport, click an edge, and the edge
+you clicked gets it. The armed tool is not part of the design — it is what the
+pointer is for at this moment, not something about the box — so it lives in the
+app's state and is gone on reload.
+
+### Hitting a line
+
+A line has no area, and the one pixel it does occupy moves as the box turns. So
+every edge the armed tool can treat gets an invisible box around it and those
+are what the ray hits: as long as the edge, `2r` square across it, where `r` is
+4.5% of the box's smallest dimension, clamped to 4–30 mm. Below the clamp a
+60 mm box is unhittable; above it a 3 m box has targets that swallow the corner
+where two of them meet.
+
+The proxies are invisible but present — three raycasts an object whatever its
+material says and only skips it if the object is not in the scene at all — and
+they are geometry rather than rendering, so `edgeProxies` is checkable without a
+canvas.
+
+An armed click takes the edge if it hits one, and changes nothing if it misses.
+Falling through to the panel behind would select a part while the pointer is
+plainly meant to be doing something else.
+
+### The highlight has to have width
+
+Drawn as a line, the highlight was invisible: WebGL gives every line one pixel
+whatever `linewidth` asks for, and this one landed exactly on the panel edges
+already drawn there. Photographed in the browser, there was nothing on screen at
+all. It is a bar now — the proxy, slimmed to half its width across — drawn with
+`depthTest: false` so the whole edge shows rather than half of it disappearing
+behind a panel. `tools/spike/shoot-edge-hint.mjs` crops the same patch with the
+pointer on an edge and off it, which is how the empty version was caught.
+
+### What each tool may touch
+
+Two different questions, and neither answer stands in for the other. A bevel
+needs one panel running the whole edge (§3); a mitre needs the two panels to run
+it together (§12). This box has edges that pass the first and fail the second,
+so the tool asks for the answer it needs. Square reaches every edge, including
+the ones nothing else can treat — otherwise an edge could be given a treatment
+by one route and have no way back.
+
+### Switching to per-edge without losing the box
+
+Arming a tool on a box with a 12 mm fillet all round and clicking one edge
+square must leave the other eleven filleted. So the per-edge map is seeded from
+whatever the uniform setting was, rather than from nothing, and only then is the
+clicked edge changed. `none` deletes the entry rather than storing a square one:
+the list is what has been done, and a row saying "square" is a row saying
+nothing.
+
+### The other way in
+
+The list carries an **Add an edge** select as well, listing the edges not yet
+treated and disabling the ones that can take neither a bevel nor a mitre. The
+pointer is the better way to reach an edge, but it is not the only one anybody
+has, and it is not one a test in jsdom can use.
