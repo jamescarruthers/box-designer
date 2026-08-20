@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Sheet material box designer \u2014 panel solver, 3D view, cut list and technical drawing",
+  "description": "Sheet material box designer — panel solver, 3D view, cut list and technical drawing",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -17,7 +17,9 @@
   "dependencies": {
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "three": "^0.160.1"
+    "three": "^0.160.1",
+    "three-gpu-pathtracer": "^0.0.20",
+    "three-mesh-bvh": "^0.7.8"
   },
   "devDependencies": {
     "@testing-library/react": "^16.0.1",

@@ -1,8 +1,12 @@
-import React, { useMemo, useState, useCallback, useEffect } from "react";
+import React, { useMemo, useState, useCallback, useEffect, Suspense, lazy } from "react";
 import Controls from "./Controls.jsx";
 import Viewport, { RENDER_STYLES, VIEW_PRESETS } from "./Viewport.jsx";
 import CutListView from "./CutListView.jsx";
 import DrawingView from "./DrawingView.jsx";
+// §19 Loaded when the mode is opened. Physical materials and the environment
+// prefilter pull in a good deal of three that the other modes never touch, and
+// the app has to open on a slow connection.
+const RenderView = lazy(() => import("./RenderView.jsx"));
 import { DEFAULT_DESIGN, derive, setEdgeTreatment } from "./design.js";
 import { loadDesign, saveDesign, forgetDesign } from "./storage.js";
 import { useKernelSolids } from "./useKernelSolids.js";
@@ -20,6 +24,7 @@ export const EDGE_TOOLS = [
 
 const MODES = [
   { id: "view", name: "3D view" },
+  { id: "render", name: "Render" },
   { id: "cuts", name: "Cut list & sheets" },
   { id: "drawing", name: "Drawing" },
 ];
@@ -171,6 +176,15 @@ export default function App() {
             <div className="pane pane-cuts">
               <CutListView derived={derived} title={design.title} colourByFace={colourByFace}
                 selected={selected} hovered={hovered} onSelect={onSelect} onHover={setHovered} />
+            </div>
+          ) : null}
+
+          {mode === "render" ? (
+            <div className="pane pane-render">
+              <Suspense fallback={<div className="render-state">preparing the studio…</div>}>
+                <RenderView derived={derived} design={design}
+                  solids={solidEngine === "kernel" ? kernelSolids.solids : null} hidden={false} />
+              </Suspense>
             </div>
           ) : null}
 

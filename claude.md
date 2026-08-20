@@ -1623,3 +1623,79 @@ rendered surface has to reproduce to look like the board rather than like paint.
 A face that is following the project shows the project's colour, not the sheet's:
 a grey square against a green box would be a plain lie about what is going to be
 cut.
+
+---
+
+## 19. The rendered view
+
+A photograph of the box, in two levels: a studio render that turns with the
+mouse, and a path trace of the same scene for when it has to look like a
+photograph rather than like a render.
+
+Its own mode, its own canvas and its own scene. Almost nothing is shared with
+§4: no edges to draw, a different framing, physical materials rather than flat
+ones, and the box stands on a floor instead of floating at the origin.
+
+### The studio
+
+A seamless sweep — floor, quarter-radius, wall, extruded sideways as one surface
+so there is no join anywhere in it — and an environment built in `studio.js`: a
+sky gradient, a soft box well round to one side, a weaker fill opposite. Written
+as a float equirectangular image, with the lamps well above 1, because the
+difference between a light and a bright grey is that a light has more energy
+than white and a path tracer can tell.
+
+Both levels are lit by that same environment, so **Refine** changes how
+carefully the light is followed, not what the light is.
+
+Two decisions worth writing down:
+
+- **The key is nearly 1.3 radians off the camera.** A light on the camera's
+  shoulder lights both visible faces of a box the same, and a box with two
+  identical faces reads as a flat shape with a line drawn down it.
+- **Material colour, never the face colouring.** The face colours of §4 are a
+  way of reading the joinery. This view is a photograph of a box somebody is
+  going to make out of a real sheet.
+
+### The environment was upside down
+
+Row 0 of a texture is the bottom of the image; `v` in the generator is the angle
+down from straight up. Filling rows straight from `v` put the sky underneath the
+floor — and the symptom is not "the environment is inverted", it is that the top
+face of the box goes dark and everything reads as flat lighting. Every
+explanation that suggests itself is about the shading model.
+
+`sampleStudio` reads the environment back in a given direction, which is what
+makes "is the sky above the box" a test rather than a squint.
+
+### Path tracing, on demand
+
+`three-gpu-pathtracer` over the same scene, camera, materials and lights.
+Averaged frames, refining while you watch: colour bleeds off the red front panel
+onto the sweep, the inside of a driver's bore goes dark because most of the room
+cannot see into it, and the shadow tightens where the box meets the floor. None
+of those are things a rasteriser with one shadow map can do, and between them
+they are most of what makes a photograph look like one.
+
+Fetched by dynamic import the first time somebody presses Refine — 186 kB of it,
+in its own chunk, never on the way to the first paint.
+
+**Two copies of three.** `import("three")` inside the dynamically imported module
+gave the async chunk its own copy: 200 kB of it twice in the build, and two sets
+of classes that fail every `instanceof` against each other. three is imported
+statically at the top of `pathtrace.js`; only the tracer is fetched on demand.
+The main bundle grew by 7.6 kB for the whole feature.
+
+**Measured here under software rendering** (SwiftShader): about 1.4 samples a
+second at 520 × 420, 40 samples of a box with a driver cutout in 96 s. A real
+GPU is enormously faster than this and the figures above say nothing useful
+about one — what they do establish is that the integration is right, because the
+picture converges to the right picture.
+
+### Cost
+
+| | |
+|---|---|
+| main bundle | +7.6 kB |
+| render mode chunk | 10 kB, loaded when the mode is opened |
+| path tracer chunk | 186 kB, loaded when Refine is pressed |
