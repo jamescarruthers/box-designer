@@ -1224,3 +1224,108 @@ edge)`. The four-argument one is `Add_3(d1, d2, edge, face)`. The chamfer path
 had been calling `Add_2` with four arguments since §3 was wired to the kernel,
 which throws a binding error at the first chamfer and had no test to catch it.
 Fixed, and covered.
+
+
+---
+
+## 13. The design, kept between visits
+
+One key in localStorage holding the whole design, written after every change and
+read once at startup. Not a document store and not a project manager: the app
+has one box open at a time, and the point is only that closing the tab does not
+throw the afternoon away.
+
+The interesting half is reading it back. A design saved last week was written by
+last week's app, and this week's has fields it never heard of — mitres, a port's
+tube flag, a per-face thickness map. Restoring it verbatim leaves those
+undefined, and undefined reads as false, as zero, or as a crash. So a save is
+merged **over the defaults**, and:
+
+- **A key the defaults do not have is dropped.** That is what stops a stale save
+  reintroducing a field the app has since retired.
+- **The open records are merged a level deeper.** `cladding`, `doubler`,
+  `thicknessBy` and `edge.by` are keyed by face and by edge — their keys come
+  from the user, not from the defaults — so each entry is merged over the
+  default entry where there is one, and the rest are kept.
+- **Lists are taken whole.** `fittings` and `order` are lists rather than
+  records; merging them element-wise would be nonsense.
+
+It saves after the render that used the design, not before, so a box that cannot
+be solved is still kept — reload and carry on fixing it rather than losing it.
+Storage that will not cooperate is never fatal: a corrupt save opens the
+defaults, a refused write warns and carries on, and no storage at all works
+fine. Losing a save is a disappointment; losing the edit that triggered it would
+not be. Reset forgets as well as resets, because a design kept between visits
+that you cannot get rid of is a trap.
+
+The app's own tests clear storage between cases now. They had been getting a
+fresh design for free, and the moment one persisted, nine of them started
+reading whatever the previous test left behind.
+
+### What it turned up
+
+A test that saved a *fully loaded* design — cladding, a mitre, a driver — and
+checked it still solved found that it did not, and had never done. A mitred
+panel grows out to the corner it shares with its neighbour, and the code grew it
+to the **envelope**. Those are the same thing on a bare carcass. Cladding sits
+outside the shell, so the envelope is 6 mm further out than the shell's own
+corner, and the mitred panel grew straight through the cladding. §2.4 had been
+reporting it as a closure error the whole time, correctly, and nothing had put
+the two features in the same box to see it.
+
+It grows to the other panel's outer face now, which is what the corner always
+was. Both targets are read before either panel moves, or growing the first would
+shift the corner the second is aiming at.
+
+
+---
+
+## 14. The sheet layouts as DXF
+
+R12 ASCII, because everything reads it — thirty-year-old CAM seats included —
+and nothing here needs anything newer. Millimetres, 1:1, no scaling anywhere: a
+file that arrives at the wrong size is worse than one that does not arrive.
+
+**What goes in is what gets cut, and nothing else.** Part outlines as closed
+polylines, the fitting cutouts and bolt holes as circles, the stock boundary for
+reference, and text. Four layers, so the shop can order the work — holes before
+the profile, or the profile alone with the rest switched off:
+
+| layer | what it is |
+|---|---|
+| `OUTLINE` | the part profiles, closed |
+| `HOLES` | cutouts and bolt holes |
+| `SHEET` | the stock boundary, reference only |
+| `LABEL` | part ids and a caption per sheet; cuts nothing |
+
+Two things are deliberately absent. **The bolt circle**, because it is a
+setting-out circle rather than a path, and a file handed to a machine should not
+contain a circle nobody meant to cut — it is dimensioned on the A3 drawing
+instead. And **the bevels and mitres**, which cannot be in it: a blank is a
+rectangle, and the 45° is a saw set over after the parts come off the sheet. The
+cut list's edge column carries that work.
+
+One file rather than one per sheet, with the sheets laid left to right and each
+captioned with its material and size. A browser asking three times in a row
+whether you would like to save a file is its own kind of unhelpful, and a shop
+opening one file to find three labelled sheets side by side knows exactly what
+it is looking at.
+
+### Coordinates
+
+Blank coordinates run x along the length and **y down** from the top edge, which
+is how `toBlank` gives them and how the templates draw them; the nest places
+parts in the same top-down frame. DXF is Y-up, so the sheet is flipped once at
+the end rather than every point being reasoned about twice. A rotated part is
+turned a quarter turn clockwise — its top-left corner goes to the footprint's
+top-right and its length runs down the sheet.
+
+### Checking it
+
+A DXF that parses can still put a hole in the wrong part, so the tests read the
+file back and check the geometry: every part inside its sheet, every hole inside
+its part, and every outline the size the cut list says. The driver's position is
+cross-checked against the **panel box** rather than against the placement
+function, so the test can actually disagree with the code. And
+`tools/spike/dxf-preview.mjs` draws a DXF as an SVG, because some of this is
+only obvious when looked at.

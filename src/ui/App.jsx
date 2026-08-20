@@ -1,9 +1,10 @@
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
 import Controls from "./Controls.jsx";
 import Viewport, { RENDER_STYLES, VIEW_PRESETS } from "./Viewport.jsx";
 import CutListView from "./CutListView.jsx";
 import DrawingView from "./DrawingView.jsx";
 import { DEFAULT_DESIGN, derive } from "./design.js";
+import { loadDesign, saveDesign, forgetDesign } from "./storage.js";
 import { useKernelSolids } from "./useKernelSolids.js";
 import { kernelProgress } from "../occt/kernel.js";
 import { fmt } from "../cutlist/cutlist.js";
@@ -15,7 +16,9 @@ const MODES = [
 ];
 
 export default function App() {
-  const [design, setDesign] = useState(DEFAULT_DESIGN);
+  // §13 Opened from storage, saved on every change. Read once, lazily, so the
+  // parse happens before the first render rather than as a second one.
+  const [design, setDesign] = useState(loadDesign);
   const [mode, setMode] = useState("view");
   const [style, setStyle] = useState("shaded-edges");
   const [colourByFace, setColourByFace] = useState(true);
@@ -29,6 +32,10 @@ export default function App() {
     try { return { ok: true, ...derive(design) }; }
     catch (e) { return { ok: false, error: e }; }
   }, [design]);
+
+  // Saved after the render that used it, so a design that cannot be solved is
+  // still kept — you can reload and carry on fixing it rather than losing it.
+  useEffect(() => { saveDesign(design); }, [design]);
 
   const onSelect = useCallback((i) => setSelected((cur) => (cur === i ? null : i)), []);
   const kernelSolids = useKernelSolids(derived.ok ? derived : null, derived.ok && solidEngine === "kernel");
@@ -51,7 +58,9 @@ export default function App() {
         </header>
         <Controls design={design} set={setDesign} derived={derived} colourByFace={colourByFace} />
         <footer className="side-foot">
-          <button type="button" onClick={() => setDesign(DEFAULT_DESIGN)}>Reset</button>
+          {/* Forgets as well as resets: a design kept between visits that you
+              cannot get rid of is a trap, not a convenience. */}
+          <button type="button" onClick={() => { forgetDesign(); setDesign(DEFAULT_DESIGN); }}>Reset</button>
         </footer>
       </aside>
 
@@ -115,7 +124,7 @@ export default function App() {
 
           {mode === "cuts" ? (
             <div className="pane pane-cuts">
-              <CutListView derived={derived} colourByFace={colourByFace}
+              <CutListView derived={derived} title={design.title} colourByFace={colourByFace}
                 selected={selected} hovered={hovered} onSelect={onSelect} onHover={setHovered} />
             </div>
           ) : null}

@@ -1,7 +1,7 @@
 /** §9.7 Drive the app: mount it in jsdom, stub WebGLRenderer, click through the
  *  modes and change inputs, and assert nothing falls over. */
 import React from "react";
-import { describe, it, expect, vi, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
 
 vi.mock("three", async (importOriginal) => {
@@ -28,6 +28,10 @@ beforeAll(() => {
 });
 
 afterEach(cleanup);
+
+// §13 The design lives in storage now, so every test starts from a fresh
+// browser rather than from whatever the last one left behind.
+beforeEach(() => localStorage.clear());
 
 const errors = [];
 const originalError = console.error;
@@ -254,6 +258,31 @@ describe("the app", () => {
     expect(container.textContent).toContain("no tube");
     // Its length is not a number that means anything any more.
     expect(screen.getByLabelText("Fitting 1 length").disabled).toBe(true);
+  });
+
+  it("§13 keeps the design across a reload, and lets you get rid of it", () => {
+    render(<App />);
+    fireEvent.change(screen.getByLabelText("Thickness"), { target: { value: "21" } });
+    cleanup();
+
+    // A fresh App is a reload: same storage, same design.
+    render(<App />);
+    expect(screen.getByLabelText("Thickness").value).toBe("21");
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    expect(screen.getByLabelText("Thickness").value).toBe("18");
+    cleanup();
+    render(<App />);
+    expect(screen.getByLabelText("Thickness").value).toBe("18");
+  });
+
+  it("§14 offers a DXF of the sheet layouts", () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    expect(screen.getByRole("button", { name: "Export DXF" })).toBeTruthy();
+    // The download path is stubbed in this environment; that it builds without
+    // throwing on a real derived design is the part worth asserting here.
+    fireEvent.click(screen.getByRole("button", { name: "Export DXF" }));
   });
 
   it("reports the volume closure as exact", () => {

@@ -69,17 +69,33 @@ export function mitrableEdges(panels, env, layer = "shell") {
   return Object.fromEntries(EDGES.map((k) => [k, mitreCheck(panels, env, k, layer)]));
 }
 
-/** Grow the butting panel of each mitre out to the envelope corner. */
+/**
+ * Grow the butting panel of each mitre out to the corner it shares.
+ *
+ * The corner is the **other panel's outer face**, not the envelope. Those are
+ * the same thing on a bare carcass, which is why the envelope stood in for it —
+ * until cladding went on. Cladding sits outside the shell, so the envelope is
+ * 6 mm further out than the shell's own corner, and growing to it drove the
+ * mitred panel straight through the cladding: closure went out by exactly the
+ * overlap, and §2.4 called it a bug, correctly.
+ */
 function growFor(panels, env, keys, layer) {
   const out = panels.map((p) => ({ ...p, box: { ...p.box }, mitres: [...(p.mitres ?? [])] }));
+  const on = (face) => out.find((q) => q.face === face && q.layer === layer);
   for (const key of keys) {
     const [f1, f2] = key.split("|");
+    // Both targets read before either moves: growing the first would otherwise
+    // move the corner the second is aiming at.
+    const corner = Object.fromEntries([f1, f2].map((f) => {
+      const [a, s] = AXIS[f];
+      return [f, s < 0 ? on(f).box[a][0] : on(f).box[a][1]];
+    }));
     for (const [self, other] of [[f1, f2], [f2, f1]]) {
-      const p = out.find((q) => q.face === self && q.layer === layer);
+      const p = on(self);
       const [oa, os] = AXIS[other];
-      // Out to the envelope on the other panel's side. Already there = no-op.
-      if (os < 0) p.box[oa] = [env[oa][0], p.box[oa][1]];
-      else p.box[oa] = [p.box[oa][0], env[oa][1]];
+      // Out to the other panel's outer face. Already there = no-op.
+      if (os < 0) p.box[oa] = [corner[other], p.box[oa][1]];
+      else p.box[oa] = [p.box[oa][0], corner[other]];
     }
   }
   return out;

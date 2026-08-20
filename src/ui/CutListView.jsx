@@ -6,11 +6,12 @@ import { panelColour, ACCENT } from "../three/palette.js";
 import { blankCircles, blankBoltCircles } from "../model/fittings.js";
 import { panelBlank } from "../model/solver.js";
 import { sheetYield } from "../cutlist/nest.js";
+import { sheetsDxf } from "../cutlist/dxf.js";
 
 const Swatch = ({ row, on }) => on
   ? <i className="swatch" style={{ background: panelColour(row.panel) }} /> : null;
 
-export default function CutListView({ derived, colourByFace, selected, hovered, onSelect, onHover }) {
+export default function CutListView({ derived, title, colourByFace, selected, hovered, onSelect, onHover }) {
   const { rows, sheets, totals } = derived;
   const longest = Math.max(...rows.map((r) => r.length), 1);
 
@@ -102,7 +103,12 @@ export default function CutListView({ derived, colourByFace, selected, hovered, 
       </section>
 
       <section className="col col-sheets">
-        <header><h2>Sheet layouts</h2><span className="hint">grouped by material and thickness</span></header>
+        <header>
+          <h2>Sheet layouts</h2>
+          <button type="button" title="1:1 in millimetres, part outlines and cutouts on separate layers"
+            onClick={() => download(sheetsDxf(sheets), `${slug(title)}-sheets.dxf`,
+              "application/dxf")}>Export DXF</button>
+        </header>
         <div className="scroll">
           {sheets.map((sh) => (
             <figure key={sh.index} className="sheet">
@@ -165,8 +171,11 @@ function Fittings({ row, longest }) {
   );
 }
 
-function download(text, name) {
-  const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
+/** A filename that will not need renaming before it can be emailed. */
+const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "box";
+
+function download(text, name, type = "text/csv;charset=utf-8") {
+  const blob = new Blob([text], { type });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = name;
