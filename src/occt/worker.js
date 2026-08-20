@@ -64,15 +64,23 @@ async function fetchWasm(url, report) {
 /** Load once, share the promise. `dir` is resolved by the client against the
  *  page's own base: a worker has no `document`, and the pthread worker inside
  *  the kernel resolves `./occt-box.js` against its own URL. */
+const loadWatchers = new Set();
+const announce = (progress) => { for (const w of loadWatchers) w(progress); };
+
 function load(dir, report) {
+  // Every job waiting on the same load hears the same progress. Reporting only
+  // to whichever job happened to start it left the others silent for the whole
+  // download — and a silent job is one the client's watchdog kills, which then
+  // terminates the worker out from under the download that was going fine.
+  loadWatchers.add(report);
   if (!kernel) {
     kernel = (async () => {
-      report({ phase: "fetching", loaded: 0 });
+      announce({ phase: "fetching", loaded: 0 });
       const [{ default: factory }, wasmBinary] = await Promise.all([
         import(/* @vite-ignore */ `${dir}occt-box.js`),
-        fetchWasm(`${dir}occt-box.wasm`, report),
+        fetchWasm(`${dir}occt-box.wasm`, announce),
       ]);
-      report({ phase: "starting", isolated: self.crossOriginIsolated === true });
+      announce({ phase: "starting", isolated: self.crossOriginIsolated === true });
       return factory({
         wasmBinary,
         // The wasm arrives as `wasmBinary`, so the glue should never fetch it —
@@ -82,7 +90,23 @@ function load(dir, report) {
       });
     })().catch((e) => { kernel = null; throw e; });   // a failed load is retryable
   }
-  return kernel;
+  return kernel.finally(() => loadWatchers.delete(report));
+}
+
+/**
+ * Whether the thread pool is genuinely there.
+ *
+ * Not `crossOriginIsolated` on its own. That says SharedArrayBuffer is allowed,
+ * which is why the kernel instantiates at all — it says nothing about whether
+ * the pthread workers actually came up. Ask BRepMesh for parallel meshing when
+ * they have not and it blocks for ever waiting for a thread to take the work:
+ * the job reaches `working` and never leaves, which is precisely the failure
+ * this is here to stop. Emscripten keeps the pool where it can be counted.
+ */
+export function threadsReady(oc) {
+  const isolated = typeof self !== "undefined" && self.crossOriginIsolated === true;
+  const pool = oc?.PThread?.unusedWorkers;
+  return isolated && Array.isArray(pool) && pool.length > 0;
 }
 
 /** Every typed array in a result, so it moves rather than copies. */
@@ -94,9 +118,12 @@ export function buffersOf(value, out = []) {
 }
 
 export const OPS = {
-  mesh(oc, { panels, bevels, E, fittings }) {
+  mesh(oc, { panels, bevels, E, fittings, safeMode }) {
     return meshPanels(oc, panels, (i) => bevels[i] ?? {}, E, {
       fittingsFor: (i) => fittings?.[i] ?? [],
+      // Threads are worth 18-22% of this step and nothing at all elsewhere, so
+      // they are never worth a hang. `safeMode` is set after one has happened.
+      parallel: !safeMode && threadsReady(oc),
     });
   },
 
@@ -119,7 +146,7 @@ if (typeof self !== "undefined" && typeof self.postMessage === "function" && !("
     const watch = (p) => { phase = p.phase; report(p); };
     try {
       const oc = await load(dir, watch);
-      watch({ phase: "working" });
+      watch({ phase: "working", isolated: self.crossOriginIsolated === true, threaded: threadsReady(oc) });
       const result = OPS[op](oc, payload);
       self.postMessage({ id, ok: true, result }, buffersOf(result));
     } catch (error) {

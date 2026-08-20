@@ -735,6 +735,57 @@ The page shows the live step while it waits — *fetching the kernel, 8.4 MB…*
 so a slow connection reads as progress rather than as a hang. That alone would
 have made this report a one-line diagnosis instead of a bisection.
 
+### Threads, and knowing whether you have them
+
+`crossOriginIsolated` says SharedArrayBuffer is *allowed*. It does not say the
+pthread pool came up. Ask `BRepMesh` for parallel meshing when it has not and it
+blocks for ever waiting for a thread to take the work — the job reaches
+`working` and never leaves. Meshing used to ask unconditionally.
+
+So the worker counts the pool before trusting it (`threadsReady`), and if a job
+ever does stall in `working` the client sets `safeMode` on everything after it
+and stops asking. Threads are worth 18–22% of the mesh step and nothing at all
+elsewhere; they are never worth a hang.
+
+The status line says which it got — `threaded`, `one thread`, or `one thread,
+not isolated`. That last one is the answer to why a Pages deployment behaves
+differently from a local one, and there is no other way to see it.
+
+**GitHub Pages cannot send COOP and COEP.** It serves static files and has no
+header configuration at all, so `public/coi-serviceworker.js` is the only thing
+supplying them, on the second load, after it has claimed the page. It can
+quietly fail to: a private window, a browser that will not run service workers,
+an extension, a hard reload that bypasses it. When it does, the kernel now says
+so instead of running slower for no visible reason. To verify by hand, in the
+page console:
+
+```js
+crossOriginIsolated          // true if the worker took
+typeof SharedArrayBuffer     // "function"
+```
+
+Anywhere that can set response headers — Netlify, Cloudflare Pages, Vercel —
+needs no service worker and no reload. That is the fix if the threads matter;
+dropping `-pthread` is the fix if they do not.
+
+### One job must not kill another
+
+Two ways it could, both live, and between them they are how "draws once, then
+says redrawing for ever" happens:
+
+- **Load progress went only to the job that started the load.** Every other job
+  waiting on the same download sat silent for its whole duration, and a silent
+  job is one the watchdog kills — which terminates the worker out from under
+  the download that was going perfectly well. Progress is broadcast now.
+- **A superseded job was ignored rather than dropped.** Every input change
+  re-runs the effect and posts a new job; the old one stayed in the queue with
+  its watchdog armed, and a job nobody is waiting for still tore the worker down
+  when it expired. Jobs take an `AbortSignal` and the hooks abort on cleanup.
+
+Reproduced with `serve-plain.mjs dist 5095 90000` and one input changed
+mid-download: before, dead at ninety seconds and never recovering; after, the
+download runs to completion at 118 s.
+
 ### A fitting with no position
 
 `newFitting(type, face)` used to leave `at.a` and `at.b` undefined, so `bore()`
