@@ -1564,3 +1564,62 @@ own B-Rep edges, a port tube, an exploded box — and times the orbit.
 The renderer is stubbed in jsdom, and the stub had `setPixelRatio` but no
 `getPixelRatio`: it accepted orders and answered no questions, which is fine
 until the code asks one. It lives in `test/stub-renderer.js` now, answering both.
+
+---
+
+## 18. Colour
+
+Valchromat is dyed through rather than faced. The colour is a property of the
+board, not of a finish applied to it afterwards — which is why it belongs to the
+panel in the model and follows it into the cut list, the part templates and the
+sheet layouts.
+
+### Where a colour lives
+
+Three levels, each a **fallback** rather than a copy:
+
+1. `design.colourBy[face]`, when **Colour per panel** is on;
+2. `design.colour`, the project's;
+3. the colour the sheet comes in.
+
+`design.colour` is null until something sets it, which is not the same as a hex
+that happens to equal the default: one follows the sheet when the sheet changes
+and the other does not. Cladding and doubler panels carry their own `colour`,
+inherited from the project when they are added.
+
+A colour belongs to a range, so changing a sheet drops it. Green Mint is not
+something you can order in birch ply, and carrying the number across would leave
+a design claiming a colour that cannot be bought.
+
+### Valchromat's twelve
+
+White Pearl, White Grey, Light Grey, Grey, Black, Chocolate, Khaki, Green Mint,
+Blue, Red, Orange, Yellow. Named in a select where the sheet has names for its
+colours; a picker beside it for everything else, because a design is allowed to
+say "this one, painted" without the app arguing.
+
+The hex values are **sampled**, not guessed: the median of a supplier's swatch
+photograph over the middle half of the frame, by `tools/spike/sample-swatches.mjs`
+(the photographs are not redistributed — only the numbers taken from them).
+
+| | | | |
+|---|---|---|---|
+| White Pearl `#faf3e1` | White Grey `#b5b2a5` | Light Grey `#a49b96` | Grey `#7c7679` |
+| Black `#696870` | Chocolate `#81695f` | Khaki `#9b9772` | Green Mint `#548772` |
+| Blue `#597ba2` | Red `#da646c` | Orange `#d38a6a` | Yellow `#e3b869` |
+
+That is the board **as photographed in bright, even light**: lighter and less
+saturated than the pigment, and lighter than the same board on a shelf. Black
+comes out a slate charcoal because that is genuinely what dyed black fibre looks
+like flat-on, not because the sampling is wrong. Take the real decision off a
+sample, under the light the box will live in.
+
+The same spike measures how far the speckle strays from the median — ±43% of
+mid-luminance on Black, ±1% on White Pearl. That is the fibre, and it is what a
+rendered surface has to reproduce to look like the board rather than like paint.
+
+### The swatch shows what the panel will be
+
+A face that is following the project shows the project's colour, not the sheet's:
+a grey square against a green box would be a plain lie about what is going to be
+cut.

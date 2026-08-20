@@ -82,11 +82,58 @@ export const MATERIALS = [
   { id: "pine", name: "Pine", colour: "#d9b485", grained: true,
     stock: [[2440, 1220]],
     thickness: 18, thicknesses: [12, 15, 18, 20, 22, 25] },
-  // Valchromat is 19 mm as standard, not 18.
-  { id: "valchromat", name: "Valchromat", colour: "#5a5f66", grained: false,
+  // Valchromat is 19 mm as standard, not 18, and it is the one sheet here that
+  // comes in a colour range rather than a colour.
+  { id: "valchromat", name: "Valchromat", colour: "#7c7679", grained: false,
     stock: [[2440, 1220]],
-    thickness: 19, thicknesses: [8, 12, 16, 19, 25, 30] },
+    thickness: 19, thicknesses: [8, 12, 16, 19, 25, 30],
+    palette: "valchromat" },
 ];
+
+/**
+ * §18 Valchromat's twelve colours.
+ *
+ * Dyed through rather than faced, which is the whole point of the board and the
+ * reason a colour belongs to the panel rather than to a finish applied to it
+ * afterwards.
+ *
+ * Each hex is the **median of a supplier's swatch photograph**, sampled over the
+ * middle half of the frame (`tools/spike/sample-swatches.mjs`). That means it is
+ * the board as photographed in bright, even light: lighter and less saturated
+ * than the pigment itself, and lighter than the same board will look on a shelf.
+ * Black comes out a slate charcoal because that is genuinely what dyed black
+ * fibre looks like flat-on, not because the sampling is wrong.
+ *
+ * They are for telling one panel from another and seeing what a scheme looks
+ * like. Investwood say themselves that the board varies in tone, because the
+ * wood it is made of does — take the real decision off a sample, under the light
+ * the box will live in.
+ */
+export const PALETTES = {
+  valchromat: [
+    { id: "white-pearl", name: "White Pearl", hex: "#faf3e1" },
+    { id: "white-grey", name: "White Grey", hex: "#b5b2a5" },
+    { id: "light-grey", name: "Light Grey", hex: "#a49b96" },
+    { id: "grey", name: "Grey", hex: "#7c7679" },
+    { id: "black", name: "Black", hex: "#696870" },
+    { id: "chocolate", name: "Chocolate", hex: "#81695f" },
+    { id: "khaki", name: "Khaki", hex: "#9b9772" },
+    { id: "green-mint", name: "Green Mint", hex: "#548772" },
+    { id: "blue", name: "Blue", hex: "#597ba2" },
+    { id: "red", name: "Red", hex: "#da646c" },
+    { id: "orange", name: "Orange", hex: "#d38a6a" },
+    { id: "yellow", name: "Yellow", hex: "#e3b869" },
+  ],
+};
+
+/** The colours a material is sold in, or nothing if it is sold as it comes. */
+export const paletteFor = (materialId) => PALETTES[materialById(materialId).palette] ?? null;
+
+/** The name of a colour in a material's range, if it is one of them. */
+export function colourName(materialId, hex) {
+  const found = (paletteFor(materialId) ?? []).find((c) => c.hex.toLowerCase() === String(hex).toLowerCase());
+  return found?.name ?? null;
+}
 
 export const materialById = (id) => MATERIALS.find((m) => m.id === id) ?? MATERIALS[0];
 

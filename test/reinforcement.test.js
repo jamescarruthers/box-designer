@@ -129,8 +129,12 @@ describe("downstream of a mixed-material box", () => {
   });
 
   it("reports the shell's own material through panelSpec", () => {
-    expect(panelSpec(d, { layer: "shell", face: "left" })).toEqual({ material: "birch", thickness: 18 });
-    expect(panelSpec(d, { layer: "cladding", face: "front" })).toEqual({ material: "valchromat", thickness: 19 });
+    // §18 A colour comes with it, since every panel has one — the sheet's own
+    // where nothing has said otherwise.
+    expect(panelSpec(d, { layer: "shell", face: "left" }))
+      .toEqual({ material: "birch", thickness: 18, colour: materialById("birch").colour });
+    expect(panelSpec(d, { layer: "cladding", face: "front" }))
+      .toEqual({ material: "valchromat", thickness: 19, colour: materialById("valchromat").colour });
   });
 
   it("never mixes materials on one sheet", () => {
