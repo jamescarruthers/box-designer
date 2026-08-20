@@ -124,6 +124,34 @@ describe("the app", () => {
     expect(readout(container, "Internal")).toBe(internalBefore);
   });
 
+  it("§16 rounds the sizes to whole millimetres, and back again on request", () => {
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    const sizes = () => [...container.querySelectorAll("table.cuts tbody tr")]
+      .flatMap((r) => [...r.querySelectorAll(".num")].slice(0, 2).map((c) => c.textContent));
+
+    // The default: nothing a person has to read a decimal point off.
+    expect(sizes().every((v) => /^\d+$/.test(v))).toBe(true);
+
+    fireEvent.change(screen.getByLabelText("Round sizes to"), { target: { value: "0.1" } });
+    expect(sizes().some((v) => v.includes("."))).toBe(true);
+
+    // And it is the envelope that moved, not the panels against each other.
+    expect(within(container.querySelector(".totals")).getByText("exact")).toBeTruthy();
+  });
+
+  it("§16 pays for a round size in capacity, by a little", () => {
+    const { container } = render(<App />);
+    const litres = () => Number(readout(container, "Cavity").replace(" l", ""));
+    fireEvent.change(screen.getByLabelText("Round sizes to"), { target: { value: "0.1" } });
+    const exact = litres();
+
+    fireEvent.change(screen.getByLabelText("Round sizes to"), { target: { value: "10" } });
+    expect(Math.abs(litres() - exact)).toBeGreaterThan(0);
+    expect(Math.abs(litres() - exact)).toBeLessThan(0.5);
+    expect(readout(container, "Envelope").split(" × ").every((v) => Number(v) % 10 === 0)).toBe(true);
+  });
+
   it("reports an error when the walls meet", () => {
     const { container } = render(<App />);
     // On an internal basis the envelope grows to keep the cavity, so the walls

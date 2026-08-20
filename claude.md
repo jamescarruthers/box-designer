@@ -1443,3 +1443,49 @@ The list carries an **Add an edge** select as well, listing the edges not yet
 treated and disabling the ones that can take neither a bevel nor a mitre. The
 pointer is the better way to reach an edge, but it is not the only one anybody
 has, and it is not one a test in jsdom can use.
+
+---
+
+## 16. Rounding the sizes
+
+A twelve-litre box on the default proportion comes out 217.712059 × 263.140074 ×
+326.739295 mm. Rounded to a tenth that is 217.7 × 263.1 × 326.7, and a tenth of
+a millimetre is a number nobody can cut to and everybody has to read. **Round
+to** offers 0.1, 0.5, 1, 5 and 10 mm, and starts at 1.
+
+### Rounded once, on the envelope
+
+The rounding is applied to the envelope in `deriveEnvelope`, before a single
+panel is laid out, and everything downstream is derived from the rounded figure.
+That is the whole of the design: the panels still tile the envelope exactly
+(§2.4 invariant 1), the volume still closes to zero (invariant 2), and the cut
+list still adds up.
+
+Rounding the panels instead would put the error *between* them, which is the one
+place a box cannot take it: six panels each rounded to the nearest millimetre do
+not meet, and the residual has nowhere to go.
+
+So what moves is the cavity, by at most half a step on each axis — 11.995 l
+becomes 12.022 l at 1 mm. That is the trade, and the readout shows it: envelope,
+internal and cavity, all three, right under the control.
+
+With whole-millimetre stock thicknesses — which every material in §5 has — a
+whole-millimetre envelope makes every panel length, width and thickness a whole
+number too, cladding, doublers and mitres included. Nothing else has to know
+about the option at all.
+
+### The step is the number, not a flag
+
+`round` used to be a boolean meaning "to 0.1 mm or not at all"; it is a step in
+millimetres now, and `true`/`false` still read as 0.1 and 0 so that a solve
+written against the old signature keeps working. `solve` on its own still
+defaults to 0.1: the library's behaviour is unchanged, and it is the *design*
+that carries the 1 mm default.
+
+### Rounding a number that is not the number
+
+`Math.round(0.35 / 0.1)` is 3, because 0.35 / 0.1 is 3.4999999999999996. The
+honest answer about the double is the wrong answer about the millimetre meant by
+it, so `snapTo` settles the quotient to nine places before rounding it — and
+trims the product back afterwards, since `Math.round(2364.4) * 0.1` is
+236.40000000000003, a longer number than the one it was shortening.
