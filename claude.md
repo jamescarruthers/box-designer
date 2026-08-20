@@ -302,6 +302,47 @@ with CSS, so the camera survives. Skip the render call while `clientWidth === 0`
 
 ---
 
+### Hidden edges are faded, not equal
+
+Drawn at the same weight as visible ones — which is what "Shaded + hidden edges"
+did — a box has no front and no back: every edge is equally present and the eye
+has nothing to sort them by. Fading them is the whole convention of a pictorial
+view, and the same idea §6.3 applies in the elevations, where hidden detail is
+dashed rather than omitted.
+
+Two passes over the same geometry. The near one depth-tests as usual and draws
+what is in front; the far one inverts the comparison to `GreaterDepth` and so
+draws only where something is already nearer — exactly the hidden part of every
+edge, and nothing else. An edge lying *on* a surface has equal depth, fails the
+inverted test, and is drawn once at full weight by the near pass: silhouettes
+and creases do not go grey.
+
+The far pass never writes depth, or one panel's hidden edges would occlude
+another's and the far side of the box would compete with itself. And the
+wireframe styles render their faces depth-only — `colorWrite = false` — because
+without depth nothing is behind anything and every edge is a visible one.
+
+The opacity is 0.07, which is lower than it looks like it should be, because
+hidden edges **stack**: panels are drawn separately and their edges coincide
+along every joint, so four or five faint lines land on the same pixels and
+composite. Measured off the render, taking the pixels lit in *Wireframe* but not
+in *Wireframe, hidden removed* — which are by definition the hidden ones:
+
+| opacity | hidden / visible peak |
+|---|---|
+| 0.16 | 0.61 |
+| 0.10 | 0.46 |
+| 0.07 | 0.37 |
+
+A third of a visible line is about right: present, clearly behind, and not
+competing with the outline.
+
+Which style gets what lives in `src/three/edges.js` rather than in the renderer,
+because it is a set of decisions rather than a set of three.js calls, and
+decisions are worth testing. Selection is the exception that stays sharp: it
+ignores depth entirely, since being hard to see is the one thing a highlight
+must not be.
+
 ## 5. Cut list, parts and sheets
 
 Sort panels by layer (cladding, shell, doubler), then by area descending. Number
