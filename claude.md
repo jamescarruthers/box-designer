@@ -869,6 +869,75 @@ Reproduced with `serve-plain.mjs dist 5095 90000` and one input changed
 mid-download: before, dead at ninety seconds and never recovering; after, the
 download runs to completion at 118 s.
 
+### A hole goes all the way
+
+A fitting was cut into the outermost panel of its face and no further. On a
+clad, doubled panel that leaves a 116 mm cutout opening onto solid material —
+not a hole, a recess. Every panel on the face is bored now: the layers are
+stacked along the face's own axis, so a bore that enters the first enters all of
+them and there is nothing to work out beyond the order.
+
+Three things follow from the order rather than from the set:
+
+- **The outermost is still what the fitting is set out from.** That is the face
+  a driver bolts to and the surface its position is measured on, so
+  `fittingOwners` keeps returning it and the drawing keeps placing from it.
+- **The innermost carries a port's tube**, once. Taking the tubes from the
+  fittings list gave a clad, doubled panel three concentric tubes.
+- **Every layer is checked for clearance, not just the first.** A doubler is
+  inset from the panel it backs, so a bore can sit comfortably in the carcass
+  and run off the edge of the doubler behind it — and the bore goes through
+  both, so that is a hole opening into fresh air. It used to pass.
+
+### Dimensioning a fitting
+
+The views had the circles and no numbers, which makes a picture of a driver
+rather than instructions for cutting one. §6.7 now dimensions them in the view
+that looks at the face square-on:
+
+- **The bore, by diameter.** A hole is a diameter to whoever has to drill it,
+  never a radius. The dimension line runs through the centre with its arrows on
+  the circle, pointing outward — the convention when the circle is too small to
+  hold them, and at 1:5 every one of these is.
+- **The bolt circle, by diameter, marked PCD**, because that is the number a
+  maker sets a compass to.
+- **The bolt holes once, counted**: `5×⌀5`, on a leader off one of them. They
+  are identical by construction, so dimensioning five of them says nothing five
+  times.
+
+The angles are fixed rather than fitted — §10 records that this sheet has no
+dimension collision avoidance, and these three point into different quadrants,
+which is as far as hand-tuning goes. A fitting on the far face turns its leaders
+through half a turn, because front and back share the front elevation and two
+sets of leaders in the same quadrant are unreadable.
+
+The position is not dimensioned here. It is already on the cut-list template,
+measured from the panel's own low corner, which is where it is wanted: the
+elevation is for what the hole is, the template is for where to mark it.
+
+### The tube behind a port is optional
+
+Not every port has one. A short port in a thick baffle is a plain hole, and a
+bought tube is often left off the drawing and fitted on assembly. So a port
+carries a `tube` flag, and when it is off there is no tube body in the 3D view,
+no tube circle in the face-on view, and the bore stops at the inner face like a
+driver's cutout does.
+
+The bore is the same either way. It **is** the tube's inside diameter,
+continuous from the outer face of the panel to the end of the tube, which is why
+the control now labels it *Inside ⌀* rather than *Bore ⌀*: one number, and it is
+the one that tunes the port. Length and wall belong to the tube and are disabled
+without one, and the length is quoted on the drawing — `⌀68 × 150` — only when
+there is a tube to have it.
+
+Read as `tube !== false` rather than `tube === true`, so a port saved before the
+option existed keeps its tube instead of quietly losing it.
+
+The tube also draws its own edges now. It is a separate body from the panel, and
+the viewport was only ever adding edges for panels — so in both wireframe styles
+the tube's faces went into the depth buffer and nowhere else, and the tube was
+invisible in exactly the views where you would look for it.
+
 ### A fitting with no position
 
 `newFitting(type, face)` used to leave `at.a` and `at.b` undefined, so `bore()`

@@ -245,6 +245,17 @@ describe("the app", () => {
     expect(blocked.length).toBeGreaterThan(0);
   });
 
+  it("§10 turns a port's tube off from the control", () => {
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByLabelText("Add a fitting"), { target: { value: "port" } });
+    expect(container.textContent).toContain("× 150");
+
+    fireEvent.click(screen.getByLabelText("Fitting 1 tube"));
+    expect(container.textContent).toContain("no tube");
+    // Its length is not a number that means anything any more.
+    expect(screen.getByLabelText("Fitting 1 length").disabled).toBe(true);
+  });
+
   it("reports the volume closure as exact", () => {
     const { container } = render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));

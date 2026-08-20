@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { FACES, FACE_LABEL, MATERIALS, PROMINENCE_PRESETS, EDGES, edgeAxis, materialById } from "../model/constants.js";
 import { panelColour } from "../three/palette.js";
 import { setIn, freeFaces, addPanel, removePanel, editPanel, setProjectMaterial, setProjectThickness } from "./design.js";
-import { newFitting, describeFitting, faceAxes, FITTING_DEFAULTS } from "../model/fittings.js";
+import { newFitting, describeFitting, faceAxes, hasTube, FITTING_DEFAULTS } from "../model/fittings.js";
 import { fmt } from "../cutlist/cutlist.js";
 
 function Group({ title, note, children }) {
@@ -17,12 +17,13 @@ function Group({ title, note, children }) {
   );
 }
 
-function Num({ label, value, onChange, step = 1, min = 0, suffix, list, aria }) {
+function Num({ label, value, onChange, step = 1, min = 0, suffix, list, aria, disabled = false }) {
   return (
-    <label className="field">
+    <label className={disabled ? "field disabled" : "field"}>
       <span>{label}</span>
       <span className="input-wrap">
         <input type="number" aria-label={aria ?? label} value={value} step={step} min={min} list={list}
+          disabled={disabled}
           onChange={(e) => onChange(e.target.value === "" ? 0 : Number(e.target.value))} />
         {suffix ? <em>{suffix}</em> : null}
       </span>
@@ -384,12 +385,23 @@ function Fittings({ design, set, derived }) {
                 </>
               ) : (
                 <>
-                  <Num label="Bore ⌀" aria={`Fitting ${i + 1} diameter`} suffix="mm" step={0.5} value={f.diameter} onChange={(v) => edit(i, { diameter: v })} />
-                  <Num label="Length" aria={`Fitting ${i + 1} length`} suffix="mm" value={f.length} onChange={(v) => edit(i, { length: v })} />
-                  <Num label="Wall" aria={`Fitting ${i + 1} wall`} suffix="mm" step={0.5} value={f.wall} onChange={(v) => edit(i, { wall: v })} />
+                  {/* The bore is the tube's inside diameter, continuous from the
+                      outer face of the panel to the end of the tube. */}
+                  <Num label="Inside ⌀" aria={`Fitting ${i + 1} diameter`} suffix="mm" step={0.5} value={f.diameter} onChange={(v) => edit(i, { diameter: v })} />
+                  <Num label="Length" aria={`Fitting ${i + 1} length`} suffix="mm" value={f.length}
+                    disabled={!hasTube(f)} onChange={(v) => edit(i, { length: v })} />
+                  <Num label="Wall" aria={`Fitting ${i + 1} wall`} suffix="mm" step={0.5} value={f.wall}
+                    disabled={!hasTube(f)} onChange={(v) => edit(i, { wall: v })} />
                 </>
               )}
             </div>
+            {f.type === "port" ? (
+              <label className="check">
+                <input type="checkbox" checked={hasTube(f)} aria-label={`Fitting ${i + 1} tube`}
+                  onChange={(e) => edit(i, { tube: e.target.checked })} />
+                <span>Fit a tube behind the hole</span>
+              </label>
+            ) : null}
             <p className="note">{describeFitting(f)}</p>
           </div>
         );

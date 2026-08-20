@@ -3,6 +3,9 @@ import { solve } from "../src/model/solver.js";
 import { PROMINENCE_PRESETS } from "../src/model/constants.js";
 import { noEdges, uniformEdges } from "../src/model/bevel.js";
 import { applyMitres } from "../src/model/mitre.js";
+import { fittingDimensions, DIM_ANGLE } from "../src/drawing/fittings.js";
+import { newFitting } from "../src/model/fittings.js";
+import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
 import { buildSheet, layout, planDimensions, pickScale, scaleLabel, edgeNote, mitreDrawingNote, SHEET, TITLE_BLOCK, LW, TS, PREFERRED_SCALES, GAP_H, GAP_V, frameRect } from "../src/drawing/sheet.js";
 
 const sol = solve({ envelope: { x: 236, y: 286, z: 356 }, thickness: 18, doubler: { front: 18 },
@@ -214,5 +217,68 @@ describe("§6.4 edge note", () => {
     const mixed = { ...uniformEdges("fillet", 12), "front|top": { type: "chamfer", radius: 6 } };
     expect(edgeNote(mixed)).toContain("R12");
     expect(edgeNote(mixed)).toContain("CHAMFER 6");
+  });
+});
+
+
+/**
+ * §6.7 Fitting dimensions.
+ *
+ * A hole is dimensioned by diameter, never by radius, and repeated holes are
+ * dimensioned once and counted. The drawing had the circles but no numbers,
+ * which makes it a picture of a driver rather than instructions for cutting one.
+ */
+describe("§6.7 the fittings are dimensioned", () => {
+  const E = { x: 236, y: 286, z: 356 };
+  const driver = newFitting("driver", "front", { a: 118, b: 240 });
+  const port = newFitting("port", "back", { a: 118, b: 90 });
+  const dims = (view, fs) => fittingDimensions(view, fs, E);
+
+  it("gives a driver its bore, its PCD and its bolt holes", () => {
+    const d = dims("front", [driver]);
+    expect(d.map((x) => x.text)).toEqual(["⌀116", "⌀147 PCD", "5×⌀5"]);
+  });
+
+  it("counts the bolt holes rather than dimensioning each one", () => {
+    expect(dims("front", [driver]).filter((x) => x.kind === "leader")).toHaveLength(1);
+    expect(dims("front", [driver]).find((x) => x.kind === "leader").text).toBe("5×⌀5");
+  });
+
+  it("dimensions by diameter, at the diameter and not the radius", () => {
+    const bore = dims("front", [driver])[0];
+    expect(bore.kind).toBe("diameter");
+    expect(bore.r).toBe(driver.cutout / 2);      // the renderer draws 2r across
+  });
+
+  it("gives a port its bore, and its tube length only when it has a tube", () => {
+    expect(dims("front", [port]).map((x) => x.text)).toEqual(["⌀68 × 150"]);
+    expect(dims("front", [{ ...port, tube: false }]).map((x) => x.text)).toEqual(["⌀68"]);
+  });
+
+  it("only dimensions in the view that looks at the face square-on", () => {
+    expect(dims("plan", [driver])).toEqual([]);
+    expect(dims("end", [driver])).toEqual([]);
+  });
+
+  it("turns a far-face fitting's leaders the other way, so two sets do not stack", () => {
+    // front and back share the front elevation, and at 1:5 two sets of leaders
+    // in the same quadrant are unreadable.
+    const near = dims("front", [driver])[0].angle;
+    const far = dims("front", [port])[0].angle;
+    expect(far - near).toBe(180);
+  });
+
+  it("skips the bolt dimensions on a driver with no bolts", () => {
+    expect(dims("front", [{ ...driver, bolts: 0 }]).map((x) => x.text)).toEqual(["⌀116"]);
+  });
+
+  it("draws them onto the sheet, with the diameter sign and the count", () => {
+    const svg = derive({ ...DEFAULT_DESIGN, fittings: [
+      { ...driver, at: { a: 108.85, b: 163.35 } },
+    ] }).sheet.svg;
+    expect(svg).toContain("⌀116");
+    expect(svg).toContain("⌀147 PCD");
+    expect(svg).toContain("5×⌀5");
+    expect(svg).not.toMatch(/NaN|Infinity/);
   });
 });

@@ -137,9 +137,10 @@ export function buffersOf(value, out = []) {
 }
 
 export const OPS = {
-  mesh(oc, { panels, bevels, E, fittings, safeMode, threads }) {
+  mesh(oc, { panels, bevels, E, fittings, tubes, safeMode, threads }) {
     return meshPanels(oc, panels, (i) => bevels[i] ?? {}, E, {
       fittingsFor: (i) => fittings?.[i] ?? [],
+      tubesFor: (i) => tubes?.[i] ?? [],
       // Threads are worth 18-22% of this step and nothing at all elsewhere, so
       // they are never worth a hang — and a hang here cannot be recovered from,
       // only waited out. Opt in explicitly; nothing in the app does.
@@ -147,11 +148,12 @@ export const OPS = {
     });
   },
 
-  views(oc, { sol, edges, owners, sectionAt, fittings }) {
+  views(oc, { sol, edges, owners, sectionAt, fittings, tubes }) {
     // Only the geometry: the shape is an OCCT handle and stays on this side.
     return kernelViews(oc, sol, edges, owners, {
       sectionAt,
       fittingsFor: (i) => fittings?.[i] ?? [],
+      tubesFor: (i) => tubes?.[i] ?? [],
     }).geometry;
   },
 };

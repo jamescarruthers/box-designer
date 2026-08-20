@@ -24,10 +24,25 @@ export const DEFAULT_DRIVER = {
 
 export const DEFAULT_PORT = {
   type: "port",
-  diameter: 68,       // internal diameter of the tube
+  tube: true,         // whether a tube is fitted behind the hole
+  diameter: 68,       // inside diameter: the bore, through the panel and the tube alike
   length: 150,        // tube length, measured from the inner face of the panel
-  wall: 3,            // tube wall thickness
+  wall: 3,            // tube wall thickness, which gives the outside diameter
 };
+
+/**
+ * Whether a port carries a tube.
+ *
+ * Not every port does. A short one in a thick baffle is a plain hole, and a
+ * bought tube is often left off the drawing and fitted on assembly. The bore is
+ * the same either way — it is the tube's inside diameter, continuous from the
+ * outer face of the panel to the end of the tube — so this changes what is
+ * drawn and modelled behind the panel, and nothing about the hole.
+ *
+ * Read as "not false" rather than "true" so a port saved before the option
+ * existed keeps its tube instead of quietly losing it.
+ */
+export const hasTube = (f) => f?.type === "port" && f.tube !== false;
 
 export const FITTING_DEFAULTS = { driver: DEFAULT_DRIVER, port: DEFAULT_PORT };
 
@@ -71,26 +86,46 @@ export function fittingExtent(f) {
 /** The outside radius of a port's tube, which is what has to clear the cavity. */
 export const portOuterRadius = (f) => f.diameter / 2 + f.wall;
 
-/** Fittings on a given panel. A fitting belongs to the outermost panel of its face. */
-export function fittingsFor(fittings, panel, owners) {
-  return fittings.filter((f) => f.face === panel.face && owners[f.face] === panel);
+/**
+ * Every panel a fitting is cut through, outermost first.
+ *
+ * A hole goes all the way. Cladding, carcass, doubler: a driver bolted to the
+ * front of a clad and doubled panel passes through all three, and cutting only
+ * the outermost left a 116 mm cutout opening onto solid material behind. The
+ * layers are stacked along the face's own axis, so a bore that enters the first
+ * enters all of them — there is nothing to work out beyond the order.
+ */
+export function fittingStack(panels, face) {
+  const [a, s] = AXIS[face];
+  const outerness = (p) => (s < 0 ? p.box[a][0] : -p.box[a][1]);
+  return panels.filter((p) => p.face === face).sort((x, y) => outerness(x) - outerness(y));
+}
+
+/** Fittings cut into a given panel: every fitting on that panel's face. */
+export function fittingsFor(fittings, panel) {
+  return fittings.filter((f) => f.face === panel.face);
 }
 
 /**
- * Which panel a fitting is cut into: the outermost one on that face, since that
- * is the panel a driver bolts to. Returns { face: panel } for the faces in use.
+ * The panel a fitting is set out from: the outermost on that face, since that
+ * is the face a driver bolts to and the surface the position is measured on.
+ * Returns { face: panel } for the faces in use.
  */
 export function fittingOwners(panels, faces) {
   const owners = {};
   for (const face of faces) {
-    const on = panels.filter((p) => p.face === face);
-    if (!on.length) continue;
-    const [a, s] = AXIS[face];
-    // Outermost means furthest out along the face's own axis.
-    owners[face] = on.reduce((best, p) =>
-      (s < 0 ? p.box[a][0] < best.box[a][0] : p.box[a][1] > best.box[a][1]) ? p : best);
+    const [outer] = fittingStack(panels, face);
+    if (outer) owners[face] = outer;
   }
   return owners;
+}
+
+/**
+ * The panel a port's tube hangs off: the innermost, since the tube stands into
+ * the cavity. One tube per port however many layers the bore went through.
+ */
+export function innermostOn(panels, face) {
+  return fittingStack(panels, face).at(-1);
 }
 
 /** A fitting's position in model space, on the outer surface of its panel. */
@@ -105,6 +140,9 @@ export function fittingOrigin(f, panel) {
 }
 
 const round1 = (v) => Math.round(v * 10) / 10;
+
+/** How a layer reads in a message about a hole going through it. */
+const LAYER_WORD = { cladding: "cladding", shell: "carcass panel", doubler: "doubler" };
 
 /** §8 Fittings that will not cut cleanly. */
 export function fittingIssues(fittings, panels, owners, cavity) {
@@ -125,14 +163,22 @@ export function fittingIssues(fittings, panels, owners, cavity) {
       msgs.push({ level: "error", text: `${label} has no position on the panel.` });
       continue;
     }
-    for (const [axis, at] of [[p, f.at.a], [q, f.at.b]]) {
-      const lo = panel.box[axis][0], hi = panel.box[axis][1];
-      if (at - r < lo || at + r > hi) {
-        msgs.push({ level: "error",
-          text: `${label} runs off the panel: it needs ${round1(r)} mm clearance and the panel spans ${round1(lo)}–${round1(hi)}.` });
-      } else if (at - r < lo + 10 || at + r > hi - 10) {
-        msgs.push({ level: "warning",
-          text: `${label} leaves under 10 mm of material at the panel edge.` });
+    // Every layer, not only the one it is set out from. A doubler is inset from
+    // the carcass panel it backs, so a bore can sit comfortably in the carcass
+    // and run off the edge of the doubler behind it — and the bore goes through
+    // both, so that is a hole opening into fresh air.
+    for (const through of fittingStack(panels, f.face)) {
+      const where = through === panel ? "the panel"
+        : `the ${LAYER_WORD[through.layer] ?? through.layer} behind it`;
+      for (const [axis, at] of [[p, f.at.a], [q, f.at.b]]) {
+        const lo = through.box[axis][0], hi = through.box[axis][1];
+        if (at - r < lo || at + r > hi) {
+          msgs.push({ level: "error",
+            text: `${label} runs off ${where}: it needs ${round1(r)} mm clearance and it spans ${round1(lo)}–${round1(hi)}.` });
+        } else if (at - r < lo + 10 || at + r > hi - 10) {
+          msgs.push({ level: "warning",
+            text: `${label} leaves under 10 mm of material at the edge of ${where}.` });
+        }
       }
     }
 
@@ -140,7 +186,7 @@ export function fittingIssues(fittings, panels, owners, cavity) {
       msgs.push({ level: "warning",
         text: `${label}: the bolt holes break into the cutout — PCD ${f.pcd} against a ${f.cutout} mm hole.` });
     }
-    if (f.type === "port") {
+    if (hasTube(f)) {
       const depth = cavity ? cavity[AXIS[f.face][0]][1] - cavity[AXIS[f.face][0]][0] : Infinity;
       if (f.length > depth) {
         msgs.push({ level: "warning",
@@ -162,9 +208,8 @@ export function fittingIssues(fittings, panels, owners, cavity) {
 }
 
 export function describeFitting(f) {
-  return f.type === "port"
-    ? `Port ⌀${f.diameter} × ${f.length}`
-    : `Driver ⌀${f.cutout}, ${f.bolts} × ⌀${f.boltHole} on ${f.pcd} PCD`;
+  if (f.type !== "port") return `Driver ⌀${f.cutout}, ${f.bolts} × ⌀${f.boltHole} on ${f.pcd} PCD`;
+  return hasTube(f) ? `Port ⌀${f.diameter} × ${f.length}` : `Port ⌀${f.diameter}, no tube`;
 }
 
 /** A short note for the cut list. */

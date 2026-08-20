@@ -3,10 +3,11 @@ import { describe, it, expect } from "vitest";
 import { solve, panelBlank } from "../src/model/solver.js";
 import {
   newFitting, fittingCircles, fittingExtent, fittingOwners, fittingOrigin,
+  fittingStack, innermostOn, hasTube, DEFAULT_PORT,
   fittingIssues, describeFitting, fittingNote, faceAxes, toBlank, blankCircles,
-  portOuterRadius, DEFAULT_DRIVER, DEFAULT_PORT,
+  portOuterRadius, DEFAULT_DRIVER,
 } from "../src/model/fittings.js";
-import { fittingGeometry, FACE_ON, toView } from "../src/drawing/fittings.js";
+import { fittingGeometry, fittingDimensions, FACE_ON, toView } from "../src/drawing/fittings.js";
 import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
 import { PROMINENCE_PRESETS } from "../src/model/constants.js";
 
@@ -264,5 +265,141 @@ describe("§10 a fitting has to be somewhere", () => {
   it("cuts no circles for one, so the kernel is never handed a NaN", () => {
     expect(fittingCircles({ ...newFitting("driver", "front"), at: { a: NaN, b: 0 } })).toEqual([]);
     expect(fittingCircles({ ...newFitting("driver", "front"), at: {} })).toEqual([]);
+  });
+});
+
+
+/**
+ * §10 A hole goes all the way.
+ *
+ * Cutting only the outermost panel left a 116 mm cutout opening onto solid
+ * material behind it, which is not a hole — it is a recess.
+ */
+describe("§10 a fitting punches through every layer of its face", () => {
+  const clad = () => derive({
+    ...DEFAULT_DESIGN,
+    cladding: { front: { material: "birch", thickness: 6 } },
+    doubler: { front: { material: "mdf", thickness: 12 } },
+    fittings: [{ id: "d1", type: "driver", face: "front", at: { a: 108.85, b: 163.35 },
+      cutout: 116, pcd: 147, bolts: 5, boltHole: 5 }],
+  });
+
+  it("stacks the panels of a face outermost first", () => {
+    const { sol } = clad();
+    expect(fittingStack(sol.panels, "front").map((p) => p.layer))
+      .toEqual(["cladding", "shell", "doubler"]);
+  });
+
+  it("cuts the cladding, the carcass and the doubler alike", () => {
+    const d = clad();
+    const cut = d.rows.filter((r) => r.fittings.length);
+    expect(cut.map((r) => r.layer).sort()).toEqual(["cladding", "doubler", "shell"]);
+    for (const r of cut) expect(r.fittingNote).toMatch(/Driver ⌀116/);
+  });
+
+  it("leaves the other faces alone", () => {
+    expect(clad().rows.filter((r) => r.face !== "front").every((r) => !r.fittings.length)).toBe(true);
+  });
+
+  it("still sets the fitting out from the outermost panel, which is what it bolts to", () => {
+    const { sol, fittingPanels } = clad();
+    expect(fittingPanels.front.layer).toBe("cladding");
+    expect(fittingOwners(sol.panels, ["front"]).front).toBe(fittingPanels.front);
+  });
+
+  it("hangs a port's tube off the innermost layer, once", () => {
+    const d = derive({
+      ...DEFAULT_DESIGN,
+      doubler: { back: { material: "mdf", thickness: 12 } },
+      fittings: [{ id: "p1", type: "port", face: "back", at: { a: 108.85, b: 80 },
+        diameter: 68, length: 150, wall: 3 }],
+    });
+    const withTube = d.sol.panels.filter((p) => d.tubesOn(p).length);
+    expect(withTube).toHaveLength(1);
+    expect(withTube[0].layer).toBe("doubler");
+    expect(innermostOn(d.sol.panels, "back")).toBe(withTube[0]);
+  });
+
+  it("catches a bore that fits the carcass but runs off the doubler behind it", () => {
+    // The doubler is inset from the panel it backs, so this is a real way to
+    // end up with a hole opening into fresh air — and it used to pass.
+    const sol = solve({ envelope: E, thickness: 18, order: PROMINENCE_PRESETS[0].order });
+    const front = sol.panels.find((p) => p.face === "front");
+    const inset = {
+      ...front, layer: "doubler",
+      box: { ...front.box, x: [front.box.x[0] + 60, front.box.x[1] - 60] },
+    };
+    const f = newFitting("driver", "front", { a: 40, b: 240 });
+    const panels = [...sol.panels, inset];
+    const msgs = fittingIssues([f], panels, fittingOwners(panels, ["front"]), sol.cavity);
+    expect(msgs.some((m) => m.level === "error" && /doubler/.test(m.text))).toBe(true);
+  });
+});
+
+
+/**
+ * §10 A port with no tube.
+ *
+ * Not every port has one: a short port in a thick baffle is a plain hole, and a
+ * bought tube is often left off the drawing and fitted on assembly. The bore is
+ * the same either way, so this changes what is behind the panel and nothing
+ * about the hole.
+ */
+describe("§10 the tube behind a port is optional", () => {
+  const port = (tube) => ({ id: "p1", type: "port", face: "back", at: { a: 108.85, b: 80 },
+    diameter: 68, length: 150, wall: 3, ...(tube === undefined ? {} : { tube }) });
+  const withPort = (tube) => derive({ ...DEFAULT_DESIGN, fittings: [port(tube)] });
+
+  it("fits one by default", () => {
+    expect(DEFAULT_PORT.tube).toBe(true);
+    expect(hasTube(newFitting("port", "back", { a: 60, b: 60 }))).toBe(true);
+  });
+
+  it("keeps the tube on a port saved before the option existed", () => {
+    // `tube` undefined must not quietly mean "no tube".
+    expect(hasTube(port(undefined))).toBe(true);
+  });
+
+  it("builds no tube body when it is turned off", () => {
+    const off = withPort(false);
+    expect(off.sol.panels.reduce((a, p) => a + off.tubesOn(p).length, 0)).toBe(0);
+    const on = withPort(true);
+    expect(on.sol.panels.reduce((a, p) => a + on.tubesOn(p).length, 0)).toBe(1);
+  });
+
+  it("still cuts the same hole", () => {
+    const holes = (d) => d.rows.find((r) => r.fittings.length).fittings[0].diameter;
+    expect(holes(withPort(false))).toBe(holes(withPort(true)));
+  });
+
+  it("says so in the cut list rather than quoting a length it has not got", () => {
+    expect(describeFitting(port(false))).toBe("Port ⌀68, no tube");
+    expect(describeFitting(port(true))).toBe("Port ⌀68 × 150");
+  });
+
+  it("quotes the length on the drawing only when there is a tube", () => {
+    const dim = (tube) => fittingDimensions("front", [port(tube)], E)[0].text;
+    expect(dim(true)).toBe("⌀68 × 150");
+    expect(dim(false)).toBe("⌀68");
+  });
+
+  it("draws no tube circle in the face-on view without one", () => {
+    const roles = (tube) => fittingGeometry("front", [port(tube)],
+      solve({ envelope: E, thickness: 18, order: PROMINENCE_PRESETS[0].order }).panels,
+      { back: solve({ envelope: E, thickness: 18, order: PROMINENCE_PRESETS[0].order })
+        .panels.find((p) => p.face === "back") }, E).circles.map((c) => c.role);
+    expect(roles(true)).toContain("tube");
+    expect(roles(false)).not.toContain("tube");
+  });
+
+  it("does not warn that a tube it has not got is longer than the cavity", () => {
+    const long = { ...port(false), length: 10_000 };
+    const sol = solve({ envelope: E, thickness: 18, order: PROMINENCE_PRESETS[0].order });
+    const msgs = fittingIssues([long], sol.panels, fittingOwners(sol.panels, ["back"]), sol.cavity);
+    expect(msgs.some((m) => /longer than/.test(m.text))).toBe(false);
+
+    const fitted = { ...long, tube: true };
+    expect(fittingIssues([fitted], sol.panels, fittingOwners(sol.panels, ["back"]), sol.cavity)
+      .some((m) => /longer than/.test(m.text))).toBe(true);
   });
 });

@@ -10,6 +10,31 @@ import { panelColour, SELECT_EMISSIVE, ACCENT } from "../three/palette.js";
 /** §4 The two depth comparisons the edge passes use. */
 const DEPTH_FUNC = { "less-equal": THREE.LessEqualDepth, greater: THREE.GreaterDepth };
 
+/**
+ * §4 Add a body's edges in every pass its style asks for. Shared by the panels
+ * and by a port's tube, which is a body of its own.
+ */
+function addEdges(root, geometryOrPositions, index, style, accent = false) {
+  const eg = geometryOrPositions instanceof THREE.BufferGeometry
+    ? geometryOrPositions
+    : new THREE.BufferGeometry().setAttribute(
+      "position", new THREE.BufferAttribute(geometryOrPositions, 3));
+  for (const pass of edgePasses(style, { accent })) {
+    const lines = new THREE.LineSegments(eg, new THREE.LineBasicMaterial({
+      color: new THREE.Color(pass.accent ? ACCENT : EDGE_COLOUR),
+      depthTest: pass.depthTest,
+      depthFunc: DEPTH_FUNC[pass.depthFunc] ?? THREE.LessEqualDepth,
+      depthWrite: pass.depthWrite ?? true,
+      transparent: true,
+      opacity: pass.opacity,
+    }));
+    // The faint pass last, so it lies over the shading rather than under.
+    lines.renderOrder = pass.name === "hidden" ? 3 : 2;
+    lines.userData.offsetOf = index;
+    root.add(lines);
+  }
+}
+
 export const RENDER_STYLES = [
   { id: "shaded", name: "Shaded" },
   { id: "shaded-edges", name: "Shaded + hidden edges" },
@@ -208,6 +233,9 @@ export default function Viewport({ derived, style, colourByFace, explode, select
         tm.userData.offsetOf = index;
         tm.visible = showFaces || needsDepth(style);   // depth, for the same reason
         root.add(tm);
+        // And its edges, or the tube is invisible in both wireframe styles —
+        // where its faces are drawn into the depth buffer and nowhere else.
+        if (tube.edges) addEdges(root, tube.edges.positions, index, style);
       }
 
       const kernelEdges = solids?.[index]?.edges;
@@ -228,23 +256,8 @@ export default function Viewport({ derived, style, colourByFace, explode, select
         return g;
       };
 
-      const passes = edgePasses(style, { accent: isSel || isHov });
-      if (passes.length) {
-        const eg = edgeGeometry();
-        for (const pass of passes) {
-          const lines = new THREE.LineSegments(eg, new THREE.LineBasicMaterial({
-            color: new THREE.Color(pass.accent ? ACCENT : EDGE_COLOUR),
-            depthTest: pass.depthTest,
-            depthFunc: DEPTH_FUNC[pass.depthFunc] ?? THREE.LessEqualDepth,
-            depthWrite: pass.depthWrite ?? true,
-            transparent: true,
-            opacity: pass.opacity,
-          }));
-          // The faint pass last, so it lies over the shading rather than under.
-          lines.renderOrder = pass.name === "hidden" ? 3 : 2;
-          lines.userData.offsetOf = index;
-          root.add(lines);
-        }
+      if (edgePasses(style, { accent: isSel || isHov }).length) {
+        addEdges(root, edgeGeometry(), index, style, isSel || isHov);
       }
     });
 

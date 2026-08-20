@@ -5,7 +5,8 @@
 // dimensioned and marked out, so that is where the bolt circle goes.
 
 import { AXIS } from "../model/constants.js";
-import { fittingCircles, faceAxes, portOuterRadius } from "../model/fittings.js";
+import { fittingCircles, faceAxes, portOuterRadius, hasTube } from "../model/fittings.js";
+import { fmt } from "../cutlist/cutlist.js";
 
 /** Which view looks square-on at each face, and which way round it is. */
 export const FACE_ON = { front: "front", back: "front", left: "end", right: "end", top: "plan", bottom: "plan" };
@@ -45,8 +46,9 @@ export function fittingGeometry(view, fittings, panels, owners, E) {
       if (f.type === "driver") {
         boltCircles.push({ at: toView(f.at, f.face, view, E), r: f.pcd / 2, fitting: f });
       }
-      if (f.type === "port") {
-        // The tube behind the panel, seen end-on.
+      if (hasTube(f)) {
+        // The tube behind the panel, seen end-on. Nothing to draw without one:
+        // the bore's own circle is already there.
         circles.push({ at: toView(f.at, f.face, view, E), r: portOuterRadius(f), visible: false, role: "tube", fitting: f });
       }
     } else {
@@ -64,13 +66,15 @@ export function fittingGeometry(view, fittings, panels, owners, E) {
 function edgeOnLines(f, panel, view, E) {
   const [a, s] = AXIS[f.face];
   const bore = f.type === "port" ? f.diameter : f.cutout;
+  const tube = hasTube(f);
   const out = [];
 
   const outer = s < 0 ? panel.box[a][0] : panel.box[a][1];
   const inner = s < 0 ? panel.box[a][1] : panel.box[a][0];
-  const tubeEnd = f.type === "port" ? inner - s * f.length : inner;
+  // Without a tube the bore stops at the inner face, like a driver's cutout.
+  const tubeEnd = tube ? inner - s * f.length : inner;
 
-  for (const [radius, to] of f.type === "port"
+  for (const [radius, to] of tube
     ? [[bore / 2, tubeEnd], [portOuterRadius(f), tubeEnd]]
     : [[bore / 2, inner]]) {
     for (const side of [-1, 1]) {
@@ -103,4 +107,57 @@ function pointAt(at, face, depth, view, E) {
   if (view === "front") return [v.x, E.z - v.z];
   if (view === "end") return [E.y - v.y, E.z - v.z];
   return [v.x, E.y - v.y];
+}
+
+
+/**
+ * §6.7 Dimensions for the fittings, in the view that looks at them square-on.
+ *
+ * A hole is dimensioned by diameter, never by radius, and the dimension line
+ * runs through the centre with its arrows on the circle — ISO 129 again. The
+ * bolt circle takes a diameter too, marked PCD, because that is the number a
+ * maker sets a compass to. The bolt holes themselves are all the same, so they
+ * are dimensioned once on a leader and counted: `5×⌀5`.
+ *
+ * The angles are fixed rather than fitted. §10 already records that this sheet
+ * has no dimension collision avoidance; these point away from each other, which
+ * is as far as hand-tuning goes.
+ */
+export const DIM_ANGLE = { bore: -150, pcd: 30, bolt: -60 };
+
+/**
+ * A fitting on the far face shares its view with anything on the near one, and
+ * at 1:5 two sets of leaders in the same quadrant are unreadable. Turn the far
+ * one's through half a turn so the two sets go opposite ways.
+ */
+const FAR = { back: true, right: true, bottom: true };
+const spread = (angle, face) => (FAR[face] ? angle + 180 : angle);
+
+export function fittingDimensions(view, fittings, E) {
+  const out = [];
+  for (const f of fittings ?? []) {
+    if (FACE_ON[f.face] !== view) continue;
+    const at = toView(f.at, f.face, view, E);
+    const a = (which) => spread(DIM_ANGLE[which], f.face);
+
+    if (f.type === "port") {
+      // The length belongs to the tube, so it is only quoted when there is one.
+      out.push({ kind: "diameter", at, r: f.diameter / 2, angle: a("bore"),
+        text: hasTube(f) ? `⌀${fmt(f.diameter)} × ${fmt(f.length)}` : `⌀${fmt(f.diameter)}`,
+        fitting: f });
+      continue;
+    }
+
+    out.push({ kind: "diameter", at, r: f.cutout / 2, angle: a("bore"),
+      text: `⌀${fmt(f.cutout)}`, fitting: f });
+    if (!(f.bolts > 0) || !(f.boltHole > 0)) continue;
+
+    out.push({ kind: "diameter", at, r: f.pcd / 2, angle: a("pcd"),
+      text: `⌀${fmt(f.pcd)} PCD`, fitting: f });
+    // Leadered off one hole, and counted: they are identical by construction.
+    const bolt = fittingCircles(f).find((c) => c.role === "bolt");
+    out.push({ kind: "leader", at: toView(bolt.at, f.face, view, E), r: f.boltHole / 2,
+      angle: a("bolt"), text: `${f.bolts}×⌀${fmt(f.boltHole)}`, fitting: f });
+  }
+  return out;
 }
