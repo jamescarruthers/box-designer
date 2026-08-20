@@ -1,7 +1,7 @@
 // The design state, and everything derived from it.
 
 import { EDGES, FACES, MATERIALS, PROMINENCE_PRESETS, DEFAULT_KERF, rankFromOrder, materialById } from "../model/constants.js";
-import { solve, wallOf, fillFaces, skinOf, boxVolume, DEFAULT_RATIO } from "../model/solver.js";
+import { solve, wallOf, fillFaces, skinOf, boxVolume, DEFAULT_RATIO, DEFAULT_ROUND } from "../model/solver.js";
 import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, partialEdgeIssues } from "../model/bevel.js";
 import { mitreCheck, resolveMitres, applyMitres, mitreIssues, mitreLoss } from "../model/mitre.js";
 import { validate } from "../model/validate.js";
@@ -21,6 +21,9 @@ export const DEFAULT_DESIGN = {
     litres: 12,
     ratio: { ...DEFAULT_RATIO },
   },
+  // §16 What the sizes are rounded to. A tenth of a millimetre is a number
+  // nobody can cut to and everybody has to read.
+  round: DEFAULT_ROUND,
   material: DEFAULT_MATERIAL,
   stockIndex: 0,
   grainLocked: false,
@@ -204,7 +207,7 @@ export function derive(design) {
   const rank = rankFromOrder(design.order);
   const wall = wallOf(cladding, thickness, doubler);
 
-  const sol = solve({ start: design.start, thickness, cladding, doubler, rank });
+  const sol = solve({ start: design.start, thickness, cladding, doubler, rank, round: design.round });
 
   // §12 Mitres redistribute material between two panels: the one that butted
   // grows out to the corner and both are cut back 45°. Applied before anything

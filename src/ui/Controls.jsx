@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { FACES, FACE_LABEL, MATERIALS, PROMINENCE_PRESETS, EDGES, edgeAxis, materialById } from "../model/constants.js";
+import { ROUND_STEPS } from "../model/solver.js";
 import { panelColour } from "../three/palette.js";
 import { setIn, freeFaces, addPanel, removePanel, editPanel, setProjectMaterial, setProjectThickness, setEdgeTreatment, treatedEdges } from "./design.js";
 import { newFitting, describeFitting, faceAxes, hasTube, FITTING_DEFAULTS } from "../model/fittings.js";
@@ -79,6 +80,16 @@ export default function Controls({ design, set, derived, colourByFace }) {
             <p className="note">Proportion. 1 : 1.25 : 1.6 keeps the axial modes apart.</p>
           </>
         )}
+        {/* §16 One rounding, on the envelope, before anything is measured from
+            it — so the panels still tile it exactly and the cut list still adds
+            up. What moves instead is the cavity, by half a step at most. */}
+        <label className="field">
+          <span>Round to</span>
+          <select value={design.round} aria-label="Round sizes to"
+            onChange={(e) => set({ ...design, round: Number(e.target.value) })}>
+            {ROUND_STEPS.map((r) => <option key={r} value={r}>{fmt(r)} mm</option>)}
+          </select>
+        </label>
         <dl className="readout">
           <div><dt>Envelope</dt><dd>{fmt(derived.sol.E.x)} × {fmt(derived.sol.E.y)} × {fmt(derived.sol.E.z)}</dd></div>
           <div><dt>Internal</dt><dd>{fmt(derived.sol.internal.x)} × {fmt(derived.sol.internal.y)} × {fmt(derived.sol.internal.z)}</dd></div>

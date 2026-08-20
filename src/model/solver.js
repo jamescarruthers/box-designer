@@ -46,13 +46,39 @@ export function skinOf(cladding, thickness) {
 
 export const DEFAULT_RATIO = { x: 1, y: 1.25, z: 1.6 };
 
-const round01 = (v) => Math.round(v * 10) / 10;
+/**
+ * §16 The sizes a person can be asked to cut to.
+ *
+ * Rounding happens **once**, on the envelope, and everything else is derived
+ * from the rounded figure — so the panels still tile it exactly and the volume
+ * still closes. Rounding the panels instead would put the error between them,
+ * which is the one place a box cannot take it.
+ */
+export const ROUND_STEPS = [0.1, 0.5, 1, 5, 10];
+export const DEFAULT_ROUND = 1;
+
+/**
+ * To the nearest `step`, and no further. `Math.round(v / 0.1) * 0.1` is
+ * 236.40000000000003, which is a longer number than the one it set out to
+ * shorten.
+ */
+export const snapTo = (v, step) => {
+  if (!(step > 0)) return v;
+  // The quotient is settled before it is rounded. 0.35 / 0.1 is
+  // 3.4999999999999996, so the honest answer to "nearest tenth" would be 0.3 —
+  // right about the double, wrong about the millimetre that was meant by it.
+  const steps = Math.round(Number((v / step).toFixed(9)));
+  return Number((steps * step).toFixed(4));
+};
 
 /**
  * §2.3 Derive the envelope from the starting point.
  * basis: "internal" | "external"; mode: "dimensions" | "volume".
+ *
+ * `round` is the step to snap the envelope to, in mm — the older `true`/`false`
+ * still mean 0.1 mm and not at all.
  */
-export function deriveEnvelope({ basis, mode, size, litres, ratio = DEFAULT_RATIO }, wall, round = true) {
+export function deriveEnvelope({ basis, mode, size, litres, ratio = DEFAULT_RATIO }, wall, round = 0.1) {
   let s;
   if (mode === "volume") {
     const k = Math.cbrt((litres * 1e6) / (ratio.x * ratio.y * ratio.z));
@@ -61,11 +87,12 @@ export function deriveEnvelope({ basis, mode, size, litres, ratio = DEFAULT_RATI
     s = { x: size.x, y: size.y, z: size.z };
   }
   const internal = basis === "internal";
+  const step = round === true ? 0.1 : round === false ? 0 : Number(round) || 0;
   const E = {};
   for (const b of AXES) {
     const [bm, bp] = PAIR[b];
     const v = internal ? s[b] + wall[bm] + wall[bp] : s[b];
-    E[b] = round ? round01(v) : v;
+    E[b] = snapTo(v, step);
   }
   return E;
 }
@@ -111,7 +138,8 @@ export function solve(input) {
   const rank = input.rank ?? rankFromOrder(input.order ?? FACES);
   const wall = wallOf(cladding, thickness, doubler);
 
-  const E = input.envelope ?? deriveEnvelope(input.start, wall, input.round !== false);
+  const E = input.envelope ?? deriveEnvelope(input.start, wall,
+    input.round === undefined ? 0.1 : input.round);
   const env = envelopeBox(E);
 
   const L0 = shellLayer(env, cladding, rank, "cladding");
