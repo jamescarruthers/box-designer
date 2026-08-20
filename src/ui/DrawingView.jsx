@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { scaleLabel } from "../drawing/sheet.js";
 import { useKernelSheet } from "./useKernelSheet.js";
+import { kernelProgress } from "../occt/kernel.js";
 
 export default function DrawingView({ derived, design }) {
   const [engine, setEngine] = useState("analytic");
@@ -35,9 +36,9 @@ export default function DrawingView({ derived, design }) {
 
 function engineNote(engine, showing, kernel) {
   if (engine !== "kernel") return "exact rectangle arithmetic";
-  if (kernel.status === "loading") return "fetching the kernel, 3.5 MB…";
+  if (kernel.status === "loading") return `${kernelProgress(kernel.progress)}…`;
   if (kernel.status === "refreshing") return "redrawing…";
-  if (kernel.status === "failed") return "kernel unavailable — showing the analytic sheet";
+  if (kernel.status === "failed") return `${kernel.error?.message ?? "kernel unavailable"} — showing the analytic sheet`;
   // No thread claim here: HLRBRep has no parallel mode, so the sheet is serial
   // whether or not the page is cross-origin isolated.
   if (showing === "kernel") return `B-Rep, ${kernel.ms} ms`;

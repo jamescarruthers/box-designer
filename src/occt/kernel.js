@@ -11,26 +11,71 @@
 // than after a 3.5 MB download.
 
 /**
- * How long to wait for the kernel before giving up.
+ * How long to wait with nothing happening before giving up.
  *
- * Generous: the wasm is about 4 MB compressed and some connections are slow.
- * The point is not speed but that a stall always ends in the analytic engine
- * and a message, rather than in a status chip that never changes.
+ * Silence, not elapsed time. The wasm is about 4 MB compressed, and on a slow
+ * connection that download can run past any total anyone would pick — a
+ * download in progress is not a failure, and this used to end it as one at
+ * exactly ninety seconds. The worker reports every step and every block of
+ * bytes; the clock restarts on each. So it now catches only a job that has
+ * genuinely stopped.
  *
- * This is a real deadline now rather than a hopeful one. It used to be set on
- * the thread that was about to be blocked by the very thing it was timing, so
- * a genuine hang stopped the timer too. The work is in a worker, so the timer
- * fires whatever the kernel is doing.
+ * It is a real deadline in the first place because the work is in a worker. It
+ * used to be set on the thread the kernel was about to block, so a hang stopped
+ * the timer too.
  */
 export const LOAD_TIMEOUT_MS = 90_000;
 
-/** Instantiating a shared memory that will not fit reads as an allocation failure. */
-export function describeFailure(e) {
+/** What each step of a job is called where a person will read it. */
+export const PHASE_LABEL = {
+  fetching: "fetching the kernel",
+  compiling: "compiling the kernel",
+  starting: "starting the kernel",
+  working: "working",
+};
+
+const mb = (bytes) => `${(bytes / 1e6).toFixed(1)} MB`;
+
+/**
+ * §7 What to show while a job runs. Bytes as they arrive, never a percentage:
+ * the body arrives decompressed while Content-Length is the gzipped figure, and
+ * a progress bar that reads 260% is worse than no progress bar.
+ */
+export function kernelProgress(progress = {}) {
+  const step = PHASE_LABEL[progress.phase] ?? "starting the kernel";
+  return progress.loaded ? `${step}, ${mb(progress.loaded)}` : step;
+}
+
+/**
+ * §8 A stall, named. Which step it died in is the whole diagnosis: `fetching`
+ * is the network, `starting` is nearly always cross-origin isolation, and
+ * `working` is the geometry.
+ */
+export function describeStall(progress = {}, timeout = LOAD_TIMEOUT_MS) {
+  const secs = Math.round(timeout / 1000);
+  const step = PHASE_LABEL[progress.phase] ?? "starting up";
+  const got = progress.loaded ? `, ${mb(progress.loaded)} in` : "";
+  const why = progress.phase === "starting" && progress.isolated === false
+    ? " — this browser is not cross-origin isolated, which the threaded build needs"
+    : "";
+  return new Error(`the kernel stopped while ${step}${got}: nothing for ${secs} s${why}`);
+}
+
+/**
+ * Instantiating a shared memory that will not fit reads as an allocation
+ * failure; anything else keeps its own message, with the step it died in.
+ */
+export function describeFailure(e, at = {}) {
   const text = String(e?.message ?? e);
   if (e instanceof RangeError || /memory|allocat|Out of/i.test(text)) {
     return new Error(`the kernel could not reserve the memory it asked for (${text})`);
   }
-  return e;
+  if (/SharedArrayBuffer/.test(text)) {
+    return new Error("this browser is not cross-origin isolated, so the threaded kernel " +
+      `cannot start (${text})`);
+  }
+  if (!at.phase) return e;
+  return new Error(`${PHASE_LABEL[at.phase] ?? at.phase}: ${text}`);
 }
 
 /**

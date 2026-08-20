@@ -47,7 +47,23 @@ afterEach(() => {
 describe("§11 a job that never answers ends somewhere", () => {
   it("rejects on the deadline instead of waiting for a kernel that has stopped", async () => {
     const call = client.callKernel("mesh", {}, { timeout: 1000 });
-    const settled = expect(call).rejects.toThrow(/did not answer within 1 s/);
+    const settled = expect(call).rejects.toThrow(/nothing for 1 s/);
+    await vi.advanceTimersByTimeAsync(1001);
+    await settled;
+  });
+
+  it("names the step it stopped in, which is the whole diagnosis", async () => {
+    const call = client.callKernel("mesh", {}, { timeout: 1000 });
+    const settled = expect(call).rejects.toThrow(/stopped while starting the kernel/);
+    workers[0].onmessage({ data: { id: 1, progress: { phase: "starting", isolated: true } } });
+    await vi.advanceTimersByTimeAsync(1001);
+    await settled;
+  });
+
+  it("blames isolation when the threaded kernel stalls on starting without it", async () => {
+    const call = client.callKernel("mesh", {}, { timeout: 1000 });
+    const settled = expect(call).rejects.toThrow(/not cross-origin isolated/);
+    workers[0].onmessage({ data: { id: 1, progress: { phase: "starting", isolated: false } } });
     await vi.advanceTimersByTimeAsync(1001);
     await settled;
   });
@@ -98,6 +114,55 @@ describe("§11 a job that never answers ends somewhere", () => {
   it("sends the page's own kernel directory, since a worker has no document", async () => {
     client.callKernel("mesh", {}, { timeout: 60000 }).catch(() => {});
     expect(workers[0].posted[0].dir).toMatch(/occt\/$/);
+  });
+});
+
+/**
+ * The deadline is on silence, not on elapsed time. A 4 MB download over a slow
+ * connection and a deadlocked kernel look identical if all you measure is the
+ * clock — and the first one is not a failure. This is the distinction that
+ * ninety-second timeout used to get wrong.
+ */
+describe("§11 a slow job is not a stalled one", () => {
+  const bytesArriving = async (id, n, gap) => {
+    for (let i = 1; i <= n; i++) {
+      workers[0].onmessage({ data: { id, progress: { phase: "fetching", loaded: i * 400_000 } } });
+      await vi.advanceTimersByTimeAsync(gap);
+    }
+  };
+
+  it("survives a download that runs far past the deadline while still moving", async () => {
+    const call = client.callKernel("mesh", {}, { timeout: 1000 });
+    let settled = false;
+    call.then(() => { settled = true; }, () => { settled = true; });
+
+    // Ten blocks, 900 ms apart: nine seconds against a one-second deadline.
+    await bytesArriving(1, 10, 900);
+    expect(settled).toBe(false);
+
+    workers[0].onmessage({ data: { id: 1, ok: true, result: { done: true } } });
+    await expect(call).resolves.toEqual({ done: true });
+  });
+
+  it("still gives up once the bytes actually stop", async () => {
+    const call = client.callKernel("mesh", {}, { timeout: 1000 });
+    const settled = expect(call).rejects.toThrow(/fetching the kernel, 2.0 MB in/);
+    await bytesArriving(1, 5, 900);
+    await vi.advanceTimersByTimeAsync(1001);
+    await settled;
+  });
+
+  it("reports each step to the caller, so the page can say what is happening", async () => {
+    const seen = [];
+    const call = client.callKernel("mesh", {}, { timeout: 1000, onProgress: (p) => seen.push(p) });
+    call.catch(() => {});
+    workers[0].onmessage({ data: { id: 1, progress: { phase: "fetching", loaded: 1_000_000 } } });
+    workers[0].onmessage({ data: { id: 1, progress: { phase: "starting" } } });
+    workers[0].onmessage({ data: { id: 1, progress: { phase: "working" } } });
+    expect(seen.map((p) => p.phase)).toEqual(["fetching", "starting", "working"]);
+    // The byte count carries forward, rather than being lost at the next step.
+    expect(seen[2].loaded).toBe(1_000_000);
+    await vi.advanceTimersByTimeAsync(1001);
   });
 });
 

@@ -700,6 +700,41 @@ Two bugs came out of moving it, both of which had been live and invisible:
    edge)`. The four-argument one is `Add_3`. Every kernel chamfer threw a
    binding error.
 
+### The deadline is on silence, not on elapsed time
+
+Ninety seconds used to be a total: a job that had not finished by then failed,
+and the page said "kernel unavailable". But the kernel is about 4 MB gzipped —
+10.6 MB on the wire once decompressed — and on a slow connection that download
+alone runs past any total anyone would pick. A download in progress and a
+deadlocked kernel are indistinguishable if the only thing you measure is the
+clock, and only one of them is a failure. Reproduced by serving `dist/` at
+60 kB/s: three minutes to fetch, dead at ninety seconds, every time.
+
+So the worker now reports each step it reaches and each block of bytes as it
+arrives, and the client restarts the clock on every one. The timeout means what
+it should: **nothing has happened for ninety seconds**. A three-minute download
+completes; a stalled one still fails at ninety, and says how far it got.
+
+The wasm is fetched by the worker rather than by the emscripten glue, and handed
+over as `wasmBinary` — the only way to count the bytes on the way past, and it
+is still downloaded exactly once. Bytes are reported, never a percentage: the
+body arrives decompressed while `Content-Length` is the gzipped figure, and a
+progress bar that reads 260% is worse than none.
+
+Every failure now names the step it died in, because those steps fail for
+entirely unrelated reasons and "kernel unavailable" was the whole message for
+all of them:
+
+| step | what it means when it stalls here |
+|---|---|
+| `fetching` | the network, or the host |
+| `starting` | nearly always cross-origin isolation — the threaded build needs it |
+| `working` | the geometry: a boolean or a fillet that will not converge |
+
+The page shows the live step while it waits — *fetching the kernel, 8.4 MB…* —
+so a slow connection reads as progress rather than as a hang. That alone would
+have made this report a one-line diagnosis instead of a bisection.
+
 ### A fitting with no position
 
 `newFitting(type, face)` used to leave `at.a` and `at.b` undefined, so `bore()`

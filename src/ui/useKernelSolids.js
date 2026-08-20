@@ -19,7 +19,8 @@ export function useKernelSolids(derived, enabled) {
   useEffect(() => {
     if (!enabled) { setState({ status: "idle" }); return; }
     let live = true;
-    setState((s) => ({ status: s.solids ? "refreshing" : "loading", solids: s.solids }));
+    setState((s) => ({ status: s.solids ? "refreshing" : "loading", solids: s.solids,
+      progress: { phase: "fetching" } }));
 
     const { sol, edges, owners, fittingsOn } = derived;
     const t0 = performance.now();
@@ -29,6 +30,10 @@ export function useKernelSolids(derived, enabled) {
       bevels: sol.panels.map((p, i) => panelBevels(i, p, edges, owners)),
       fittings: sol.panels.map((p) => fittingsOn?.(p) ?? []),
       E: sol.E,
+    }, {
+      // §11 The step it is on, so a slow download reads as progress rather than
+      // as a hang — which is exactly how it used to read.
+      onProgress: (progress) => { if (live) setState((s) => ({ ...s, progress })); },
     })
       .then((solids) => {
         if (!live) return;
