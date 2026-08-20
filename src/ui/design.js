@@ -1,9 +1,9 @@
 // The design state, and everything derived from it.
 
-import { FACES, MATERIALS, PROMINENCE_PRESETS, DEFAULT_KERF, rankFromOrder, materialById } from "../model/constants.js";
+import { EDGES, FACES, MATERIALS, PROMINENCE_PRESETS, DEFAULT_KERF, rankFromOrder, materialById } from "../model/constants.js";
 import { solve, wallOf, fillFaces, skinOf, boxVolume, DEFAULT_RATIO } from "../model/solver.js";
 import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, partialEdgeIssues } from "../model/bevel.js";
-import { mitrableEdges, applyMitres, mitreBevels, mitreIssues, mitreLoss } from "../model/mitre.js";
+import { mitreCheck, resolveMitres, applyMitres, mitreIssues, mitreLoss } from "../model/mitre.js";
 import { validate } from "../model/validate.js";
 import { fittingOwners, fittingIssues, fittingNote } from "../model/fittings.js";
 import { buildCutList, cutListTotals } from "../cutlist/cutlist.js";
@@ -123,6 +123,24 @@ export function mitreMap(design) {
     Object.entries(design.edge.by).filter(([, v]) => v.type === "mitre").map(([k]) => [k, true]));
 }
 
+/**
+ * Cut the accepted mitres into `sol`, and re-derive closure from the result.
+ *
+ * Recomputed, not adjusted: a mitre both grows a box and cuts material off it,
+ * so the old residual is no longer a term in the new sum. The cavity is
+ * untouched — a mitre moves material between two panels and nowhere else.
+ */
+function applyMitresInto(sol, requested) {
+  if (!Object.keys(requested).length) return { applied: [], rejected: new Map() };
+  const { panels, applied, rejected } = applyMitres(sol.panels, sol.env, requested);
+  sol.panels = panels;
+  sol.mitreLoss = panels.reduce((a, p) => a + mitreLoss(p), 0);
+  const solid = panels.reduce((a, p) => a + boxVolume(p.box), 0) - sol.mitreLoss;
+  sol.closure = sol.envVolume - (solid + boxVolume(sol.cavity));
+  sol.closureExact = Math.abs(sol.closure) <= 1e-9 * sol.envVolume;
+  return { applied, rejected };
+}
+
 export function thicknessMap(design) {
   return design.perFaceThickness ? { ...design.thicknessBy } : fillFaces(design.thickness);
 }
@@ -157,18 +175,29 @@ export function derive(design) {
   // grows out to the corner and both are cut back 45°. Applied before anything
   // measures a panel, so the cut list and the views see the mitred sizes.
   const requestedMitres = mitreMap(design);
-  const mitrable = mitrableEdges(sol.panels, sol.env);
-  if (Object.keys(requestedMitres).length) {
-    const { panels } = applyMitres(sol.panels, sol.env, requestedMitres);
-    sol.panels = panels;
-    // Recomputed, not adjusted. A mitre both grows a box and cuts material off
-    // it, so the old residual is no longer a term in the new sum. The cavity is
-    // untouched: a mitre moves material between two panels and nowhere else.
-    sol.mitreLoss = panels.reduce((a, p) => a + mitreLoss(p), 0);
-    const solid = panels.reduce((a, p) => a + boxVolume(p.box), 0) - sol.mitreLoss;
-    sol.closure = sol.envVolume - (solid + boxVolume(sol.cavity));
-    sol.closureExact = Math.abs(sol.closure) <= 1e-9 * sol.envVolume;
-  }
+  const plain = sol.panels;
+  const { applied, rejected } = applyMitresInto(sol, requestedMitres);
+
+  // What the control may still offer. Mitres interact — one can grow a panel
+  // past a joint another needs — so this is judged against what is already
+  // chosen, not against the bare box. An edge already mitred stays on.
+  const mitrable = Object.fromEntries(EDGES.map((key) => {
+    const base = mitreCheck(plain, sol.env, key);
+    if (!base.ok) return [key, base];
+    if (applied.includes(key)) return [key, { ok: true }];
+    // Offered only if it is additive. Resolution is greedy in edge order, so an
+    // edge early in that order can displace one already chosen — and an option
+    // that silently undoes four of the user's mitres is not an option.
+    const trial = resolveMitres(plain, sol.env, { ...requestedMitres, [key]: true });
+    const displaced = applied.filter((k) => !trial.accepted.includes(k));
+    if (displaced.length) {
+      return [key, { ok: false,
+        why: `it would undo the ${displaced[0].replace("|", "/")} mitre — a panel takes mitres on opposite sides, not adjacent ones` }];
+    }
+    return [key, trial.accepted.includes(key)
+      ? { ok: true }
+      : { ok: false, why: trial.rejected.get(key) }];
+  }));
   sol.skin = skinOf(cladding, thickness);
   sol.wall = wall;
 
@@ -204,7 +233,7 @@ export function derive(design) {
   const messages = [
     ...validate(sol, edges),
     ...partialEdgeIssues(requestedEdges, fullLength),
-    ...mitreIssues(mitrable, requestedMitres),
+    ...mitreIssues(rejected),
     ...fittingIssues(fittings, sol.panels, fittingPanels, sol.cavity),
   ];
   const sectionAt = design.sectionAt ?? sol.E.x / 2;
@@ -219,7 +248,12 @@ export function derive(design) {
     fittings, fittingPanels,
   });
 
-  return { sol, edges, requestedEdges, fullLength, mitrable, requestedMitres, owners, material, rows, sheets, totals, messages,
+  // The largest consistent set, for the "mitre all" shortcut: asking for every
+  // mitrable edge at once and warning about the half that conflict is no use.
+  const mitreRing = resolveMitres(plain, sol.env,
+    Object.fromEntries(EDGES.filter((k) => mitreCheck(plain, sol.env, k).ok).map((k) => [k, true]))).accepted;
+
+  return { sol, edges, requestedEdges, fullLength, mitrable, requestedMitres, mitreRing, owners, material, rows, sheets, totals, messages,
     sheet, sectionAt, specFor, fittings, fittingPanels, fittingsOn };
 }
 

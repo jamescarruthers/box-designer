@@ -2,11 +2,12 @@
 //
 // The analytic sheet is already there when the app paints. Asking for the
 // kernel fetches 3.5 MB and takes a few hundred milliseconds a view, so it
-// happens on demand and reports its own state rather than blocking anything.
+// happens on demand, in the kernel worker (§11), and reports its own state
+// rather than blocking anything — least of all the thread that paints.
 
 import { useEffect, useState } from "react";
-import { loadKernel, isolated } from "../occt/kernel.js";
-import { kernelViews } from "../occt/drawing.js";
+import { callKernel } from "../occt/client.js";
+import { isolated } from "../occt/kernel.js";
 import { buildSheet } from "../drawing/sheet.js";
 
 export function useKernelSheet(derived, design, enabled) {
@@ -17,14 +18,16 @@ export function useKernelSheet(derived, design, enabled) {
     let live = true;
     setState((s) => ({ status: s.sheet ? "refreshing" : "loading", sheet: s.sheet }));
 
-    loadKernel()
-      .then((oc) => {
+    const t0 = performance.now();
+    callKernel("views", {
+      sol: derived.sol,
+      edges: derived.edges,
+      owners: derived.owners,
+      sectionAt: derived.sectionAt,
+      fittings: derived.sol.panels.map((p) => derived.fittingsOn?.(p) ?? []),
+    })
+      .then((geometry) => {
         if (!live) return;
-        const t0 = performance.now();
-        const { geometry } = kernelViews(oc, derived.sol, derived.edges, derived.owners, {
-          sectionAt: derived.sectionAt,
-          fittingsOn: derived.fittingsOn,
-        });
         const sheet = buildSheet(derived.sol, derived.edges, {
           title: design.title,
           material: derived.material.name.toUpperCase(),
@@ -36,7 +39,7 @@ export function useKernelSheet(derived, design, enabled) {
           fittingPanels: derived.fittingPanels,
           holesInGeometry: true,
         });
-        if (live) setState({ status: "ready", sheet, ms: Math.round(performance.now() - t0), isolated: isolated() });
+        setState({ status: "ready", sheet, ms: Math.round(performance.now() - t0), isolated: isolated() });
       })
       .catch((error) => {
         console.error("OpenCASCADE sheet failed:", error);

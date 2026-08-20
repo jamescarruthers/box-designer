@@ -8,6 +8,7 @@ import {
 } from "../src/model/fittings.js";
 import { fittingGeometry, FACE_ON, toView } from "../src/drawing/fittings.js";
 import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
+import { PROMINENCE_PRESETS } from "../src/model/constants.js";
 
 const E = { x: 236, y: 286, z: 356 };
 const carcass = () => solve({ envelope: E, thickness: 18,
@@ -235,5 +236,33 @@ describe("through the app", () => {
   it("describes a fitting the way a cut list should", () => {
     expect(describeFitting(design.fittings[0])).toBe("Driver ⌀116, 5 × ⌀5 on 147 PCD");
     expect(describeFitting(design.fittings[1])).toBe("Port ⌀68 × 150");
+  });
+});
+
+/**
+ * §10 A fitting with no position.
+ *
+ * `at.a` undefined put the bore at NaN, and every check passed: a comparison
+ * against NaN is false, so it read as perfectly placed. The kernel then ground
+ * on it for minutes. Three guards, because a silent NaN deserves all three.
+ */
+describe("§10 a fitting has to be somewhere", () => {
+  it("gives a new fitting a position even when none is asked for", () => {
+    const f = newFitting("driver", "front");
+    expect(Number.isFinite(f.at.a)).toBe(true);
+    expect(Number.isFinite(f.at.b)).toBe(true);
+  });
+
+  it("reports one without a position as an error rather than passing it on", () => {
+    const sol = solve({ envelope: { x: 236, y: 286, z: 356 }, thickness: 18, order: PROMINENCE_PRESETS[0].order });
+    const owners = fittingOwners(sol.panels, ["front"]);
+    const f = { ...newFitting("driver", "front"), at: {} };
+    const msgs = fittingIssues([f], sol.panels, owners, sol.cavity);
+    expect(msgs.some((m) => m.level === "error" && /no position/.test(m.text))).toBe(true);
+  });
+
+  it("cuts no circles for one, so the kernel is never handed a NaN", () => {
+    expect(fittingCircles({ ...newFitting("driver", "front"), at: { a: NaN, b: 0 } })).toEqual([]);
+    expect(fittingCircles({ ...newFitting("driver", "front"), at: {} })).toEqual([]);
   });
 });

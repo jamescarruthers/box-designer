@@ -16,10 +16,16 @@ import { buildSection } from "../drawing/section.js";
  * Build the orthographic views and the isometric with the kernel. The section
  * stays analytic: it is already exact for axis-aligned boxes, and a boolean
  * against a half-space would only add the bevels in section.
+ *
+ * `fittingsFor` is indexed by panel rather than handed a panel object: this
+ * call crosses a worker boundary, where a closure over the derived state
+ * cannot follow. It used to read `opts.fittingsOn`, off an `opts` that was
+ * never declared — a ReferenceError on the first panel, every time, with no
+ * test on this function to catch it.
  */
-export function kernelViews(oc, sol, edges, owners, { sectionAt, tangentEdges = false } = {}) {
-  const shape = assembly(oc, sol.panels, (i, p) => panelBevels(i, p, edges, owners),
-    (i, p) => opts.fittingsOn?.(p) ?? []);
+export function kernelViews(oc, sol, edges, owners, opts = {}) {
+  const { sectionAt, tangentEdges = false, fittingsFor = () => [] } = opts;
+  const shape = assembly(oc, sol.panels, (i, p) => panelBevels(i, p, edges, owners), fittingsFor);
   const out = {};
   for (const view of ["front", "end", "plan"]) {
     const raw = viewGeometry(oc, shape, view, sol.E, { tangentEdges });

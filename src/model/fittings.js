@@ -33,7 +33,9 @@ export const FITTING_DEFAULTS = { driver: DEFAULT_DRIVER, port: DEFAULT_PORT };
 
 let nextId = 0;
 export const newFitting = (type, face, at) => ({
-  ...FITTING_DEFAULTS[type], id: `f${++nextId}`, face, at: { ...at },
+  // A position of its own, always. Without one `at.a` is undefined, the bore is
+  // built at NaN and the boolean does not fail — it grinds.
+  ...FITTING_DEFAULTS[type], id: `f${++nextId}`, face, at: { a: 0, b: 0, ...at },
 });
 
 /**
@@ -45,6 +47,9 @@ export const newFitting = (type, face, at) => ({
  * merely up on the sheet.
  */
 export function fittingCircles(f) {
+  // Nothing downstream can do anything sensible with a hole at NaN, least of
+  // all a boolean, so it never gets that far.
+  if (![f.at?.a, f.at?.b].every(Number.isFinite)) return [];
   if (f.type === "port") return [{ role: "bore", d: f.diameter, at: f.at }];
   const out = [{ role: "cutout", d: f.cutout, at: f.at }];
   for (let i = 0; i < f.bolts; i++) {
@@ -116,6 +121,10 @@ export function fittingIssues(fittings, panels, owners, cavity) {
 
     const [p, q] = faceAxes(f.face);
     const r = fittingExtent(f);
+    if (![f.at?.a, f.at?.b].every(Number.isFinite)) {
+      msgs.push({ level: "error", text: `${label} has no position on the panel.` });
+      continue;
+    }
     for (const [axis, at] of [[p, f.at.a], [q, f.at.b]]) {
       const lo = panel.box[axis][0], hi = panel.box[axis][1];
       if (at - r < lo || at + r > hi) {

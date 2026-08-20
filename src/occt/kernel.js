@@ -1,14 +1,14 @@
-// Loading the kernel in the browser.
+// What the main thread knows about the kernel.
 //
-// The trimmed build in occt/ is 9.3 MB of wasm, so it is fetched only when
-// something asks for it. Until then — and if it fails — the analytic engine of
-// §2–§6 draws the sheet, which is why the app is usable on the first paint
-// rather than after a 3.5 MB download.
-
-import { ensureCrossOriginIsolated } from "./isolate.js";
-
-let pending = null;
-let failure = null;
+// Not much, deliberately. The kernel itself lives in worker.js and is reached
+// through client.js; this module holds only the three things both sides and the
+// UI have to agree on — how long to wait, how to describe a failure, and
+// whether threads are available at all.
+//
+// The trimmed build in occt/ is 9.3 MB of wasm, fetched only when something
+// asks for it. Until then — and if it fails — the analytic engine of §2–§6
+// draws the sheet, which is why the app is usable on the first paint rather
+// than after a 3.5 MB download.
 
 /**
  * How long to wait for the kernel before giving up.
@@ -17,8 +17,10 @@ let failure = null;
  * The point is not speed but that a stall always ends in the analytic engine
  * and a message, rather than in a status chip that never changes.
  *
- * This cannot rescue a tab the browser kills outright — nothing in JS can —
- * but it turns every hang into a graceful fallback.
+ * This is a real deadline now rather than a hopeful one. It used to be set on
+ * the thread that was about to be blocked by the very thing it was timing, so
+ * a genuine hang stopped the timer too. The work is in a worker, so the timer
+ * fires whatever the kernel is doing.
  */
 export const LOAD_TIMEOUT_MS = 90_000;
 
@@ -39,52 +41,3 @@ export function describeFailure(e) {
  * this answers.
  */
 export const isolated = () => typeof window !== "undefined" && window.crossOriginIsolated === true;
-
-export function kernelState() {
-  if (failure) return { status: "failed", error: failure };
-  if (!pending) return { status: "idle" };
-  return { status: "loading" };
-}
-
-/** Load once, share the promise. Rejections are remembered, not retried in a loop. */
-export function loadKernel() {
-  if (failure) return Promise.reject(failure);
-  if (pending) return pending;
-
-  // Loaded from public/ at run time rather than through the bundler. The glue
-  // is 248 kB and the wasm 9.3 MB, so neither belongs in the first paint — and
-  // the pthread worker resolves `./occt-box.js` relative to its own URL, which
-  // a hashed bundle filename would break.
-  // Against document.baseURI, not import.meta.env.BASE_URL: the base is "./",
-  // and a relative dynamic import would resolve against the chunk in /assets/
-  // rather than against the page.
-  const dir = new URL("occt/", document.baseURI).href;
-
-  let timer;
-  const watchdog = new Promise((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`gave up after ${Math.round(LOAD_TIMEOUT_MS / 1000)} s`)),
-      LOAD_TIMEOUT_MS);
-  });
-
-  const load = ensureCrossOriginIsolated()
-    .then(() => import(/* @vite-ignore */ `${dir}occt-box.js`))
-    .then(({ default: factory }) => factory({
-      locateFile: (path) => (path.endsWith(".wasm") || path.endsWith(".worker.js") ? dir + path : path),
-    }));
-
-  pending = Promise.race([load, watchdog])
-    .then((oc) => { clearTimeout(timer); return oc; })
-    .catch((e) => {
-      clearTimeout(timer);
-      const err = describeFailure(e);
-      // Worth a console line: the drawing silently falls back to the analytic
-      // engine, so without this the failure is invisible.
-      console.error("OpenCASCADE kernel failed to load:", err);
-      failure = err;
-      pending = null;
-      throw err;
-    });
-
-  return pending;
-}

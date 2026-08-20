@@ -667,6 +667,58 @@ booleans for cutouts. The sheet, frame, title block, scale selection, view
 arrangement, dimension placement, hatch standards and cut list stay where they
 were, which is exactly where FreeCAD's TechDraw draws the same line.
 
+### The kernel runs in a worker
+
+Everything OpenCASCADE does — compiling 9.3 MB of wasm, instantiating it,
+meshing panels, hidden line removal — happens in `src/occt/worker.js`, reached
+through `src/occt/client.js`. None of it is interruptible and some of it blocks:
+a `-pthread` build warns in as many words that blocking on the main browser
+thread is dangerous.
+
+It used to run on the main thread, and that is what "the page freezes" was. A
+frozen tab cannot run the timer meant to rescue it, so the load watchdog was
+theatre: it was set on the very thread the kernel was about to block. In a
+worker the deadline is real, the page stays live while the kernel works, and a
+job that stops answering is terminated rather than left holding a core. The next
+request starts a fresh worker, so one stall is not permanent.
+
+The boundary is data only. Kernel objects never cross it: panel boxes and
+numbers go in, typed arrays and plain line lists come out, transferred rather
+than copied. That is why `kernelViews` and `meshPanels` take fittings **by panel
+index** rather than a closure over the derived state — a closure cannot be
+cloned. Tests assert that a fully loaded design's job payloads survive
+`structuredClone`, because a function that sneaks into one fails only in the
+browser.
+
+Two bugs came out of moving it, both of which had been live and invisible:
+
+1. `kernelViews` read `opts.fittingsOn` off an `opts` that was never declared —
+   a `ReferenceError` on the first panel, every time. Switching the drawing to
+   the kernel had never once worked; it threw and fell back to the analytic
+   sheet, which looks almost the same. The function had no test.
+2. `BRepFilletAPI_MakeChamfer.Add_2` is the *symmetric* overload, `(distance,
+   edge)`. The four-argument one is `Add_3`. Every kernel chamfer threw a
+   binding error.
+
+### A fitting with no position
+
+`newFitting(type, face)` used to leave `at.a` and `at.b` undefined, so `bore()`
+built its cylinder at NaN and `BRepAlgoAPI_Cut` did not fail — it ground away
+for minutes on end. Nothing caught it: `fittingIssues` compares the position
+against the panel bounds, and every comparison against NaN is false, so the
+fitting read as perfectly placed.
+
+The app never hit this, because the control centres a new fitting on its panel.
+A test that called `newFitting` without a position did, and looked for a while
+like a kernel performance problem. It is worth knowing which it was:
+`tools/spike/hlr-holes.mjs` puts hidden line removal over a panel with a driver
+cut into it at **34 ms**, no worse than the 47 ms for plain boxes.
+
+Closed at three levels, because a silent NaN deserves all three: the position
+defaults to the panel origin, `fittingIssues` reports a non-finite one as an
+error, and `fittingCircles` returns nothing for it so the kernel is never handed
+it at all.
+
 ### The seam
 
 `{ view, ext, lines, arcs }`. Whatever produces it, `sheet.js` renders it. The
@@ -799,23 +851,53 @@ Only one of the two grows. Growing both double-counts the corner prism, and
 Three conditions, all of them things a maker would say out loud:
 
 1. **Both faces carry a panel in the same layer.** You cannot mitre to nothing.
-2. **Both panels run the edge's full length.** Otherwise a third panel is in the
-   way partway along and the cut cannot run through. This is the §3 rule, but
-   applied to both panels rather than just whichever owns the outer corner.
+2. **The two panels meet along the whole edge** — they start and end together.
+   If one runs past the other, its 45° cut comes out into open air at that end,
+   against the side of whatever panel is there.
 3. **Both are the same thickness.** Then the cut is 45° and the two halves meet.
    Unequal thicknesses have a mitre at some other angle, but it stops being a
    saw set to 45 and starts being a calculation per joint.
 
-Under the presets that leaves 1, 2 or 4 mitrable edges: front and back wrapping
-gives the four vertical corners, sides wrapping gives four horizontal ones.
-Every edge is judged against the box as it arrived, before any of them move —
-mitring one edge grows a panel and could make a second one eligible, and then
-the answer would depend on which edge was asked for first.
+Note what (2) does *not* ask: that the joint reach the envelope. The first
+version did, and it was wrong. Under the standard prominence the front and back
+wrap and the other four panels form a **tube** between them, whose four long
+corners run from the front panel to the back one. Those coincide exactly, mitre
+perfectly well and butt at each end — a whole class of real joints the envelope
+test refused. With it corrected, a box offers eight mitrable edges rather than
+four: two rings of four.
 
 A mitre and a decorative bevel are **mutually exclusive on one edge**. The mitre
 already cuts that corner at 45°; a fillet on top of it would have to be split
 across two panels that each own half the corner. Choosing Mitre in the per-edge
 control replaces the treatment rather than adding to it.
+
+### Mitres rule each other out
+
+Two rings are offered and only one can be cut, which took a broken volume to
+notice. Mitring front/left grows the left panel forward to the envelope. That
+lengthens it along y — and y is the axis the left/top joint runs along, so the
+left panel now runs past the top panel and their mitre would have to stop
+partway down it. The geometry cannot express a cut that stops, §3 refuses one
+for exactly the same reason, and the arithmetic quietly over-counted the wedge
+by one thickness cubed per conflicting pair.
+
+The shape of it: **a panel takes mitres on opposite sides, not adjacent ones**
+— unless every neighbour grows to match, which a strict prominence order never
+arranges. A fully mitred box, where every panel is the full outer face size, has
+no prominence at all and is a construction this model cannot express.
+
+So the requested set is resolved before anything is cut, greedily in edge order:
+each mitre is accepted only if it and everything already accepted still hold on
+the grown boxes. Greedy rather than a fixed point, because two mitres that rule
+each other out should leave one standing rather than neither; in edge order
+rather than click order, so the answer never depends on how the user got there.
+Whatever is dropped is named in §8 with the mitre that displaced it.
+
+The per-edge control follows the same rule and closes options off as they are
+taken, showing why. It offers an edge only if adding it is **additive** — an
+option that silently undoes four mitres already chosen is not an option — and
+the shortcut applies the largest consistent ring rather than every mitrable
+edge, so it never fires a warning.
 
 ### What it does not change
 

@@ -49,6 +49,7 @@ export default function Controls({ design, set, derived, colourByFace }) {
   const s = design.start;
   const cuttable = Object.values(derived.fullLength).filter(Boolean).length;
   const mitrable = Object.values(derived.mitrable).filter((c) => c.ok).length;
+  const ring = derived.mitreRing.length;
   return (
     <div className="controls">
       <StockThicknesses />
@@ -147,35 +148,41 @@ export default function Controls({ design, set, derived, colourByFace }) {
         {design.edge.perEdge ? (
           <>
             <p className="note">
-              {mitrable} of 12 can be mitred: both panels have to run the edge and be the same
-              thickness. A mitre is a joint rather than a decoration, so it replaces the bevel on
-              that edge instead of joining it.
-              {mitrable > 0 ? (
+              {mitrable} of 12 can be mitred now: the two panels have to meet along the whole
+              edge and be the same thickness, and a panel takes mitres on opposite sides, not
+              adjacent ones — so choosing one closes others off. A mitre is a joint rather than a
+              decoration, and replaces the bevel on that edge instead of joining it.
+              {ring > 0 ? (
                 <> <button type="button" className="linkish"
                   onClick={() => set(setIn(design, ["edge", "by"], mitreAll(design, derived)))}>
-                  Mitre all {mitrable}
+                  Mitre a ring of {ring}
                 </button></>
               ) : null}
             </p>
             <div className="edge-grid">
               {EDGES.map((k) => {
                 const cur = design.edge.by[k] ?? { type: "none", radius: design.edge.radius };
-                const ok = derived.fullLength[k];
+                // The two are gated separately. A bevel needs one panel running
+                // the whole edge (§3); a mitre needs the two panels to run it
+                // together (§12) — the tube between the front and back satisfies
+                // the second and not the first, so one control cannot use one
+                // answer for both.
+                const canBevel = derived.fullLength[k];
                 const canMitre = derived.mitrable[k]?.ok;
-                const why = ok ? (canMitre ? `runs ${edgeAxis(k)}` : `no mitre: ${derived.mitrable[k].why}`)
-                  : "broken by other panels";
                 return (
-                  <div className={ok ? "edge-row" : "edge-row blocked"} key={k}>
-                    <span className="edge-key">{k.replace("|", " / ")}<em>{why}</em></span>
-                    <select value={cur.type} disabled={!ok} aria-label={`${k} treatment`}
+                  <div className={canBevel || canMitre ? "edge-row" : "edge-row blocked"} key={k}>
+                    <span className="edge-key">{k.replace("|", " / ")}
+                      <em>{edgeNote(k, canBevel, canMitre, derived)}</em></span>
+                    <select value={cur.type} disabled={!canBevel && !canMitre}
+                      aria-label={`${k} treatment`}
                       onChange={(e) => set(setIn(design, ["edge", "by", k], { ...cur, type: e.target.value }))}>
                       <option value="none">Square</option>
-                      <option value="chamfer">Chamfer</option>
-                      <option value="fillet">Fillet</option>
+                      <option value="chamfer" disabled={!canBevel}>Chamfer</option>
+                      <option value="fillet" disabled={!canBevel}>Fillet</option>
                       <option value="mitre" disabled={!canMitre}>Mitre</option>
                     </select>
                     <input type="number" min="0" step="0.5" value={cur.radius}
-                      disabled={!ok || cur.type === "mitre"}
+                      disabled={!canBevel || cur.type === "mitre"}
                       aria-label={`${k} radius`}
                       onChange={(e) => set(setIn(design, ["edge", "by", k], { ...cur, radius: Number(e.target.value) || 0 }))} />
                   </div>
@@ -197,11 +204,24 @@ export default function Controls({ design, set, derived, colourByFace }) {
   );
 }
 
-/** §12 Every edge that can take a mitre, mitred; everything else left as it is. */
+/** What is available on one edge, and why the rest is not. */
+function edgeNote(key, canBevel, canMitre, derived) {
+  if (canBevel && canMitre) return `runs ${edgeAxis(key)}`;
+  if (canBevel) return `bevel only — ${derived.mitrable[key].why}`;
+  if (canMitre) return "mitre only — no one panel runs this edge";
+  return "broken by other panels";
+}
+
+/**
+ * §12 The largest ring of mitres this box can take, mitred; everything else
+ * left as it is. A ring rather than "every mitrable edge": mitres on adjacent
+ * sides of one panel rule each other out, so asking for all of them would only
+ * warn about the half that lost.
+ */
 function mitreAll(design, derived) {
   const by = { ...design.edge.by };
-  for (const [k, c] of Object.entries(derived.mitrable)) {
-    if (c.ok) by[k] = { ...(by[k] ?? { radius: design.edge.radius }), type: "mitre" };
+  for (const k of derived.mitreRing) {
+    by[k] = { ...(by[k] ?? { radius: design.edge.radius }), type: "mitre" };
   }
   return by;
 }
