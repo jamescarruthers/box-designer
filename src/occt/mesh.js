@@ -25,11 +25,20 @@ const dot = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
  * the test is exact, and it costs nothing next to the meshing.
  */
 export function triangulate(oc, shape, E, {
-  linear = LINEAR_DEFLECTION, angular = ANGULAR_DEFLECTION, parallel = true,
+  linear = LINEAR_DEFLECTION, angular = ANGULAR_DEFLECTION, parallel = false,
 } = {}) {
   // BRepMesh is the only step in the pipeline that takes threads — HLRBRep has
   // no parallel mode — so this argument is the whole of what the pool is for.
   // Worth 18-22% of the mesh step on four cores; see tools/spike/threads.mjs.
+  //
+  // It defaults to off, and that is now a considered position rather than a
+  // conservative one. This call is synchronous and uninterruptible: hand it a
+  // pool that will not take the work and it blocks for ever, and nothing on
+  // either side of it can do a thing about that. Counting the pool first is not
+  // enough — emscripten lists workers it has created, not workers that loaded,
+  // and on a host that cannot send COEP the nested pthread scripts are exactly
+  // the ones liable to be blocked. Thirty milliseconds is not worth a wager
+  // that can only be settled by hanging.
   new oc.BRepMesh_IncrementalMesh_2(shape, linear, false, angular, parallel);
 
   const tris = [];

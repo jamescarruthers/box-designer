@@ -768,6 +768,48 @@ Anywhere that can set response headers — Netlify, Cloudflare Pages, Vercel —
 needs no service worker and no reload. That is the fix if the threads matter;
 dropping `-pthread` is the fix if they do not.
 
+### Counting the bytes must not stop the download
+
+Fetching the wasm by hand, to count it, replaced a loader that worked. Reported
+from the field, on the deployed build: `the kernel stopped while fetching the
+kernel: nothing for 90 s` — no bytes at all, on a browser where the glue's own
+loader had got as far as `working` the week before.
+
+Not reproduced here, and said plainly rather than dressed up: the mechanism is
+unknown. What is known is which change introduced it, and that the previous path
+worked. So our fetch now gives itself twenty seconds to produce a first byte and
+otherwise hands back — `wasmBinary` is simply absent and the glue fetches the
+wasm the way it always did. Once bytes are moving the clock is dropped and the
+download may take as long as it likes.
+
+Counting the bytes is a convenience. Downloading the kernel is not, and a
+convenience must never be the thing that stops it.
+
+The stall message also used to assume its own first step. A job began life
+saying `fetching`, so a worker that never sent a word and a fetch that delivered
+nothing produced the same sentence — different faults, different fixes. A job
+now starts with no phase at all, and says so: *the kernel worker never reported
+anything in 90 s.*
+
+### Parallel meshing is opt-in, and nothing opts in
+
+`BRepMesh_IncrementalMesh` is synchronous and uninterruptible. Hand it a pool
+that will not take the work and it blocks for ever; neither side of the worker
+boundary can do a thing about that, and the only remedy is the watchdog, ninety
+seconds later. Counting the pool first is not enough — emscripten lists workers
+it has *created*, not workers that loaded, and on a host that cannot send COEP
+the nested pthread scripts are precisely the ones liable to be blocked.
+
+Threads are worth 18–22% of the mesh step, about 30 ms, and nothing at all
+elsewhere. That is not worth a wager which can only be settled by hanging. The
+flag defaults to off, the worker requires an explicit `threads: true` on top of
+a counted pool, and nothing in the app passes it.
+
+Which leaves `-pthread` as pure cost: the build still needs SharedArrayBuffer to
+instantiate, and so still needs cross-origin isolation, the service worker and
+the reload — for a thread pool nothing now uses. **The kernel should be rebuilt
+without it.** That needs Docker, which this environment does not have.
+
 ### One job must not kill another
 
 Two ways it could, both live, and between them they are how "draws once, then
