@@ -2227,3 +2227,48 @@ size tried. An earlier sweep that appeared to indict large radii was reusing one
 page across cases and could not be reproduced from a clean one, so it is not
 evidence. The fallback above makes the fault survivable rather than fatal; it
 does not make it go away.
+
+## 26. A bevel bigger than the wall is never asked for
+
+Reported as `working: 7210856 — showing the ring-stack solids`, cleared by
+removing the fillets. §25 made that survivable. This is the cause.
+
+### The kernel now says what it refused
+
+Emscripten throws a C++ exception as the bare pointer to it, so the message was
+an address. The build carries `-sEXPORT_EXCEPTION_HANDLING_HELPERS` now, which
+exports `getExceptionMessage`, and the address turns back into OCCT's own words:
+*exception of type StdFail_NotDone*. Sixty-four kilobytes of wasm for a fault
+that can be read.
+
+Guarded at every step on the way out. The prebuilt kernel the Node tests run
+against is a different build and need not have the helper; a pointer can be
+stale; and what comes back is a string read out of wasm memory, so it is checked
+for being a plausible sentence before it is shown. None of those is worth a
+second failure on the way to reporting the first.
+
+### The limit is the material, and it was measured
+
+A fillet whose radius is the whole wall thickness takes the corner away
+entirely and leaves nothing to run the surface over. Swept against the wall,
+every fraction up to 0.9 cuts and the thickness exactly does not — on a 12 mm
+wall and an 18 mm one, fillet and chamfer alike.
+
+So the rule is that a bevel has to leave material behind it, with half a
+millimetre of margin — the smallest step the control offers, so that the largest
+radius the box will take is also a number somebody can type.
+
+The app had always called a radius past the wall an error. An error was a
+sentence: the impossible bevel went to the kernel regardless. Now it is stopped
+twice. The control will not take the number, and `applicableEdges` drops any
+that arrives anyway — the same filter that already drops a bevel no single panel
+runs the length of, for the same reason: the material will not take it.
+
+### Judged on what was asked, not on what survived
+
+Dropping the bevel before the kernel sees it removes the very thing the message
+was about, so `validate` takes both — the treatments that will be cut, and the
+ones that were asked for. The bevel messages are judged on the second. A design
+that arrives from storage carrying R40 is drawn square, meshes cleanly, and
+still says *R40 cuts through the 18 mm wall*, which is the whole point of
+saying anything.

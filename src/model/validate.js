@@ -4,7 +4,15 @@ import { AXES, PAIR, AXIS_LABEL } from "./constants.js";
 import { panelBlank, boxSize } from "./solver.js";
 import { bevelIssues } from "./bevel.js";
 
-export function validate(sol, edges) {
+/**
+ * `edges` is what will be cut; `asked` is what the design asked for.
+ *
+ * §26 They differ once an impossible bevel is dropped before the kernel sees
+ * it — and the one that was dropped is exactly the one somebody needs telling
+ * about. Judging the bevels on what survived would report nothing at all,
+ * which is the quietest possible way to ignore a request.
+ */
+export function validate(sol, edges, asked = edges) {
   const msgs = [];
   const internal = boxSize(sol.cavity);
 
@@ -27,7 +35,7 @@ export function validate(sol, edges) {
     }
   }
 
-  msgs.push(...bevelIssues(edges, sol.wall, sol.skin ?? skinFrom(sol)));
+  msgs.push(...bevelIssues(asked, sol.wall, sol.skin ?? skinFrom(sol)));
 
   if (!sol.closureExact) {
     msgs.push({ level: "error",

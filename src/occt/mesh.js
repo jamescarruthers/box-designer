@@ -130,11 +130,39 @@ export function triangulate(oc, shape, E, {
  */
 const REFUSED = "the geometry engine would not build this panel";
 
-export function describeShapeFailure(error) {
-  // A number is the pointer; nothing at all is a throw with nothing on it.
-  // `String(undefined)` is the word "undefined", which is truthy and useless,
-  // so the nullish check has to come before the conversion rather than after.
-  if (error == null || typeof error === "number") return REFUSED;
+/**
+ * §26 A pointer is only a pointer if nothing can read it.
+ *
+ * The kernel is built with `-sEXPORT_EXCEPTION_HANDLING_HELPERS`, which exports
+ * `getExceptionMessage` — that turns the address back into the sentence OCCT
+ * wrote when it refused the shape. So `working: 7210856` becomes what actually
+ * went wrong.
+ *
+ * Guarded at every step. The prebuilt kernel the Node tests run against is a
+ * different build and need not have the helper at all; a pointer can be stale
+ * by the time it is read; and what comes back is a string read out of wasm
+ * memory, so it is checked for being a plausible sentence before it is shown.
+ * None of those is worth a second failure on the way to reporting the first.
+ */
+function occtMessage(ptr, oc) {
+  try {
+    const text = oc?.getExceptionMessage?.(ptr);
+    if (typeof text !== "string") return null;
+    const trimmed = text.trim();
+    // Something readable and bounded: a wild pointer can read back anything.
+    if (!trimmed || trimmed.length > 300 || /[\u0000-\u0008\u000e-\u001f]/.test(trimmed)) return null;
+    return trimmed;
+  } catch {
+    return null;
+  }
+}
+
+export function describeShapeFailure(error, oc = null) {
+  // Nothing at all is a throw with nothing on it. `String(undefined)` is the
+  // word "undefined", which is truthy and useless, so the nullish check has to
+  // come before the conversion rather than after.
+  if (error == null) return REFUSED;
+  if (typeof error === "number") return occtMessage(error, oc) ?? REFUSED;
   const text = String(error.message ?? error).trim();
   return text && text !== "undefined" ? text : REFUSED;
 }
@@ -168,7 +196,7 @@ export function meshPanels(oc, panels, bevelsFor, E, opts = {}) {
       });
       return { ...mesh, edges: edgeSegments(oc, solid, E, opts), tubes };
     } catch (error) {
-      return { failed: describeShapeFailure(error), face: panel.face, layer: panel.layer };
+      return { failed: describeShapeFailure(error, oc), face: panel.face, layer: panel.layer };
     }
   });
 }

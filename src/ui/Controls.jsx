@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { FACES, FACE_LABEL, MATERIALS, PROMINENCE_PRESETS, EDGES, edgeAxis, materialById } from "../model/constants.js";
 import { ROUND_STEPS } from "../model/solver.js";
 import { setIn, freeFaces, addPanel, removePanel, editPanel, setProjectMaterial, setProjectThickness, setEdgeTreatment, treatedEdges } from "./design.js";
+import { largestBevel, largestBevelAt } from "../model/bevel.js";
 import { Group, Num, Colour, Segmented, FaceSwatch, StockThicknesses } from "./fields.jsx";
 import { FittingList } from "./FittingEditor.jsx";
 import { fmt } from "../cutlist/cutlist.js";
@@ -131,8 +132,13 @@ export default function Controls({ design, set, derived, colourByFace }) {
         <Segmented ariaLabel="Treatment" value={design.edge.type}
           onChange={(v) => set(setIn(design, ["edge", "type"], v))}
           options={[{ id: "none", name: "Square" }, { id: "chamfer", name: "Chamfer" }, { id: "fillet", name: "Fillet" }]} />
+        {/* §26 Capped at the thinnest wall on the box: a bevel bigger than the
+            material it is cut from is not a bevel, and letting one be typed
+            only moved the failure into the kernel. */}
         <Num label="Radius" suffix="mm" step={0.5} value={design.edge.radius}
+          max={largestBevel(derived.sol.wall)}
           onChange={(v) => set(setIn(design, ["edge", "radius"], v))} />
+        <p className="note">Up to {fmt(largestBevel(derived.sol.wall))} mm: a bevel has to leave material behind it, and this applies to every edge, so the thinnest wall sets the limit.</p>
         <label className="check">
           <input type="checkbox" checked={design.edge.perEdge}
             onChange={(e) => set(setIn(design, ["edge", "perEdge"], e.target.checked))} />
@@ -185,8 +191,10 @@ export default function Controls({ design, set, derived, colourByFace }) {
                       </select>
                       <input type="number" min="0" step="0.5" value={cur.radius ?? design.edge.radius}
                         disabled={cur.type === "mitre"}
+                        max={largestBevelAt(derived.sol.wall, k)}
                         aria-label={`${k} radius`}
-                        onChange={(e) => set(setEdgeTreatment(design, k, cur.type, Number(e.target.value) || 0))} />
+                        onChange={(e) => set(setEdgeTreatment(design, k, cur.type,
+                          Math.min(Number(e.target.value) || 0, largestBevelAt(derived.sol.wall, k))))} />
                       <button type="button" className="drop" aria-label={`Square ${k}`}
                         title="Back to square"
                         onClick={() => set(setEdgeTreatment(design, k, "none"))}>×</button>

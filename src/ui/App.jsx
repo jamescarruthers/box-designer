@@ -258,8 +258,13 @@ function solidNote(k) {
     const refused = k.refused ?? [];
     if (!refused.length) return note;
     const which = refused.map((r) => FACE_LABEL[r.face] ?? r.face).join(", ");
+    // §26 And why, in the kernel's own words where it gave any: the build
+    // carries the exception-message helper now, so a refusal can say what it
+    // objected to instead of printing the address of the objection.
+    const why = refused.find((r) => typeof r.failed === "string" && r.failed)?.failed;
     return `${note} · ${refused.length} panel${refused.length === 1 ? "" : "s"} `
-      + `(${which}) would not cut — ring stack for ${refused.length === 1 ? "it" : "those"}`;
+      + `(${which}) would not cut — ring stack for ${refused.length === 1 ? "it" : "those"}`
+      + (why ? `: ${why}` : "");
   }
   return "";
 }

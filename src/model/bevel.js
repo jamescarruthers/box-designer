@@ -87,10 +87,66 @@ export function fullLengthEdges(env, panels, owners) {
 }
 
 /** The requested treatments, with the ones that cannot be cut left square. */
-export function applicableEdges(edges, full) {
+/**
+ * §26 Whether a bevel fits in the material it would be cut from.
+ *
+ * A fillet of R30 on an 18 mm wall does not take a corner off — it removes the
+ * corner and keeps going, and there is no solid left for it to run round. The
+ * app has always called that an error (`bevelIssues`), but an error was only
+ * ever a sentence: the impossible bevel went to the kernel anyway, OCCT refused
+ * the shape, and it refused it by throwing.
+ *
+ * A mitre is exempt. It is a joint rather than a decoration and its leg is the
+ * thickness by definition, so it can never be too big for it.
+ */
+/**
+ * §26 A bevel has to leave material behind it.
+ *
+ * Measured rather than assumed: sweeping the radius against the wall, every
+ * fraction up to 0.9 cuts and the wall thickness exactly does not — on a 12 mm
+ * wall and an 18 mm one, fillet and chamfer alike. Which stands to reason. A
+ * fillet whose radius is the whole thickness takes the corner away entirely and
+ * leaves OCCT nothing to run the surface over, and it says so: *exception of
+ * type StdFail_NotDone*.
+ *
+ * Half a millimetre of margin, which is the smallest step the control offers,
+ * so the largest radius the box will take is also a number somebody can type.
+ */
+export const BEVEL_MARGIN = 0.5;
+
+/** The largest radius one edge can take: the thinner of its two walls, less the margin. */
+export function largestBevelAt(wall, key) {
+  const [f1, f2] = key.split("|");
+  const w = Math.min(wall?.[f1] ?? Infinity, wall?.[f2] ?? Infinity);
+  return Number.isFinite(w) ? Math.max(0, w - BEVEL_MARGIN) : Infinity;
+}
+
+export function bevelFits(key, t, wall) {
+  if (!wall) return true;
+  if (!t || t.type === "none" || t.type === "mitre" || !(t.radius > 0)) return true;
+  return t.radius <= largestBevelAt(wall, key) + 1e-9;
+}
+
+/** The largest radius every edge of the box could take. */
+export function largestBevel(wall) {
+  const walls = Object.values(wall ?? {}).filter((w) => Number.isFinite(w) && w > 0);
+  return walls.length ? Math.max(0, Math.min(...walls) - BEVEL_MARGIN) : Infinity;
+}
+
+/**
+ * The treatments that will actually be cut.
+ *
+ * Two reasons one is dropped, and both are "the material will not take it":
+ * no single panel runs the whole length of the edge (§3), or the radius is
+ * bigger than the wall it would cut through (§26). Dropped here rather than
+ * argued about downstream, so nothing asks the kernel for a shape it cannot
+ * build — the messages still say what was left square and why.
+ */
+export function applicableEdges(edges, full, wall = null) {
   return Object.fromEntries(EDGES.map((k) => {
     const t = edges[k];
-    return [k, t && full[k] ? t : { type: "none", radius: 0 }];
+    const cut = t && full[k] && bevelFits(k, t, wall);
+    return [k, cut ? t : { type: "none", radius: 0 }];
   }));
 }
 

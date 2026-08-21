@@ -346,7 +346,8 @@ export function derive(design) {
   const requestedEdges = edgeMap(design);
   const owners = edgeOwners(sol.env, sol.panels);
   const fullLength = fullLengthEdges(sol.env, sol.panels, owners);
-  const edges = applicableEdges(requestedEdges, fullLength);
+  // §26 Nothing asks the kernel for a bevel the wall cannot take.
+  const edges = applicableEdges(requestedEdges, fullLength, wall);
   const material = materialById(design.material);
 
   const specFor = (panel) => {
@@ -383,7 +384,7 @@ export function derive(design) {
   });
   const totals = cutListTotals(rows, sheets, sol.closure, sol.closureExact);
   const messages = [
-    ...validate(sol, edges),
+    ...validate(sol, edges, requestedEdges),
     ...partialEdgeIssues(requestedEdges, fullLength),
     ...mitreIssues(rejected),
     ...fittingIssues(fittings, sol.panels, fittingPanels, sol.cavity),

@@ -21,14 +21,18 @@ export function Group({ title, note, children }) {
   );
 }
 
-export function Num({ label, value, onChange, step = 1, min = 0, suffix, list, aria, disabled = false }) {
+export function Num({ label, value, onChange, step = 1, min = 0, max, suffix, list, aria, disabled = false }) {
+  // §26 `max` is enforced, not merely declared. The attribute alone stops the
+  // spinner going past it and does nothing whatever about a number typed in,
+  // which is how a radius bigger than the wall got as far as the kernel.
+  const clamp = (v) => (Number.isFinite(max) ? Math.min(v, max) : v);
   return (
     <label className={disabled ? "field disabled" : "field"}>
       <span>{label}</span>
       <span className="input-wrap">
-        <input type="number" aria-label={aria ?? label} value={value} step={step} min={min} list={list}
+        <input type="number" aria-label={aria ?? label} value={value} step={step} min={min} max={max} list={list}
           disabled={disabled}
-          onChange={(e) => onChange(e.target.value === "" ? 0 : Number(e.target.value))} />
+          onChange={(e) => onChange(e.target.value === "" ? 0 : clamp(Number(e.target.value)))} />
         {suffix ? <em>{suffix}</em> : null}
       </span>
     </label>

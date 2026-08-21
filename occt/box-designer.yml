@@ -118,10 +118,20 @@ mainBuild:
     - -flto
     - -fexceptions
     - -sDISABLE_EXCEPTION_CATCHING=0
+    # §26 So a refused shape can say why it was refused.
+    #
+    # OCCT reports a failure by throwing a Standard_Failure with a message in
+    # it. Emscripten throws that to JS as the bare pointer to the exception —
+    # `___cxa_throw` ends in `throw ptr` — and a number has no message on it, so
+    # what reached the screen was `working: 7210856`. These helpers export
+    # `getExceptionMessage`, which turns the pointer back into the text OCCT
+    # wrote, and the two refcount functions it needs to hold the exception alive
+    # while that is read.
+    - -sEXPORT_EXCEPTION_HANDLING_HELPERS=1
     - -O3
     - -sEXPORT_ES6=1
     - -sUSE_ES6_IMPORT_META=0
-    - -sEXPORTED_RUNTIME_METHODS=['FS']
+    - -sEXPORTED_RUNTIME_METHODS=['FS','getExceptionMessage']
     - -sINITIAL_MEMORY=64MB
     # 512 MB, not 2 GB. Threading needs a shared WebAssembly.Memory, and a
     # shared memory cannot be moved when it grows, so the browser reserves the
