@@ -55,7 +55,14 @@ export default function Controls({ design, set, derived, colourByFace }) {
         <dl className="readout">
           <div><dt>Envelope</dt><dd>{fmt(derived.sol.E.x)} × {fmt(derived.sol.E.y)} × {fmt(derived.sol.E.z)}</dd></div>
           <div><dt>Internal</dt><dd>{fmt(derived.sol.internal.x)} × {fmt(derived.sol.internal.y)} × {fmt(derived.sol.internal.z)}</dd></div>
-          <div><dt>Cavity</dt><dd>{(derived.sol.internal.x * derived.sol.internal.y * derived.sol.internal.z / 1e6).toFixed(3)} l</dd></div>
+          <div><dt>Cavity</dt><dd>{(derived.sol.cavityVolume / 1e6).toFixed(3)} l</dd></div>
+          {/* §27 What is left once the drivers and port tubes are standing in
+              it. Shown only when something is displacing, so a box with no
+              fittings does not carry two identical numbers. */}
+          {derived.sol.displaced > 0 ? (
+            <div><dt>Net</dt><dd title={`less ${(derived.sol.displaced / 1e6).toFixed(3)} l displaced`}>
+              {(derived.sol.netVolume / 1e6).toFixed(3)} l</dd></div>
+          ) : null}
         </dl>
       </Group>
 

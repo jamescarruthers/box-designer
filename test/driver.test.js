@@ -11,7 +11,8 @@ import { describe, it, expect } from "vitest";
 import * as THREE from "three";
 import {
   DEFAULT_DRIVER, DRIVER_SHAPE, driverOuter, driverProfile, driverConeFrom,
-  driverStandoff, fittingOrigin, fittingIssues,
+  driverStandoff, fittingOrigin, fittingIssues, driverCone,
+  driverDisplacement, portDisplacement, revolvedVolume, clipBelow,
 } from "../src/model/fittings.js";
 import { driverBody, aimAt, faceNormal, placeDriver, driversOn, SEAT } from "../src/three/driver.js";
 import { toThree } from "../src/three/panelGeometry.js";
@@ -289,7 +290,7 @@ describe("§22 the shape scales across every driver somebody might fit", () => {
     // the size if its datasheet says so.
     const at = (k) => ({
       ...DEFAULT_DRIVER, cutout: 50 * k, outer: 61.15 * k,
-      depth: 40 * k, magnet: 37.5 * k, magnetDepth: 18 * k,
+      depth: 40 * k, magnet: 37.5 * k, magnetDepth: 18 * k, coneDepth: 10.5 * k,
     });
     const small = driverProfile(at(1));
     const big = driverProfile(at(4));
@@ -347,5 +348,92 @@ describe("§22 a frame narrower than its own cutout", () => {
     const f = { ...impossible, id: "x", face: "front", at: { a: 150, b: 200 } };
     const msgs = fittingIssues([f], [panel], { front: panel }, null);
     expect(msgs.some((m) => m.level === "error" && /fall through the hole/.test(m.text))).toBe(true);
+  });
+});
+
+/**
+ * §27 What the driver takes out of the box.
+ *
+ * A box sized for twelve litres of air does not hold twelve litres of air once
+ * a driver's basket and motor are standing in it. The displacement is
+ * integrated over the profile that is drawn rather than guessed at, so the two
+ * can never disagree — and an integration is worth checking against shapes
+ * whose volume is known without one.
+ */
+describe("§27 revolving a profile into a volume", () => {
+  const closeTo = (a, b) => expect(a).toBeCloseTo(b, 3);
+
+  it("gets a cylinder right", () => {
+    // r = 10, h = 20, traced as a closed loop: πr²h = 6283.185…
+    const cylinder = [[0, 0], [10, 0], [10, 20], [0, 20]];
+    closeTo(Math.abs(revolvedVolume(cylinder)), Math.PI * 100 * 20);
+  });
+
+  it("gets a cone right, which a cylinder would not catch", () => {
+    // A third of the cylinder that contains it — the case that fails if the
+    // frustum term is wrong and only the end radii are used.
+    const cone = [[0, 0], [10, 0], [0, 20]];
+    closeTo(Math.abs(revolvedVolume(cone)), (Math.PI * 100 * 20) / 3);
+  });
+
+  it("gets a frustum right", () => {
+    const frustum = [[0, 0], [10, 0], [5, 20], [0, 20]];
+    closeTo(Math.abs(revolvedVolume(frustum)), (Math.PI * 20 / 3) * (100 + 50 + 25));
+  });
+
+  it("does not care which way round the loop was traced", () => {
+    const cylinder = [[0, 0], [10, 0], [10, 20], [0, 20]];
+    closeTo(Math.abs(revolvedVolume([...cylinder].reverse())), Math.abs(revolvedVolume(cylinder)));
+  });
+});
+
+describe("§27 clipping the profile at the baffle", () => {
+  it("keeps what is behind it and closes the cut flat", () => {
+    // A cylinder from -10 to +10, cut at 0, is half a cylinder.
+    const cylinder = [[0, -10], [10, -10], [10, 10], [0, 10]];
+    const below = clipBelow(cylinder, 0);
+    expect(Math.max(...below.map(([, h]) => h))).toBe(0);
+    expect(Math.abs(revolvedVolume(below))).toBeCloseTo(Math.PI * 100 * 10, 3);
+  });
+
+  it("keeps everything when everything is behind it, and nothing when nothing is", () => {
+    const back = [[0, -20], [10, -20], [10, -5], [0, -5]];
+    expect(Math.abs(revolvedVolume(clipBelow(back, 0)))).toBeCloseTo(Math.PI * 100 * 15, 3);
+    const front = back.map(([r, h]) => [r, h + 40]);
+    expect(clipBelow(front, 0)).toHaveLength(0);
+  });
+});
+
+describe("§27 how much a fitting displaces", () => {
+  const PLUVIA_FULL = { ...PLUVIA, depth: 71.5, magnet: 75.8, magnetDepth: 37, coneDepth: 21 };
+
+  it("counts only what is behind the baffle", () => {
+    const all = Math.abs(revolvedVolume(driverProfile(PLUVIA_FULL)));
+    const inside = driverDisplacement(PLUVIA_FULL);
+    expect(inside).toBeGreaterThan(0);
+    // The frame and the surround stand proud, so the part inside is less.
+    expect(inside).toBeLessThan(all);
+  });
+
+  it("grows with the driver, and with its depth", () => {
+    const deeper = driverDisplacement({ ...PLUVIA_FULL, depth: 100 });
+    expect(deeper).toBeGreaterThan(driverDisplacement(PLUVIA_FULL));
+    const bigger = driverDisplacement({ ...PLUVIA_FULL, magnet: 100 });
+    expect(bigger).toBeGreaterThan(driverDisplacement(PLUVIA_FULL));
+  });
+
+  it("takes the datasheet's own figure over its own arithmetic", () => {
+    // A real basket is half air between the spokes and the drawn one is solid,
+    // so the integration is an upper bound. Where Vd is published, it wins.
+    expect(driverDisplacement({ ...PLUVIA_FULL, displaces: 200000 })).toBe(200000);
+    expect(driverDisplacement({ ...PLUVIA_FULL, displaces: 0 })).toBe(0);
+  });
+
+  it("takes a port's whole outside, bore and all", () => {
+    // The bore is open to the outside, so it is not the box's air either.
+    const port = { type: "port", diameter: 68, wall: 3, length: 150, tube: true };
+    expect(portDisplacement(port)).toBeCloseTo(Math.PI * 37 * 37 * 150, 3);
+    // And a port with no tube behind it takes nothing.
+    expect(portDisplacement({ ...port, tube: false })).toBe(0);
   });
 });

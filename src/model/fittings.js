@@ -27,6 +27,9 @@ export const DEFAULT_DRIVER = {
   depth: 78,
   magnet: 90,         // magnet diameter
   magnetDepth: 32,    // how much of the depth the magnet block takes
+  // §27 Cone depth is deliberately *not* here. Left unset it follows the
+  // cutout, so a 15 inch driver starts with a 15 inch driver's cone rather
+  // than a 6 inch one's — and typing a number still overrides it for good.
 };
 
 /**
@@ -289,6 +292,20 @@ export function driverMagnetDepth(f) {
   return driverDepth(f) * 0.5;
 }
 
+/**
+ * §27 How deep the cone is, from the surround down to the dust cap.
+ *
+ * The last of the proportions to become a number somebody can give. It was
+ * 0.42 of the cutout radius, which suits a typical full-range driver and draws
+ * a 15 inch pro woofer noticeably too shallow — real ones are half as deep
+ * again. The fallback keeps that ratio, so nothing that was drawn before
+ * changes unless it is told to.
+ */
+export function driverCone(f) {
+  if (Number.isFinite(f?.coneDepth) && f.coneDepth > 0) return f.coneDepth;
+  return (Math.max(0, f.cutout) / 2) * DRIVER_SHAPE.cone;
+}
+
 export function driverProfile(f, steps = 8) {
   const Rc = Math.max(0, f.cutout) / 2;
   // A frame is never narrower than the hole it sits over — but a number being
@@ -299,7 +316,7 @@ export function driverProfile(f, steps = 8) {
   const Ro = Math.max(driverOuter(f) / 2, Rc);
   const flange = driverOuter(f) * DRIVER_SHAPE.flange;
   const roll = Rc * DRIVER_SHAPE.surround;
-  const cone = Rc * DRIVER_SHAPE.cone;
+  const cone = driverCone(f);
   const Rd = Rc * DRIVER_SHAPE.cap;
   const dome = Rd * DRIVER_SHAPE.dome;
   // Clear of the deepest thing in front of it, so the flat back never cuts
@@ -334,6 +351,70 @@ export function driverProfile(f, steps = 8) {
     points.push([Rd * Math.cos(a), flange - cone + dome * Math.sin(a)]);
   }
   return points;
+}
+
+/**
+ * §27 What the driver takes out of the box, in cubic millimetres.
+ *
+ * The part of it behind the baffle: the basket and the motor, and the back of
+ * the cone with them. Integrated exactly over the profile that is drawn (§24)
+ * rather than guessed at — each segment of the closed loop below the mounting
+ * plane contributes a slice of a solid of revolution, which is the shell
+ * theorem applied to a polygon and comes out to a sum over its edges.
+ *
+ * It is an **upper bound**, and deliberately so. The profile draws a basket as
+ * a closed cone frustum where a real one is half air between the spokes, so
+ * this over-states a real driver's displacement by a good margin. A datasheet
+ * that gives the figure gives it as Vd; where one does, `displaces` takes it
+ * and this is not used.
+ */
+export function driverDisplacement(f, steps = 8) {
+  if (Number.isFinite(f?.displaces) && f.displaces >= 0) return f.displaces;
+  const profile = driverProfile(f, steps);
+  // Clipped at the mounting face: everything in front of it is outside the box.
+  const clipped = clipBelow(profile, 0);
+  return Math.abs(revolvedVolume(clipped));
+}
+
+/**
+ * The volume swept by revolving a closed polygon about the axis r = 0.
+ *
+ * For each edge the swept solid is a conical frustum, and the signed sum round
+ * a closed loop leaves exactly what is enclosed. Signed, so the direction the
+ * loop is traced does not have to be known — the caller takes the modulus.
+ */
+export function revolvedVolume(points) {
+  let v = 0;
+  for (let i = 0; i < points.length; i++) {
+    const [r1, h1] = points[i];
+    const [r2, h2] = points[(i + 1) % points.length];
+    v += (Math.PI / 3) * (r1 * r1 + r1 * r2 + r2 * r2) * (h2 - h1);
+  }
+  return v;
+}
+
+/** The part of a closed profile at or below `cut`, closed off along that line. */
+export function clipBelow(points, cut = 0) {
+  const out = [];
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    const aIn = a[1] <= cut;
+    const bIn = b[1] <= cut;
+    if (aIn) out.push(a);
+    if (aIn !== bIn) {
+      // Where the edge crosses the plane, so the cut face is flat and closed.
+      const t = (cut - a[1]) / (b[1] - a[1]);
+      out.push([a[0] + (b[0] - a[0]) * t, cut]);
+    }
+  }
+  return out;
+}
+
+/** §27 What a port takes out of the box: its whole outside, bore and all. */
+export function portDisplacement(f) {
+  if (!hasTube(f)) return 0;
+  return Math.PI * portOuterRadius(f) ** 2 * Math.max(0, f.length);
 }
 
 /** How far a driver stands proud of the panel it is bolted to. */
