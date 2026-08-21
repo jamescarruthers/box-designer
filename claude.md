@@ -2001,3 +2001,76 @@ reserves about 7 px inside the content box for the number spinner, and the app
 draws its "mm" over exactly that spot, so the arrows were never going to be seen
 and were costing the width anyway. They are turned off, everywhere: arrow keys
 still step the value, and every number field in the app gained 7 px.
+
+## 22. Rendering the driver
+
+A box with a hundred-millimetre hole in it is a box with a hole in it. The thing
+being designed is a speaker, and the driver is what anybody looking at the
+picture is looking for — so the rendered view draws one, and the 3D view will
+too. A chip in both turns it off.
+
+### The one dimension that was missing
+
+Every datasheet gives it and the model did not hold it: the **frame diameter**,
+the outside of the thing that sits on the panel. Without it there is nothing to
+draw, and the checks were wrong as well — `fittingExtent` stopped at the bolt
+circle, which is what the panel has cut into it rather than what has to fit on
+it. A Markaudio Pluvia 7P is 112 PCD with 3.1 mm holes and a 122.3 mm frame:
+checking the bolts alone passes a driver whose rim is already 4 mm over the edge
+of the baffle. It is the frame now, with the cutout and the bolt circle still in
+the reckoning because nothing says a frame has to be the widest of the three.
+
+Read through `driverOuter` rather than as a plain field, so a design saved
+before it existed still draws and still gets checked. The fallback is the bolt
+circle plus enough material to put a bolt through, which on the Pluvia comes out
+at 121.3 against a real 122.3.
+
+### Two numbers from the datasheet, the rest in proportion
+
+The profile that gets revolved — frame, surround, cone, dust cap — takes the
+cutout and the frame diameter and derives everything else from them. That is a
+deliberate limit rather than a gap waiting to be filled: a datasheet gives a
+cone depth about as often as it gives the colour of the terminals, and asking
+somebody to measure their dust cap to get a picture of their box is a poor
+trade. The proportions are set against the Pluvia drawing — 0.037 of the frame
+diameter gives 4.53 mm of frame against a real 4.5 ± 0.2.
+
+The back is closed off flat because everything behind the baffle is inside a
+sealed box and never in shot. The part that goes through the hole is half a
+millimetre under it: coincident surfaces flicker against each other wherever
+both are drawn, and a driver is not a push fit anyway.
+
+Two tones out of one geometry, painted into the vertices rather than cut into
+separate meshes. A lathe lays its vertices out as a grid — one row per profile
+point — so which part of the driver a vertex belongs to is its position in the
+profile, and nothing has to be worked out from triangle indices. Vertex colours
+are how the rest of the scene carries this (§19), so the path tracer finds them
+without being told.
+
+### The scene is not in model coordinates
+
+`toThree` is a rotation, not an axis swap: the model's z becomes the scene's
+height and the model's y its −z, and it re-centres the box on the origin as it
+goes (§4.3). A driver aimed and placed in the model's own coordinates comes out
+lying on its side half a box away from the panel it is bolted to, which is
+exactly what the first one did. Both the placing and the aiming go through the
+same transform the panels go through, and the direction is derived from it
+rather than written out six times — six faces as six rotations is six chances to
+get a sign backwards, and the symptom of one is a driver aimed into the cavity,
+where the only sign of it on screen is that nothing is there.
+
+In the 3D view each driver goes in a group of its own, because the explode pass
+sets `position` on everything it moves and would otherwise overwrite where on
+the panel the driver sits.
+
+### It needs the hole to be cut
+
+The cone is recessed below the baffle, which is where a cone is. The analytic
+solids are ring-stack prisms with no fittings cut into them, so the baffle is
+solid and hides it: what you get is the frame and the surround with the panel
+showing through the middle. With the kernel on, the hole is there and the driver
+reads properly — frame, surround, cone, dust cap.
+
+That is not a fault in the driver. It is the analytic path being an
+approximation that was never asked to carry fittings, and the first thing that
+has made the difference plain.

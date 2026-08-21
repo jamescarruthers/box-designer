@@ -6,6 +6,7 @@ import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { panelPositions, explodeOffset, panelEdgeLoops } from "../three/panelGeometry.js";
+import { driverBody, driverMaterial, placeDriver, driversOn } from "../three/driver.js";
 import { panelBevels } from "../model/bevel.js";
 import { edgePasses, showsFaces, needsDepth, EDGE_COLOUR } from "../three/edges.js";
 import { edgeProxies, pickableEdges, pickRadius, hintSize } from "../three/edgePick.js";
@@ -71,7 +72,7 @@ export const VIEW_PRESETS = {
 
 const POLAR_MIN = 0.06, POLAR_MAX = Math.PI - 0.06;
 
-export default function Viewport({ derived, style, colourByFace, explode, selected, onSelect, hovered, hidden, camera, solids, edgeTool, onEdgePick }) {
+export default function Viewport({ derived, style, colourByFace, explode, selected, onSelect, hovered, hidden, camera, solids, edgeTool, onEdgePick, drivers = true }) {
   const host = useRef(null);
   const gl = useRef(null);
 
@@ -308,10 +309,13 @@ export default function Viewport({ derived, style, colourByFace, explode, select
     if (!state) return;
     state.onSelect = onSelect;
     const { root } = state;
-    while (root.children.length) {
-      const c = root.children.pop();
-      c.geometry?.dispose?.();
-      c.material?.dispose?.();
+    // Down the tree rather than across it: a driver (§22) is a mesh inside a
+    // group, and a loop that only frees what is directly under the root frees
+    // the group and leaks the driver. `remove` rather than `pop`, so nothing is
+    // left naming a parent it is no longer in.
+    for (const c of [...root.children]) {
+      root.remove(c);
+      c.traverse?.((o) => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
     }
     state.picks = [];
     state.lineMaterials = [];
@@ -403,6 +407,21 @@ export default function Viewport({ derived, style, colourByFace, explode, select
       }
     });
 
+    // §22 The drivers, one group each so the explode pass below can move them
+    // with their panel without overwriting where on it they sit.
+    if (drivers && showsFaces(style)) {
+      const material = driverMaterial();
+      for (const { fitting, panel } of driversOn(derived.fittings, derived.fittingPanels)) {
+        const index = sol.panels.indexOf(panel);
+        if (index < 0) continue;
+        const group = new THREE.Group();
+        group.userData.offsetOf = index;
+        group.add(placeDriver(new THREE.Mesh(driverBody(fitting), material.clone()), fitting, panel, E));
+        root.add(group);
+      }
+      material.dispose();
+    }
+
     // Explode.
     const amount = explode;
     for (const child of root.children) {
@@ -413,7 +432,7 @@ export default function Viewport({ derived, style, colourByFace, explode, select
     }
 
     state.invalidate?.();
-  }, [derived, style, colourByFace, explode, selected, hovered, onSelect, solids]);
+  }, [derived, style, colourByFace, explode, selected, hovered, onSelect, solids, drivers]);
 
   // Fit the camera when the box size changes.
   const sizeKey = `${derived.sol.E.x}|${derived.sol.E.y}|${derived.sol.E.z}`;

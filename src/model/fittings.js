@@ -17,10 +17,31 @@ export const faceAxes = (face) => panelAxes(face).planar;
 export const DEFAULT_DRIVER = {
   type: "driver",
   cutout: 116,        // the hole the cone moves through
+  outer: 162,         // §22 the frame's outside diameter — what sits on the panel
   pcd: 147,           // pitch circle diameter of the mounting holes
   bolts: 5,           // "a set number of mounting holes"
   boltHole: 5,        // 5 mm clearance holes
 };
+
+/**
+ * §22 The outside diameter of a driver's frame.
+ *
+ * The one dimension a datasheet always gives that the model did not hold. It is
+ * what decides whether two drivers foul each other and whether one clears the
+ * edge of the panel — the bolt circle is not the widest part of a driver, the
+ * flange is, and a check against the bolts alone passes a driver whose rim is
+ * already over the edge.
+ *
+ * Read with a fallback rather than as a plain field, so a design saved before
+ * this existed still draws and still gets checked. The fallback is the bolt
+ * circle plus enough material to put a bolt through: on a Markaudio Pluvia 7P,
+ * whose datasheet says 112 PCD with 3.1 mm holes and a 122.3 mm frame, it comes
+ * out at 121.3 — within a millimetre of the real thing.
+ */
+export function driverOuter(f) {
+  if (Number.isFinite(f?.outer) && f.outer > 0) return f.outer;
+  return f.pcd + f.boltHole * 3;
+}
 
 export const DEFAULT_PORT = {
   type: "port",
@@ -77,10 +98,19 @@ export function fittingCircles(f) {
   return out;
 }
 
-/** The radius of the smallest circle containing everything the fitting cuts. */
+/**
+ * The radius of the smallest circle containing everything a fitting occupies.
+ *
+ * §22 For a driver that is the frame, not the holes. It used to be the bolt
+ * circle, which is what the panel has cut into it — but what has to fit is the
+ * driver, and its flange overhangs the bolts by a few millimetres on every
+ * driver ever made. The cutout and the bolt circle stay in the reckoning
+ * because nothing says a frame has to be the widest of the three, and a rule
+ * that quietly stopped checking two of them would be a worse rule.
+ */
 export function fittingExtent(f) {
   if (f.type === "port") return f.diameter / 2;
-  return Math.max(f.cutout / 2, f.pcd / 2 + f.boltHole / 2);
+  return Math.max(f.cutout / 2, f.pcd / 2 + f.boltHole / 2, driverOuter(f) / 2);
 }
 
 /** The outside radius of a port's tube, which is what has to clear the cavity. */
@@ -184,6 +214,87 @@ export function convertAt(f, panel, units) {
   return resolveAt({ ...f, units: "ratio" }, panel);
 }
 
+/**
+ * §22 The shape of a driver, as a profile to revolve.
+ *
+ * Points are `[radius, height]` in millimetres, height measured from the outer
+ * face of the panel: positive is proud of it, negative is down inside the
+ * cutout. Revolved about the axis they make the driver you can see once it is
+ * bolted on — frame, surround, cone, dust cap — and the back of it is closed
+ * off flat, because everything behind the baffle is inside a sealed box and is
+ * never in shot.
+ *
+ * Two of these numbers come from the datasheet: the cutout and the frame. The
+ * rest are proportions of them. That is a deliberate limit rather than a gap
+ * waiting to be filled — a datasheet gives a cone depth about as often as it
+ * gives the colour of the terminals, and asking somebody to measure their dust
+ * cap to get a picture of their box is a poor trade. They are chosen against
+ * the Markaudio Pluvia 7P drawing, which is a typical enough full-range driver
+ * to set them by.
+ */
+export const DRIVER_SHAPE = {
+  flange: 0.037,      // frame thickness, of the frame diameter: 4.5 on a 122.3
+  surround: 0.16,     // the roll around the cone, of the cutout radius
+  cone: 0.42,         // how deep the cone sits, of the cutout radius
+  cap: 0.3,           // dust cap radius, of the cutout radius
+  dome: 0.5,          // how far the cap domes, of its own radius
+  // Millimetres, not a proportion. The part of the frame that goes through the
+  // hole cannot be exactly the size of the hole: coincident surfaces flicker
+  // against each other wherever both are drawn, and a driver is not a push fit
+  // anyway. Half a millimetre of slop, which is what one has in the workshop.
+  slop: 0.5,
+};
+
+/**
+ * Where the cone starts in the profile.
+ *
+ * Everything before it is frame and surround — cast, pressed or moulded, and
+ * black on nearly every driver made. Everything from it on is the cone and its
+ * dust cap, which are paper. Defined here beside the profile so the two cannot
+ * drift: a boundary counted somewhere else is a boundary that goes wrong the
+ * first time a point is added.
+ */
+export const driverConeFrom = (steps = 8) => 6 + steps;
+
+export function driverProfile(f, steps = 8) {
+  const Ro = driverOuter(f) / 2;
+  const Rc = f.cutout / 2;
+  const flange = driverOuter(f) * DRIVER_SHAPE.flange;
+  const roll = Rc * DRIVER_SHAPE.surround;
+  const cone = Rc * DRIVER_SHAPE.cone;
+  const Rd = Rc * DRIVER_SHAPE.cap;
+  const dome = Rd * DRIVER_SHAPE.dome;
+  // Clear of the deepest thing in front of it, so the flat back never cuts
+  // through the cone it is supposed to be behind.
+  const back = Math.max(0, cone - flange) + roll;
+
+  const points = [];
+  // Back first, from the axis out: a flat disc down inside the cutout, up the
+  // wall of the hole, and out along the face to the rim of the frame.
+  const Rb = Math.max(0.1, Rc - DRIVER_SHAPE.slop);
+  points.push([0, -back], [Rb, -back], [Rb, 0], [Ro, 0]);
+  // Then the front, from the rim inward: up the edge of the frame, in across
+  // its top, over the surround, down the cone, and up the dome of the cap.
+  points.push([Ro, flange], [Rc, flange]);
+  for (let i = 1; i <= steps; i++) {
+    // A half roll, bulging proud of the frame the way a rubber surround does.
+    const a = (i / steps) * Math.PI;
+    points.push([Rc - (roll / 2) * (1 - Math.cos(a)), flange + (roll / 2) * Math.sin(a)]);
+  }
+  points.push([Rd, flange - cone]);
+  for (let i = 1; i <= steps; i++) {
+    const a = (i / steps) * (Math.PI / 2);
+    points.push([Rd * Math.cos(a), flange - cone + dome * Math.sin(a)]);
+  }
+  return points;
+}
+
+/** How far a driver stands proud of the panel it is bolted to. */
+export function driverStandoff(f) {
+  const flange = driverOuter(f) * DRIVER_SHAPE.flange;
+  return flange + (f.cutout / 2) * DRIVER_SHAPE.surround / 2;
+}
+
 /** A fitting's position in model space, on the outer surface of its panel. */
 export function fittingOrigin(f, panel) {
   const [a, s] = AXIS[f.face];
@@ -238,6 +349,11 @@ export function fittingIssues(fittings, panels, owners, cavity) {
       }
     }
 
+    // §22 A frame narrower than its own bolt circle cannot be bolted down.
+    if (f.type === "driver" && driverOuter(f) < f.pcd + f.boltHole) {
+      msgs.push({ level: "warning",
+        text: `${label}: the ⌀${round1(driverOuter(f))} frame is too small for a ${f.pcd} PCD — the bolt holes fall outside it.` });
+    }
     if (f.type === "driver" && f.pcd / 2 - f.boltHole / 2 < f.cutout / 2) {
       msgs.push({ level: "warning",
         text: `${label}: the bolt holes break into the cutout — PCD ${f.pcd} against a ${f.cutout} mm hole.` });
@@ -264,7 +380,9 @@ export function fittingIssues(fittings, panels, owners, cavity) {
 }
 
 export function describeFitting(f) {
-  if (f.type !== "port") return `Driver ⌀${f.cutout}, ${f.bolts} × ⌀${f.boltHole} on ${f.pcd} PCD`;
+  if (f.type !== "port") {
+    return `Driver ⌀${f.cutout} in a ⌀${round1(driverOuter(f))} frame, ${f.bolts} × ⌀${f.boltHole} on ${f.pcd} PCD`;
+  }
   return hasTube(f) ? `Port ⌀${f.diameter} × ${f.length}` : `Port ⌀${f.diameter}, no tube`;
 }
 
