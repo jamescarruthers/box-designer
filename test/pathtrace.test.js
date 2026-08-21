@@ -11,7 +11,9 @@
  * business attempting it.
  */
 import { describe, it, expect } from "vitest";
+import * as THREE from "three";
 import { traceSize, tilesFor, TRACE_PIXEL_CAP, SETTLED_SAMPLES } from "../src/render/pathtrace.js";
+import { withColour } from "../src/ui/RenderView.jsx";
 
 const pixels = ([w, h]) => w * h;
 
@@ -62,5 +64,44 @@ describe("§19 a frame is split only when it is worth splitting", () => {
 
   it("settles at a number of samples worth waiting for", () => {
     expect(SETTLED_SAMPLES).toBeGreaterThan(50);
+  });
+});
+
+/**
+ * §19 The path tracer merges the whole scene into one geometry, and an
+ * attribute that some parts carry and others do not comes out of that merge as
+ * nonsense — bands of environment through the floor, coloured streaks over the
+ * backdrop, light from nowhere. It took a screenshot to see and one line to
+ * fix, which is the sort of bug worth a test.
+ */
+describe("§19 every part of the scene carries the same attributes", () => {
+  const plain = () => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(9), 3));
+    return g;
+  };
+
+  it("gives a geometry a colour at every vertex when it has none", () => {
+    const g = withColour(plain());
+    const colour = g.getAttribute("color");
+    expect(colour.count).toBe(g.getAttribute("position").count);
+    expect(colour.itemSize).toBe(3);
+    expect([...colour.array]).toEqual(new Array(9).fill(1));
+  });
+
+  it("makes it white, so the material's own colour is what shows", () => {
+    for (const v of withColour(plain()).getAttribute("color").array) expect(v).toBe(1);
+  });
+
+  it("leaves a geometry that already has one alone", () => {
+    const g = plain();
+    const own = new Float32Array([0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 1, 1, 1]);
+    g.setAttribute("color", new THREE.BufferAttribute(own, 3));
+    expect(withColour(g).getAttribute("color").array).toBe(own);
+  });
+
+  it("takes a shade, for anything that wants to be darker than white", () => {
+    // Float32, so 0.4 comes back as the nearest float to 0.4.
+    for (const v of withColour(plain(), 0.4).getAttribute("color").array) expect(v).toBeCloseTo(0.4, 6);
   });
 });

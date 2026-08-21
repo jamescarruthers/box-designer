@@ -17,23 +17,77 @@
 
 /** Where the key light sits: azimuth and elevation in radians, and how hard. */
 /**
- * The key sits well round to one side of where the camera stands (§19 frames it
- * at -0.68), because a light next to the lens lights both visible faces the
- * same and a box with two identical faces reads as a flat shape with a line
- * drawn down it.
+ * §19 A three-point rig, in **camera-relative** angles.
+ *
+ * The whole studio — sweep and lamps together — turns with the view, so every
+ * angle of the box is the same photograph of it. Azimuth is measured from where
+ * the camera stands: 0 is a light beside the lens, which is the one place a
+ * light must never be.
+ *
+ * Key, fill, rim, and each doing one job:
+ *
+ * - the **key** is nearly two thirds of a radian round and well up, so one face
+ *   is lit and the next one along is not — that difference is the whole of what
+ *   makes a box read as a solid rather than as a flat shape with a line down it;
+ * - the **fill** sits opposite and low and cool, at a fifth of the key, to keep
+ *   the shaded face readable without pretending it is lit;
+ * - the **rim** is behind the box and high, and does the thing a sweep cannot:
+ *   it puts a bright edge along the top and the far corner so the box separates
+ *   from a backdrop that is nearly the same tone.
+ *
+ * Warm key against cool fill, because daylight through a window and the sky it
+ * bounces off are not the same colour, and a render where they are looks like a
+ * render.
  */
-export const KEY = { azimuth: -1.95, elevation: 0.62, radius: 0.34, intensity: 16 };
+export const RIG = {
+  key: { azimuth: -1.25, elevation: 0.62, colour: "#fff3e4", intensity: 2.7, casts: true },
+  fill: { azimuth: 1.42, elevation: 0.22, colour: "#dae6ff", intensity: 0.8, casts: false },
+  rim: { azimuth: 2.85, elevation: 0.78, colour: "#ffffff", intensity: 1.7, casts: false },
+};
 
-/** And the fill, opposite and much weaker — enough to keep a shadow side readable. */
-export const FILL = { azimuth: 2.1, elevation: 0.3, radius: 0.85, intensity: 0.9 };
+/** The one that draws the shadow. A single soft shadow reads; three overlap. */
+export const KEY = RIG.key;
+
 
 /** The ground and sky of the environment, as linear RGB. */
-export const SKY = [0.45, 0.5, 0.6];
-export const HORIZON = [0.4, 0.4, 0.42];
+export const SKY = [0.52, 0.57, 0.66];
+export const HORIZON = [0.44, 0.45, 0.47];
 export const GROUND = [0.10, 0.10, 0.11];
 
 /** Filmic exposure. Higher is brighter; ACES rolls the highlights off. */
-export const EXPOSURE = 1.0;
+export const EXPOSURE = 0.95;
+
+/**
+ * The sweep, and how it darkens away from the subject.
+ *
+ * A real cyclorama is not one flat tone. It is lit from the front, so it falls
+ * off with distance, and that gradient is most of what makes a backdrop read as
+ * a lit space rather than as a grey rectangle behind the object. Directional
+ * lights give no falloff at all — they are parallel and infinitely far away —
+ * so it is painted into the sweep's own vertex colours, where the rasteriser
+ * and the path tracer both find it.
+ *
+ * Measured in box diagonals from the middle of the box, not as a fraction of
+ * the sheet: the sheet is enormous so that its edges are never in shot, and a
+ * gradient spread over the whole of it is a gradient nobody can see. Anchored
+ * to the box, the pool of light lands around the box wherever the camera is.
+ */
+export const SWEEP = { colour: "#e8e8e5", near: 0.7, far: 4.5, dark: 0.22 };
+
+/**
+ * How bright the sweep is `distance` box-diagonals from the middle of the box.
+ *
+ * Full brightness out to `near`, then down to `dark` by `far`, on a smooth
+ * shoulder — a linear ramp puts a visible line across the backdrop where it
+ * starts, which is the one thing a seamless sweep exists to avoid.
+ */
+export function sweepShade(distance) {
+  const d = Math.max(0, distance);
+  if (d <= SWEEP.near) return 1;
+  const t = Math.min(1, (d - SWEEP.near) / (SWEEP.far - SWEEP.near));
+  const eased = t * t * (3 - 2 * t);
+  return 1 - (1 - SWEEP.dark) * eased;
+}
 
 const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
 
@@ -50,7 +104,12 @@ export function directionAt(u, v) {
   return [Math.sin(theta) * Math.sin(phi), Math.cos(theta), Math.sin(theta) * Math.cos(phi)];
 }
 
-/** A lamp's direction, from the same angles a person would describe it in. */
+/**
+ * A lamp's direction, from the same angles a person would describe it in.
+ *
+ * Camera-relative: the rig lives inside the group that turns with the view, so
+ * these are the angles as seen from behind the lens.
+ */
 export function lampDirection({ azimuth, elevation }) {
   const c = Math.cos(elevation);
   return [c * Math.sin(azimuth), Math.sin(elevation), c * Math.cos(azimuth)];
@@ -59,23 +118,17 @@ export function lampDirection({ azimuth, elevation }) {
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
 /**
- * How much a lamp contributes in a given direction: full on axis, nothing past
- * its radius, and a smooth shoulder between — a soft box has an edge, but not a
- * hard one, and a hard one shows up as a rim on every highlight.
- */
-export function lampFalloff(direction, lamp) {
-  const angle = Math.acos(Math.min(1, Math.max(-1, dot(direction, lampDirection(lamp)))));
-  if (angle >= lamp.radius) return 0;
-  const t = 1 - angle / lamp.radius;
-  return t * t * (3 - 2 * t);                  // smoothstep, so the edge is soft
-}
-
-/**
  * The environment as an equirectangular image: `[width, height]` of linear RGB.
  *
- * Float rather than bytes, and the lamps go well above 1: the difference
- * between a light and a bright grey is that a light has more energy than white,
- * and a path tracer can tell.
+ * A gradient and nothing else: sky above, ground below, a soft band between.
+ * There are no lamps painted into it any more, and that is the point — an image
+ * with a bright patch in it has to be turned when the studio turns, and three
+ * r160 has no way to rotate `scene.environment`. Even all the way round, it
+ * needs no turning, and every lamp is a real light in the rig instead, which
+ * the path tracer follows as carefully as it follows anything else.
+ *
+ * Float rather than bytes because the sky is a light: it is what fills the
+ * shadow side and what a matte face reflects, and eight bits of it bands.
  */
 export function equirectStudio(width = 128, height = 64) {
   const data = new Float32Array(width * height * 4);
@@ -94,15 +147,9 @@ export function equirectStudio(width = 128, height = 64) {
       // line: a hard horizon in an environment map reads as a seam in every
       // reflection.
       const h = dir[1];
-      const base = h >= 0
+      const lit = h >= 0
         ? mix(HORIZON, SKY, Math.min(1, h / 0.55) ** 0.7)
         : mix(HORIZON, GROUND, Math.min(1, -h / 0.35) ** 0.6);
-
-      const lit = base.slice();
-      for (const lamp of [KEY, FILL]) {
-        const amount = lampFalloff(dir, lamp) * lamp.intensity;
-        for (let i = 0; i < 3; i++) lit[i] += amount;
-      }
 
       const at = (y * width + x) * 4;
       data[at] = lit[0]; data[at + 1] = lit[1]; data[at + 2] = lit[2]; data[at + 3] = 1;
@@ -171,19 +218,25 @@ export function framing(E) {
     distance: diagonal * 2.5,
     target: [0, E.z * 0.42, 0],
     azimuth: -0.68,
-    polar: 1.16,
+    // Looking down enough to see the floor the box stands on. With the sweep
+    // turned to sit behind it (§19), a camera on the level sees nothing but
+    // wall, and a box against a wall with no ground under it floats.
+    polar: 1.02,
     // Big enough to fill the frame from any angle the view allows. A sweep
     // whose edge is in shot is a sheet of card, not a studio.
     //
     // The curve starts a clear half-diagonal behind the box, so that turning
     // the view right round never brings the box into the part of the floor that
     // is on its way up.
+    // The curve is wide and well back, so what fills the frame is floor with
+    // the box standing on it, and the wall is only ever the top of the picture.
+    // A tight radius close behind puts the camera nose-to-nose with a wall.
     sweep: {
-      radius: diagonal * 1.2,
-      back: diagonal * 0.75,
+      radius: diagonal * 3,
+      back: diagonal * 1.6,
       floorRun: diagonal * 12,
-      wallRise: diagonal * 6,
-      width: diagonal * 14,
+      wallRise: diagonal * 5,
+      width: diagonal * 16,
     },
   };
 }

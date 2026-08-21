@@ -1729,6 +1729,75 @@ a soft render nobody was told about reads as a broken one.
 the tab unanswerable, and leaves a small one whole so that a part-drawn frame is
 never on screen.
 
+### The studio turns with the camera
+
+Asked for next: put the ramp behind the box. It was in a fixed world direction,
+so it was behind the box from one angle and off to the side from every other.
+
+Sweep and lamps are one group now, rotated by the camera's own azimuth, so the
+backdrop is always behind the subject and the light always falls the same way
+across it: every angle of the box is the same photograph of it, rather than a
+different one taken in the same room.
+
+Three consequences, each of which had to be dealt with:
+
+- **A camera on the level then sees nothing but wall.** With the sweep squarely
+  behind, the floor leaves the frame and the box floats against a grey field.
+  The view looks down further (1.02 rather than 1.16 radians of polar), and the
+  curve is wider and further back — a big radius well behind the subject is a
+  backdrop; a tight one just behind it is a wall.
+- **The path tracer bakes the scene into one world-space tree**, so a stage that
+  has turned is a scene it no longer knows. `sceneMoved()` rebuilds it. Refitting
+  — the cheap path, meant for geometry that moved a little — comes back with
+  bands of environment through the floor after a thirty-degree swing.
+- **`scene.environment` cannot be rotated in three r160**, so the environment
+  had to become something that does not need rotating: an even gradient, with no
+  lamp painted into it. Every lamp is a real light instead.
+
+### A three-point rig, in camera-relative angles
+
+Key, fill and rim, each doing one job, and all three defined by their angle from
+where the camera stands rather than from north:
+
+| | azimuth | elevation | | |
+|---|---|---|---|---|
+| key | −1.25 | 0.62 | warm, ×2.7 | one face lit and the next not — the whole of why a box reads as solid |
+| fill | +1.42 | 0.22 | cool, ×0.8 | keeps the shaded face readable without pretending it is lit |
+| rim | +2.85 | 0.78 | white, ×1.7 | a bright edge along the top and far corner, so the box leaves the backdrop |
+
+Warm key against cool fill, because daylight and the sky it bounces off are not
+the same colour and a render where they are looks like a render. Only the key
+casts: one soft shadow reads, three overlap into mud.
+
+The sweep carries its own falloff in vertex colours — full brightness within
+0.7 box-diagonals, down to 22% by 4.5 — because directional lights are parallel
+and infinitely far away and give none. Measured in **diagonals from the box**,
+not as a fraction of the sheet: the sheet is enormous so its edges are never in
+shot, and a gradient spread across the whole of it is a gradient nobody sees.
+
+### Two that took a screenshot to find
+
+**Emptying the stage emptied the rig.** The rebuild cleared the group the sweep
+was in — and the lamps were in it too. What was left was a box lit by nothing
+but the sky: flat, with no shadow at all, which reads as bad lighting rather
+than as three lights that are no longer in the scene. The sweep has its own
+group inside the stage now. The same loop was doing `children.pop()`, which
+leaves every child still naming that group as its parent, so anything asking
+"am I in the scene?" was told yes by an object nothing would draw. It uses
+`remove()`.
+
+**A shadow map fitted to the box cut the shadow off.** A 327 mm box lit from 27°
+lays a shadow longer than itself; the map covered 610 mm of floor and the shadow
+needed 630. It reached a few centimetres past the box and stopped dead. The
+extent includes the throw now: `E.z / tan(elevation)`.
+
+**One attribute, everywhere.** The tracer merges the whole scene into a single
+geometry, and an attribute some parts carry and others do not comes out of that
+merge as nonsense — bands of environment through the floor, coloured streaks
+across the backdrop, light arriving from nowhere. The sweep grew vertex colours;
+everything else needed white ones. `withColour` does that, and the rule has a
+test, because the symptom looks like a path tracer bug and is not one.
+
 ### The floor curved through the box
 
 Also reported: "the box is slightly cut off by the curve on the floor". The box
