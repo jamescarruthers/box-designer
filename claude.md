@@ -2139,3 +2139,53 @@ megabytes of wasm in jsdom to find out whether a button works. `stubKernel`
 answers the call and never resolves, which leaves those tests looking at exactly
 what they looked at before: the analytic stacks, with the kernel still on its
 way. The toggle's own tests start from one job in flight rather than from none.
+
+## 24. The rest of the driver
+
+§22 drew what is in front of the baffle, because that is what a rendered view
+shows and because two numbers off a datasheet were enough for it. Behind it was
+a flat disc — everything back there is inside a sealed box and never in shot.
+
+Except that it is. The 3D view draws the panels see-through, so the inside of
+the box is exactly what you are looking at; the box explodes; and whether a
+driver *fits* is a question about the part that was not being drawn. So the
+motor is modelled too, from three more numbers a datasheet gives.
+
+**Depth is overall, measured from the mounting face**, which is how a datasheet
+gives it — the Pluvia 7P's 71.5 mm runs from the front of its frame to the back
+of its magnet, not from the baffle. The part inside the box is that less the
+frame thickness. Getting this the other way round would put every driver 4 mm
+too deep and no view would show it.
+
+The profile picks up where the flat disc was: the back of the magnet, up its
+side, out along the basket to the wall of the hole, and along the face to the
+rim of the frame. A cone frustum and a cylinder, which is the silhouette of a
+motor and a cast basket and all of a driver anybody sees from behind.
+
+### Depth is not a proportion
+
+Every other part of the shape scales with the two face diameters (§22), and
+depth cannot: a small full-range driver is relatively deep and a big woofer
+relatively shallow, so a single ratio is wrong at one end or the other. It is a
+number somebody types, with a fallback for designs saved before the field
+existed that is plausible rather than exact and is meant to be corrected.
+
+The scaling test had to learn this. It quadrupled a driver and checked every
+part of it quadrupled, which stopped being true the moment three of the numbers
+became inputs rather than proportions — so it quadruples those too now, and says
+in as many words that a driver four times the size is four times as deep only if
+its datasheet says so.
+
+### Three things it can now say no to
+
+None of them shows up in any flat view, which is the point of modelling the
+part nobody sees:
+
+- a **magnet wider than its own cutout** cannot be posted through the hole, so
+  the driver would have to be fitted from behind;
+- a driver **deeper than the cavity** does not go in the box at all, and one
+  within 15 mm of the back gets a warning rather than an error, because that is
+  a judgement about airflow rather than a fact about fitting;
+- a **depth shallower than the driver's own cone** is not a depth. The profile
+  clamps so that what is drawn is still a driver, and the message says the
+  number is wrong rather than the picture quietly being something else.

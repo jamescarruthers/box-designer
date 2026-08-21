@@ -239,6 +239,38 @@ describe("§22 the shape scales across every driver somebody might fit", () => {
     ["10in", 230, 270], ["12in", 277, 315], ["15in woofer", 350, 390],
   ];
 
+  it("§24 takes its depth from the datasheet, not from its diameter", () => {
+    // Depth does not scale with diameter across driver classes — a small
+    // full-range driver is relatively deep and a shallow woofer relatively
+    // flat — so it is a number somebody types. Two drivers of quite different
+    // face sizes, both 71.5 mm from mounting face to magnet, come out the same
+    // depth apart from their frames.
+    const backOf = (p) => Math.min(...p.map(([, h]) => h));
+    const four = driverProfile({ ...DEFAULT_DRIVER, cutout: 100, outer: 122.3, depth: 71.5, magnet: 75.8, magnetDepth: 37 });
+    const six = driverProfile({ ...DEFAULT_DRIVER, cutout: 146, outer: 170, depth: 71.5, magnet: 100, magnetDepth: 37 });
+    // What differs is the frame thickness they are measured from, and nothing
+    // else: about 1.8 mm between a 122 mm frame and a 170 mm one.
+    expect(Math.abs(backOf(four) - backOf(six))).toBeLessThan(3);
+    // And the depth given is honoured, front of frame to back of magnet.
+    const frontOfFrame = (f) => driverOuter(f) * DRIVER_SHAPE.flange;
+    const spec = { ...DEFAULT_DRIVER, cutout: 100, outer: 122.3, depth: 71.5, magnet: 75.8, magnetDepth: 37 };
+    expect(frontOfFrame(spec) - backOf(four)).toBeCloseTo(71.5, 6);
+  });
+
+  it("§24 will not draw a body shallower than the cone inside it", () => {
+    // A 15 inch driver cannot be 60 mm deep: its cone is 73 mm on its own. The
+    // body is clamped so what is drawn is still a driver, and the message says
+    // the number is wrong rather than the picture quietly being something else.
+    const wrong = { ...DEFAULT_DRIVER, cutout: 350, outer: 390, depth: 60, magnet: 100, magnetDepth: 25 };
+    const profile = driverProfile(wrong);
+    const cap = profile.at(-1)[1];
+    expect(Math.min(...profile.map(([, h]) => h))).toBeLessThan(cap);
+    const panel = { face: "front", layer: "shell", box: { x: [0, 600], y: [0, 18], z: [0, 700] } };
+    const msgs = fittingIssues([{ ...wrong, id: "w", face: "front", at: { a: 300, b: 350 } }],
+      [panel], { front: panel }, null);
+    expect(msgs.some((m) => /shallower than its own cone/.test(m.text))).toBe(true);
+  });
+
   it("draws a closed body, the width of its frame, at every size", () => {
     for (const [name, cutout, outer] of REAL) {
       const f = { ...DEFAULT_DRIVER, cutout, outer };
@@ -250,10 +282,17 @@ describe("§22 the shape scales across every driver somebody might fit", () => {
   });
 
   it("keeps every proportion in step with the driver's own size", () => {
-    // The test that would catch a stray absolute millimetre: double the driver
-    // and every part of it doubles, so a 15 inch reads the same as a 3 inch.
-    const small = driverProfile({ ...DEFAULT_DRIVER, cutout: 50, outer: 61.15 });
-    const big = driverProfile({ ...DEFAULT_DRIVER, cutout: 200, outer: 244.6 });
+    // The test that would catch a stray absolute millimetre: quadruple the
+    // driver and every part of it quadruples, so a 15 inch reads the same as a
+    // 3 inch. §24 scales the depths with it too — they are given numbers rather
+    // than proportions now, so a driver four times the size is only four times
+    // the size if its datasheet says so.
+    const at = (k) => ({
+      ...DEFAULT_DRIVER, cutout: 50 * k, outer: 61.15 * k,
+      depth: 40 * k, magnet: 37.5 * k, magnetDepth: 18 * k,
+    });
+    const small = driverProfile(at(1));
+    const big = driverProfile(at(4));
     // Everything scales except the slop, which is deliberately absolute: it is
     // a workshop clearance, not a proportion, so quadrupling the driver leaves
     // it where it was and the two profiles differ by that much and no more.

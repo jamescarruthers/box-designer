@@ -250,7 +250,7 @@ describe("through the app", () => {
     const front = r.rows.find((x) => x.face === "front" && x.layer === "shell");
     expect(front.fittings).toHaveLength(2);
     expect(front.fittingNote).toBe(fittingNote(design.fittings));
-    expect(front.fittingNote).toContain("Driver ⌀116 in a ⌀162 frame, 5 × ⌀5 on 147 PCD");
+    expect(front.fittingNote).toContain("Driver ⌀116 in a ⌀162 frame, 78 deep, 5 × ⌀5 on 147 PCD");
     expect(front.fittingNote).toContain("Port ⌀68 × 150");
   });
 
@@ -272,7 +272,7 @@ describe("through the app", () => {
     // §22 The frame is in the line because it is the number that decides
     // whether the driver fits, and a cut list that names every hole but not the
     // thing going into them is describing the wrong object.
-    expect(describeFitting(design.fittings[0])).toBe("Driver ⌀116 in a ⌀162 frame, 5 × ⌀5 on 147 PCD");
+    expect(describeFitting(design.fittings[0])).toBe("Driver ⌀116 in a ⌀162 frame, 78 deep, 5 × ⌀5 on 147 PCD");
     expect(describeFitting(design.fittings[1])).toBe("Port ⌀68 × 150");
   });
 });

@@ -21,6 +21,12 @@ export const DEFAULT_DRIVER = {
   pcd: 147,           // pitch circle diameter of the mounting holes
   bolts: 5,           // "a set number of mounting holes"
   boltHole: 5,        // 5 mm clearance holes
+  // §24 Behind the baffle. `depth` is overall, measured from the mounting face
+  // the way a datasheet measures it — the Pluvia 7P's 71.5 mm runs from the
+  // front of its frame to the back of its magnet, not from the baffle.
+  depth: 78,
+  magnet: 90,         // magnet diameter
+  magnetDepth: 32,    // how much of the depth the magnet block takes
 };
 
 /**
@@ -254,7 +260,34 @@ export const DRIVER_SHAPE = {
  * drift: a boundary counted somewhere else is a boundary that goes wrong the
  * first time a point is added.
  */
-export const driverConeFrom = (steps = 8) => 6 + steps;
+export const driverConeFrom = (steps = 8) => 7 + steps;
+
+/**
+ * §24 The three numbers behind the baffle, each with a fallback.
+ *
+ * Read the same way as the frame diameter (§22): a design saved before these
+ * existed still draws, and a datasheet that gives only some of them still
+ * works. The fallbacks are plausible rather than exact — depth in particular
+ * does not scale with diameter across driver classes, because a small
+ * full-range driver is relatively deep and a big woofer relatively shallow — so
+ * they are a starting point to correct, not an answer.
+ */
+export function driverDepth(f) {
+  if (Number.isFinite(f?.depth) && f.depth > 0) return f.depth;
+  return driverOuter(f) * 0.55;
+}
+
+export function driverMagnet(f) {
+  if (Number.isFinite(f?.magnet) && f.magnet > 0) return f.magnet;
+  // Through the hole it was posted through, with room to spare: on the Pluvia
+  // this gives 75 against a real 75.8.
+  return Math.max(1, f.cutout) * 0.75;
+}
+
+export function driverMagnetDepth(f) {
+  if (Number.isFinite(f?.magnetDepth) && f.magnetDepth > 0) return f.magnetDepth;
+  return driverDepth(f) * 0.5;
+}
 
 export function driverProfile(f, steps = 8) {
   const Rc = Math.max(0, f.cutout) / 2;
@@ -274,10 +307,19 @@ export function driverProfile(f, steps = 8) {
   const back = Math.max(0, cone - flange) + roll;
 
   const points = [];
-  // Back first, from the axis out: a flat disc down inside the cutout, up the
-  // wall of the hole, and out along the face to the rim of the frame.
+  // §24 Back first, from the axis out: the flat back of the magnet, up its
+  // side, out along the basket to the wall of the hole, and along the face to
+  // the rim of the frame. That is the silhouette of a motor and a cast basket,
+  // which is all of the driver anybody sees from behind.
   const Rb = Math.max(0.1, Rc - DRIVER_SHAPE.slop);
-  points.push([0, -back], [Rb, -back], [Rb, 0], [Ro, 0]);
+  const Rm = Math.min(Math.max(0.1, driverMagnet(f) / 2), Rb);
+  // Everything behind the mounting face. A datasheet measures depth from the
+  // front of the frame, and the baffle is a frame's thickness behind that.
+  const deep = Math.max(back, driverDepth(f) - flange);
+  // The basket needs somewhere to be: the magnet cannot fill the whole depth,
+  // or the frame would spring straight from the hole to the back of the motor.
+  const motor = Math.min(driverMagnetDepth(f), deep * 0.8);
+  points.push([0, -deep], [Rm, -deep], [Rm, -deep + motor], [Rb, 0], [Ro, 0]);
   // Then the front, from the rim inward: up the edge of the frame, in across
   // its top, over the surround, down the cone, and up the dome of the cap.
   points.push([Ro, flange], [Rc, flange]);
@@ -368,6 +410,33 @@ export function fittingIssues(fittings, panels, owners, cavity) {
       msgs.push({ level: "warning",
         text: `${label}: the bolt holes break into the cutout — PCD ${f.pcd} against a ${f.cutout} mm hole.` });
     }
+    // §24 A driver goes in through its own hole and stands in the cavity. Both
+    // of those can fail, and neither shows up in any of the flat views.
+    if (f.type === "driver") {
+      if (driverMagnet(f) > f.cutout) {
+        msgs.push({ level: "warning",
+          text: `${label}: the ⌀${round1(driverMagnet(f))} magnet will not pass through a ${f.cutout} mm cutout — it would have to be fitted from behind.` });
+      }
+      // §24 A depth shallower than the driver's own cone is not a depth. The
+      // profile clamps so the body is still drawn, but the number is wrong and
+      // saying so is more use than quietly drawing something else.
+      const flange = driverOuter(f) * DRIVER_SHAPE.flange;
+      const least = flange + (f.cutout / 2) * DRIVER_SHAPE.cone;
+      if (driverDepth(f) < least) {
+        msgs.push({ level: "warning",
+          text: `${label}: ${round1(driverDepth(f))} mm is shallower than its own cone, which needs about ${round1(least)} — check the depth against the datasheet.` });
+      }
+      const room = cavity ? cavity[AXIS[f.face][0]][1] - cavity[AXIS[f.face][0]][0] : Infinity;
+      // What sits inside the box: everything but the frame on the outside face.
+      const inside = driverDepth(f) - driverOuter(f) * DRIVER_SHAPE.flange;
+      if (inside > room) {
+        msgs.push({ level: "error",
+          text: `${label} is ${round1(inside)} mm deep behind the baffle and the cavity is only ${round1(room)} mm — it will not fit in the box.` });
+      } else if (inside > room - 15) {
+        msgs.push({ level: "warning",
+          text: `${label} leaves ${round1(room - inside)} mm between its magnet and the back of the box.` });
+      }
+    }
     if (hasTube(f)) {
       const depth = cavity ? cavity[AXIS[f.face][0]][1] - cavity[AXIS[f.face][0]][0] : Infinity;
       if (f.length > depth) {
@@ -391,7 +460,11 @@ export function fittingIssues(fittings, panels, owners, cavity) {
 
 export function describeFitting(f) {
   if (f.type !== "port") {
-    return `Driver ⌀${f.cutout} in a ⌀${round1(driverOuter(f))} frame, ${f.bolts} × ⌀${f.boltHole} on ${f.pcd} PCD`;
+    // §24 The depth is in the line because it is the number that decides
+    // whether the driver fits the box at all, and it is the one dimension of a
+    // driver that none of the flat views can show.
+    return `Driver ⌀${f.cutout} in a ⌀${round1(driverOuter(f))} frame, ${round1(driverDepth(f))} deep, `
+      + `${f.bolts} × ⌀${f.boltHole} on ${f.pcd} PCD`;
   }
   return hasTube(f) ? `Port ⌀${f.diameter} × ${f.length}` : `Port ⌀${f.diameter}, no tube`;
 }
