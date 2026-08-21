@@ -69,7 +69,7 @@ export async function loadPathTracer({ renderer, scene, camera, environment, siz
   // statically: asking for it here as well gave the async chunk its own copy —
   // 200 kB of it, twice in the build, and two sets of classes that would fail
   // every `instanceof` against each other.
-  const { PathTracingRenderer, PhysicalPathTracingMaterial, PathTracingSceneGenerator } =
+  const { PathTracingRenderer, PhysicalPathTracingMaterial, DynamicPathTracingSceneGenerator } =
     await import("three-gpu-pathtracer");
 
   const material = new PhysicalPathTracingMaterial();
@@ -81,20 +81,37 @@ export async function loadPathTracer({ renderer, scene, camera, environment, siz
   tracer.tiles.set(tiles, tiles);
   tracer.setSize(...traced);
 
-  scene.updateMatrixWorld(true);
-  const { bvh, textures, materials, lights } = new PathTracingSceneGenerator().generate(scene);
-  const geometry = bvh.geometry;
+  // The studio turns with the camera (§19), so the scene moves whenever the
+  // view does and the tracer's baked, world-space copy of it has to be made
+  // again.
+  //
+  // `generate()` a second time *refits* the tree rather than rebuilding it,
+  // which is the cheap path and the wrong one here: refitting assumes the
+  // geometry moved a little, and a backdrop that has swung thirty degrees round
+  // the subject is not a little. It comes back with bands of environment
+  // showing through the floor and light arriving from nowhere. `reset()` first,
+  // and it builds a new tree — milliseconds, on a scene this size.
+  const generator = new DynamicPathTracingSceneGenerator(scene);
 
-  material.bvh.updateFrom(bvh);
-  material.attributesArray.updateFrom(
-    geometry.attributes.normal,
-    geometry.attributes.tangent,
-    geometry.attributes.uv,
-    geometry.attributes.color);
-  material.materialIndexAttribute.updateFrom(geometry.attributes.materialIndex);
-  material.textures.setTextures(renderer, 1024, 1024, textures);
-  material.materials.updateFrom(materials, textures);
-  material.lights.updateFrom(lights);
+  const absorb = ({ rebuild = false } = {}) => {
+    scene.updateMatrixWorld(true);
+    if (rebuild) generator.reset();
+    const { bvh, textures, materials, lights } = generator.generate();
+    const geometry = bvh.geometry;
+
+    material.bvh.updateFrom(bvh);
+    material.attributesArray.updateFrom(
+      geometry.attributes.normal,
+      geometry.attributes.tangent,
+      geometry.attributes.uv,
+      geometry.attributes.color);
+    material.materialIndexAttribute.updateFrom(geometry.attributes.materialIndex);
+    material.textures.setTextures(renderer, 1024, 1024, textures);
+    material.materials.updateFrom(materials, textures);
+    material.lights.updateFrom(lights);
+  };
+
+  absorb();
   material.envMapInfo.updateFrom(environment);
   // Two bounces is not enough for an interior; four is plenty for a box on a
   // sweep, and every extra bounce is paid for on every sample.
@@ -121,6 +138,15 @@ export async function loadPathTracer({ renderer, scene, camera, environment, siz
     },
 
     reset() { tracer.reset(); },
+
+    /**
+     * The scene has moved under it. Refit, and start the average again — the
+     * samples taken so far are of a room that has since turned round.
+     */
+    sceneMoved() {
+      absorb({ rebuild: true });
+      tracer.reset();
+    },
 
     /** CSS pixels in; the cap and the pixel ratio are applied here. */
     setSize(width, height) {

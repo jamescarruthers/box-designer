@@ -20,7 +20,8 @@ import * as THREE from "three";
 import { panelPositions } from "../three/panelGeometry.js";
 import { panelBevels } from "../model/bevel.js";
 import {
-  equirectStudio, sweepProfile, framing, surfaceOf, lampDirection, KEY, EXPOSURE,
+  equirectStudio, sweepProfile, sweepShade, framing, surfaceOf, lampDirection,
+  RIG, SWEEP, EXPOSURE,
 } from "../three/studio.js";
 import { loadPathTracer } from "../render/pathtrace.js";
 
@@ -38,24 +39,65 @@ function environmentTexture() {
   return texture;
 }
 
-/** The sweep: one profile, extruded sideways, with no seam anywhere in it. */
-function sweepMesh({ radius, floorRun, wallRise, width, back }) {
-  const profile = sweepProfile(radius, floorRun, wallRise, back);
-  const half = width / 2;
-  const position = [];
-  for (let i = 0; i < profile.length - 1; i++) {
-    const [z0, y0] = profile[i], [z1, y1] = profile[i + 1];
-    // Two triangles a step, wound so the lit side faces the camera.
-    position.push(
-      -half, y0, z0, half, y0, z0, half, y1, z1,
-      -half, y0, z0, half, y1, z1, -half, y1, z1);
+/**
+ * A geometry with a colour at every vertex, whether it needs one or not.
+ *
+ * The path tracer merges the whole scene into a single geometry, and an
+ * attribute that some of the parts have and others do not comes out of that
+ * merge as nonsense: bands of environment showing through the floor, coloured
+ * streaks across the backdrop, light arriving from nowhere. The sweep carries a
+ * real gradient (§19); everything else carries white, and the merge is uniform.
+ */
+export function withColour(geometry, shade) {
+  const count = geometry.getAttribute("position").count;
+  if (!geometry.getAttribute("color")) {
+    const colour = new Float32Array(count * 3).fill(shade ?? 1);
+    geometry.setAttribute("color", new THREE.BufferAttribute(colour, 3));
   }
+  return geometry;
+}
+
+/**
+ * The sweep: one profile, extruded sideways, with no seam anywhere in it.
+ *
+ * Split across its width as well as along its profile, because the falloff of
+ * §19 is carried in the vertex colours and a quad two vertices wide can only
+ * hold two values of it. Twenty-four columns is enough that the gradient is
+ * smooth and few enough that the whole backdrop is still a rounding error next
+ * to the box.
+ */
+function sweepMesh({ radius, floorRun, wallRise, width, back }, diagonal) {
+  const profile = sweepProfile(radius, floorRun, wallRise, back);
+  const columns = 24;
+  const half = width / 2;
+  const position = [], colour = [];
+
+  const push = (row, col) => {
+    const [z, y] = profile[row];
+    const x = -half + (width * col) / columns;
+    position.push(x, y, z);
+    // Distance from the middle of the box, in box diagonals — which is what
+    // `sweepShade` is anchored to, so the pool of light is around the box
+    // rather than smeared over a sheet the size of a room.
+    const shade = sweepShade(Math.hypot(x, y, z) / diagonal);
+    colour.push(shade, shade, shade);
+  };
+
+  for (let i = 0; i < profile.length - 1; i++) {
+    for (let c = 0; c < columns; c++) {
+      // Two triangles a cell, wound so the lit side faces the camera.
+      push(i, c); push(i, c + 1); push(i + 1, c + 1);
+      push(i, c); push(i + 1, c + 1); push(i + 1, c);
+    }
+  }
+
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(position), 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(new Float32Array(colour), 3));
   geometry.computeVertexNormals();
 
   const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
-    color: new THREE.Color("#d8d8d6"), roughness: 0.94, metalness: 0,
+    color: new THREE.Color(SWEEP.colour), vertexColors: true, roughness: 0.95, metalness: 0,
   }));
   mesh.receiveShadow = true;
   return mesh;
@@ -90,19 +132,39 @@ export default function RenderView({ derived, design, solids, hidden }) {
 
     const box = new THREE.Group();
     scene.add(box);
+
+    // §19 The studio: sweep and lamps in one group, which turns with the view.
+    // The backdrop is then always behind the box and the light always falls the
+    // same way across it, so every angle of the box is the same photograph of
+    // it rather than a different one taken in the same room.
     const stage = new THREE.Group();
     scene.add(stage);
+    // The sweep goes in its own group inside the stage. Rebuilding the scene
+    // empties the sweep; the lamps are in the stage beside it and stay put —
+    // emptying the group they were in left the box lit by nothing but the sky,
+    // which looks like flat lighting and a missing shadow rather than like
+    // three lights that are no longer in the scene.
+    const sweep = new THREE.Group();
+    stage.add(sweep);
 
-    const key = new THREE.DirectionalLight(0xfff4e8, 2.6);
-    key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
-    key.shadow.bias = -0.0008;
-    key.shadow.radius = 3;
-    scene.add(key);
-    scene.add(key.target);
+    const lights = {};
+    for (const [name, lamp] of Object.entries(RIG)) {
+      const light = new THREE.DirectionalLight(new THREE.Color(lamp.colour), lamp.intensity);
+      if (lamp.casts) {
+        light.castShadow = true;
+        light.shadow.mapSize.set(2048, 2048);
+        light.shadow.bias = -0.0008;
+        // Wide enough to read as a soft box rather than as a hard sun. The
+        // blur is in map texels, so it has to grow with the map.
+        light.shadow.radius = 5;
+      }
+      stage.add(light);
+      stage.add(light.target);
+      lights[name] = light;
+    }
 
     const state = {
-      renderer, scene, camera, target, sph, box, stage, key, equirect, pmrem,
+      renderer, scene, camera, target, sph, box, stage, sweep, lights, equirect, pmrem,
       raf: 0, tracer: null, onTrace: null,
     };
     gl.current = state;
@@ -116,6 +178,18 @@ export default function RenderView({ derived, design, solids, hidden }) {
       camera.near = Math.max(1, (sph.dist - state.radius) * 0.6);
       camera.far = (sph.dist + state.radius) * 4;
       camera.updateProjectionMatrix();
+
+      // The studio follows the camera round. A rotation about y by the camera's
+      // own azimuth puts the sweep's wall exactly opposite the lens, which is
+      // where a backdrop goes.
+      if (state.stage.rotation.y !== sph.az) {
+        state.stage.rotation.y = sph.az;
+        state.stage.updateMatrixWorld(true);
+        // The tracer holds the scene as one baked, world-space tree, so a stage
+        // that has moved is a scene it no longer knows. Refitting is cheap on a
+        // scene this size and the alternative is a backdrop left behind.
+        state.tracer?.sceneMoved();
+      }
     };
 
     const render = () => {
@@ -203,9 +277,12 @@ export default function RenderView({ derived, design, solids, hidden }) {
     const { sol, edges, owners, specFor } = derived;
     const E = sol.E;
 
-    for (const group of [state.box, state.stage]) {
-      while (group.children.length) {
-        const c = group.children.pop();
+    for (const group of [state.box, state.sweep]) {
+      // `remove`, not `children.pop()`: popping the array leaves every child
+      // still claiming this group as its parent, so anything that later asks
+      // "am I in the scene?" is told yes by an object nothing will draw.
+      for (const c of [...group.children]) {
+        group.remove(c);
         c.geometry?.dispose?.();
         c.material?.dispose?.();
       }
@@ -217,6 +294,7 @@ export default function RenderView({ derived, design, solids, hidden }) {
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
       geometry.computeVertexNormals();
+      withColour(geometry);
 
       const spec = specFor(panel);
       // Always the material's colour, never the face colouring: the face
@@ -224,6 +302,7 @@ export default function RenderView({ derived, design, solids, hidden }) {
       // photograph of a box somebody is going to make out of a real sheet.
       const material = new THREE.MeshStandardMaterial({
         color: new THREE.Color(spec.colour),
+        vertexColors: true,               // white, so the colour is the sheet's
         ...surfaceOf(spec),
       });
       const mesh = new THREE.Mesh(geometry, material);
@@ -235,6 +314,7 @@ export default function RenderView({ derived, design, solids, hidden }) {
         const tg = new THREE.BufferGeometry();
         tg.setAttribute("position", new THREE.BufferAttribute(tube.positions, 3));
         tg.computeVertexNormals();
+        withColour(tg);
         const tm = new THREE.Mesh(tg, material.clone());
         tm.castShadow = true;
         tm.receiveShadow = true;
@@ -248,7 +328,7 @@ export default function RenderView({ derived, design, solids, hidden }) {
 
     const view = framing(E);
     state.radius = Math.hypot(E.x, E.y, E.z);
-    state.stage.add(sweepMesh(view.sweep));
+    state.sweep.add(sweepMesh(view.sweep, state.radius));
     state.target.set(...view.target);
     if (!state.framed) {
       state.sph.dist = view.distance;
@@ -257,20 +337,28 @@ export default function RenderView({ derived, design, solids, hidden }) {
       state.framed = true;
     }
 
-    const [kx, ky, kz] = lampDirection(KEY);
+    // Every lamp aimed at the middle of the box, from its own angle.
     const throwDistance = state.radius * 3;
-    state.key.position.set(kx * throwDistance, ky * throwDistance, kz * throwDistance);
-    state.key.target.position.set(0, E.z / 2, 0);
-    state.key.target.updateMatrixWorld();
-    // Fitted to the box and the floor around it. Wider than that and the map's
-    // resolution goes on empty sweep; narrower and the shadow is cut off where
-    // it lands.
-    const extent = state.radius * 1.3;
-    Object.assign(state.key.shadow.camera, {
-      left: -extent, right: extent, top: extent, bottom: -extent,
-      near: throwDistance * 0.25, far: throwDistance * 2.2,
-    });
-    state.key.shadow.camera.updateProjectionMatrix();
+    for (const [name, lamp] of Object.entries(RIG)) {
+      const light = state.lights[name];
+      const [lx, ly, lz] = lampDirection(lamp);
+      light.position.set(lx * throwDistance, ly * throwDistance, lz * throwDistance);
+      light.target.position.set(0, E.z / 2, 0);
+      light.target.updateMatrixWorld();
+      if (!lamp.casts) continue;
+      // Fitted to the box *and the shadow it throws*, which is the part that
+      // gets forgotten: a box as tall as this one, lit from 27° up, lays a
+      // shadow longer than itself across the floor, and a map fitted to the box
+      // alone cuts it off within a few centimetres of where it starts —
+      // which looks exactly like no shadow at all.
+      const reach = E.z / Math.max(0.2, Math.tan(lamp.elevation));
+      const extent = state.radius * 1.2 + reach;
+      Object.assign(light.shadow.camera, {
+        left: -extent, right: extent, top: extent, bottom: -extent,
+        near: throwDistance * 0.25, far: throwDistance * 2.2,
+      });
+      light.shadow.camera.updateProjectionMatrix();
+    }
 
     // The scene changed, so anything the tracer had accumulated is of a box
     // that no longer exists.
