@@ -142,14 +142,19 @@ export function sampleStudio(env, direction) {
  * whole point of a cyclorama is that there is no visible join, and a join is
  * exactly what a coarse curve or a mismatched tangent produces.
  */
-export function sweepProfile(radius, floorRun, wallRise, steps = 24) {
+export function sweepProfile(radius, floorRun, wallRise, back = 0, steps = 24) {
   // [z, y], z toward the camera. Floor in, quarter circle up, wall away.
+  //
+  // `back` is where the floor stops being flat. It has to be behind the box, or
+  // the curve rises through it: the box is centred on the origin, so a curve
+  // starting there cuts off its back half — reported as "the box is slightly
+  // cut off by the curve on the floor", which is exactly what it was.
   const points = [[floorRun, 0]];
   for (let i = 0; i <= steps; i++) {
     const a = (i / steps) * (Math.PI / 2);
-    points.push([-radius * Math.sin(a), radius - radius * Math.cos(a)]);
+    points.push([-back - radius * Math.sin(a), radius - radius * Math.cos(a)]);
   }
-  points.push([-radius, wallRise]);
+  points.push([-back - radius, wallRise]);
   return points;
 }
 
@@ -169,8 +174,13 @@ export function framing(E) {
     polar: 1.16,
     // Big enough to fill the frame from any angle the view allows. A sweep
     // whose edge is in shot is a sheet of card, not a studio.
+    //
+    // The curve starts a clear half-diagonal behind the box, so that turning
+    // the view right round never brings the box into the part of the floor that
+    // is on its way up.
     sweep: {
       radius: diagonal * 1.2,
+      back: diagonal * 0.75,
       floorRun: diagonal * 12,
       wallRise: diagonal * 6,
       width: diagonal * 14,

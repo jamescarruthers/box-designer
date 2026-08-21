@@ -134,7 +134,12 @@ export default function Viewport({ derived, style, colourByFace, explode, select
       state.raf = 0;
       const w = el.clientWidth, h = el.clientHeight;
       if (!w || !h) return;                     // skip while the viewport is hidden
-      if (renderer.domElement.width !== w || renderer.domElement.height !== h) {
+      // In CSS pixels, against what was last set. `domElement.width` is in
+      // device pixels and never equals this on a 2x display, so the old test
+      // resized on every single frame.
+      if (state.width !== w || state.height !== h) {
+        state.width = w;
+        state.height = h;
         renderer.setSize(w, h, false);
         camera.aspect = w / h;
         camera.updateProjectionMatrix();

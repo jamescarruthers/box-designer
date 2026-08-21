@@ -83,7 +83,7 @@ describe("§19 a lamp has a soft edge", () => {
 });
 
 describe("§19 the sweep has no join in it", () => {
-  const profile = sweepProfile(100, 300, 240, 24);
+  const profile = sweepProfile(100, 300, 240, 0, 24);
 
   it("starts along the floor and ends up the wall", () => {
     expect(profile[0]).toEqual([300, 0]);
@@ -111,6 +111,22 @@ describe("§19 the sweep has no join in it", () => {
       expect(Math.hypot(z - 0, y - 100)).toBeCloseTo(100, 6);
     }
   });
+
+  it("starts curving behind whatever is standing on it", () => {
+    // Reported: "the box is slightly cut off by the curve on the floor". The
+    // box is centred on the origin, so a curve that starts there rises through
+    // its back half.
+    const back = 400;
+    const pushed = sweepProfile(100, 300, 240, back, 24);
+    expect(pushed[1]).toEqual([-back, 0]);
+    for (const [z, y] of pushed) {
+      if (y > 0) expect(z).toBeLessThan(-back);
+    }
+    // Same curve, moved: still exactly on its radius, about its new centre.
+    for (const [z, y] of pushed.slice(1, -1)) {
+      expect(Math.hypot(z + back, y - 100)).toBeCloseTo(100, 6);
+    }
+  });
 });
 
 describe("§19 framing and surfaces", () => {
@@ -130,6 +146,14 @@ describe("§19 framing and surfaces", () => {
     expect(sweep.width).toBeGreaterThan(distance * 2);
     expect(sweep.wallRise).toBeGreaterThan(E.z * 2);
     expect(sweep.floorRun).toBeGreaterThan(distance);
+  });
+
+  it("keeps the floor flat under the whole box, at any angle", () => {
+    const { sweep } = framing(E);
+    // The furthest the box reaches from the origin along the floor, which is
+    // half its plan diagonal — the view can be turned to put that corner
+    // anywhere, so the flat has to clear it whichever way round it is.
+    expect(sweep.back).toBeGreaterThan(Math.hypot(E.x, E.y) / 2);
   });
 
   it("keeps every sheet matte, because none of them is a mirror", () => {

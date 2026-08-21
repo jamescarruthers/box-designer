@@ -21,6 +21,42 @@ import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 export const SETTLED_SAMPLES = 300;
 
 /**
+ * The most pixels to trace, whatever the display's pixel ratio says.
+ *
+ * A phone reports a ratio of 3, so a full-screen canvas asks for something like
+ * eleven megapixels — of path tracing, on a phone. It traces below this and the
+ * result is scaled up to fill the canvas: softer, and the alternative is not a
+ * sharper picture but a browser that gives up on the tab.
+ */
+export const TRACE_PIXEL_CAP = 2_200_000;
+
+/** The size to trace at, in device pixels, for a canvas this big. */
+export function traceSize(cssWidth, cssHeight, pixelRatio = 1) {
+  const ratio = Math.min(Math.max(pixelRatio, 1), 2);
+  let width = Math.max(1, Math.round(cssWidth * ratio));
+  let height = Math.max(1, Math.round(cssHeight * ratio));
+  const pixels = width * height;
+  if (pixels > TRACE_PIXEL_CAP) {
+    // Rounded down, both sides: rounding up can land a few hundred pixels over
+    // the cap, and a cap that is exceeded is a guideline.
+    const shrink = Math.sqrt(TRACE_PIXEL_CAP / pixels);
+    width = Math.max(1, Math.floor(width * shrink));
+    height = Math.max(1, Math.floor(height * shrink));
+  }
+  return [width, height];
+}
+
+/**
+ * How many pieces to trace a frame in.
+ *
+ * Every tile is one draw call the GPU cannot be interrupted during, so a big
+ * frame is split to keep each one short enough that the tab stays answerable —
+ * and a small one is not, because a part-drawn frame is visible while it is
+ * being drawn and looks like a fault.
+ */
+export const tilesFor = ([width, height]) => (width * height > 500_000 ? 2 : 1);
+
+/**
  * Build a path tracer over an existing scene and camera.
  *
  * The scene is the studio scene, unchanged: same geometry, same materials, same
@@ -28,6 +64,7 @@ export const SETTLED_SAMPLES = 300;
  * rendered, or the button is a different picture rather than a better one.
  */
 export async function loadPathTracer({ renderer, scene, camera, environment, size }) {
+  // `size` is in CSS pixels; what is traced is decided here.
   // Only the tracer is fetched on demand. three itself is imported at the top,
   // statically: asking for it here as well gave the async chunk its own copy —
   // 200 kB of it, twice in the build, and two sets of classes that would fail
@@ -39,8 +76,10 @@ export async function loadPathTracer({ renderer, scene, camera, environment, siz
   const tracer = new PathTracingRenderer(renderer);
   tracer.camera = camera;
   tracer.material = material;
-  tracer.tiles.set(2, 2);              // a frame in four bites, so the tab stays alive
-  tracer.setSize(...size);
+  const traced = traceSize(...size, renderer.getPixelRatio());
+  const tiles = tilesFor(traced);
+  tracer.tiles.set(tiles, tiles);
+  tracer.setSize(...traced);
 
   scene.updateMatrixWorld(true);
   const { bvh, textures, materials, lights } = new PathTracingSceneGenerator().generate(scene);
@@ -83,10 +122,20 @@ export async function loadPathTracer({ renderer, scene, camera, environment, siz
 
     reset() { tracer.reset(); },
 
+    /** CSS pixels in; the cap and the pixel ratio are applied here. */
     setSize(width, height) {
-      const ratio = renderer.getPixelRatio();
-      tracer.setSize(width * ratio, height * ratio);
+      const next = traceSize(width, height, renderer.getPixelRatio());
+      if (next[0] === tracer.target.width && next[1] === tracer.target.height) return;
+      const t = tilesFor(next);
+      tracer.tiles.set(t, t);
+      tracer.setSize(...next);
       tracer.reset();
+    },
+
+    /** What fraction of the canvas's own resolution is being traced. */
+    scaleOf(width, height) {
+      const ratio = Math.min(Math.max(renderer.getPixelRatio(), 1), 2);
+      return tracer.target.width / Math.max(1, width * ratio);
     },
 
     dispose() {
