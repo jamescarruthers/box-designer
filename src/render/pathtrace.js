@@ -17,8 +17,18 @@
 import * as THREE from "three";
 import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 
-/** How many samples before it is worth calling finished. Not a limit — a note. */
+/** What the sample cap starts at. The view offers it; nothing enforces it here. */
 export const SETTLED_SAMPLES = 300;
+
+/**
+ * Below this many samples the frame is denoised on its way to the screen.
+ *
+ * A bilateral filter over the accumulated image: it costs one full-screen pass
+ * and it is the difference between "grainy for the first twenty seconds" and
+ * "soft at first, then sharp". Above it the average has done the job and
+ * filtering would only take detail away.
+ */
+export const DENOISE_UNTIL = 80;
 
 /**
  * The most pixels to trace, whatever the display's pixel ratio says.
@@ -57,6 +67,15 @@ export function traceSize(cssWidth, cssHeight, pixelRatio = 1) {
 export const tilesFor = ([width, height]) => (width * height > 500_000 ? 2 : 1);
 
 /**
+ * Whether a render that has taken `samples` has reached the cap it was given.
+ *
+ * The `> 0` is the whole of it. Zero means no cap, and a cap of zero compared
+ * with `>=` is a cap that has always already been reached — a render that stops
+ * on its first frame and reports itself finished.
+ */
+export const capReached = (samples, maxSamples) => maxSamples > 0 && samples >= maxSamples;
+
+/**
  * Build a path tracer over an existing scene and camera.
  *
  * The scene is the studio scene, unchanged: same geometry, same materials, same
@@ -69,8 +88,8 @@ export async function loadPathTracer({ renderer, scene, camera, environment, siz
   // statically: asking for it here as well gave the async chunk its own copy —
   // 200 kB of it, twice in the build, and two sets of classes that would fail
   // every `instanceof` against each other.
-  const { PathTracingRenderer, PhysicalPathTracingMaterial, DynamicPathTracingSceneGenerator } =
-    await import("three-gpu-pathtracer");
+  const { PathTracingRenderer, PhysicalPathTracingMaterial, DynamicPathTracingSceneGenerator,
+    DenoiseMaterial } = await import("three-gpu-pathtracer");
 
   const material = new PhysicalPathTracingMaterial();
   const tracer = new PathTracingRenderer(renderer);
@@ -118,19 +137,56 @@ export async function loadPathTracer({ renderer, scene, camera, environment, siz
   material.bounces = 4;
   material.setDefine("FEATURE_MIS", 1);
 
-  const quad = new FullScreenQuad(new THREE.MeshBasicMaterial({ map: tracer.target.texture }));
+  // Stable noise: the same sequence every time from a given camera, so a
+  // stopped render is the same picture twice rather than two draws of it.
+  tracer.stableNoise = true;
+
+  const plain = new FullScreenQuad(new THREE.MeshBasicMaterial({ map: tracer.target.texture }));
+  const smoothed = new FullScreenQuad(new DenoiseMaterial());
 
   return {
     running: false,
     get samples() { return Math.floor(tracer.samples); },
     get settled() { return tracer.samples >= SETTLED_SAMPLES; },
 
+    /**
+     * The cap the view asked for. Zero is no cap: it refines until stopped.
+     */
+    maxSamples: 0,
+
+    /** Whether it has taken every sample it was asked for. */
+    get done() { return capReached(tracer.samples, this.maxSamples); },
+
+    /** Whether there is an accumulated image worth showing. */
+    get hasImage() { return tracer.samples > 0; },
+
     update() {
+      if (this.done) return this.present();
       camera.updateMatrixWorld();
       tracer.update();
+      this.present();
+    },
+
+    /**
+     * Put the accumulated image on the screen without taking another sample.
+     *
+     * This is what a stopped render is: the picture stays up. Rendering the
+     * scene again instead would throw away the minutes somebody had just spent
+     * watching it converge, which is what pressing Stop used to do.
+     */
+    present() {
       // The target is swapped between frames, so it is read at the last moment
       // rather than held on to.
+      const soft = tracer.samples < DENOISE_UNTIL;
+      const quad = soft ? smoothed : plain;
       quad.material.map = tracer.target.texture;
+      if (soft) {
+        // Wound back as the average takes over, so the picture sharpens rather
+        // than staying soft and then snapping.
+        const strength = 1 - tracer.samples / DENOISE_UNTIL;
+        quad.material.sigma = 1 + 4 * strength;
+        quad.material.threshold = 0.01 + 0.05 * strength;
+      }
       const wasAutoClear = renderer.autoClear;
       renderer.autoClear = false;
       quad.render(renderer);
@@ -167,7 +223,8 @@ export async function loadPathTracer({ renderer, scene, camera, environment, siz
     dispose() {
       this.running = false;
       tracer.dispose?.();
-      quad.dispose();
+      plain.dispose();
+      smoothed.dispose();
       material.dispose();
     },
   };

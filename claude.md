@@ -1805,3 +1805,175 @@ stands centred on the origin and the sweep's curve began there, so it rose
 through the box's back half. The profile takes a `back` now — how far behind the
 origin the floor stays flat — set to three quarters of the box's diagonal, which
 clears its furthest corner whichever way the view is turned.
+
+### Smoother, capped, and it keeps the picture
+
+Three things reported together, all about the render being something you sit
+with rather than something you glance at.
+
+**The ramp had facets in it.** The sweep was built as loose triangles — three
+fresh vertices per face — so `computeVertexNormals` had nothing to average
+across: every triangle got its own flat normal and the curve came out as a
+staircase of bands, most visible exactly where the light grazes it. The grid is
+indexed now, 60 steps by 24 columns sharing their vertices, and the same call
+averages the normals into one smooth surface. Roughly a quarter of the vertices
+for a curve with no steps in it.
+
+**A cap on the samples.** The render used to run until stopped, which is fine
+watching it and useless leaving it. There is a Samples box; it starts at 300 and
+the render stops itself there and says *done*. Raising it on a stopped render
+starts it going again from where it got to — the average is still in the buffer
+— and lowering it below the current count stops it where it is. The whole of the
+bug worth guarding is `maxSamples > 0`: a cap of zero means *no cap*, and a cap
+of zero compared with `>=` is a cap that has always already been reached, so an
+uncapped render would report itself finished having drawn nothing.
+
+**Stop keeps the picture.** Pressing Stop used to snap back to the studio
+render, throwing away however long somebody had just spent watching it converge.
+A stopped render is *held* now: the accumulated image stays on screen, drawn by
+`present()` without taking another sample. It is let go of on one event only —
+the view being turned — because that is the moment the picture somebody was
+looking at stopped being a picture of anything. Turning it says so in the status
+line rather than leaving it looking stuck.
+
+**A denoiser for the first twenty seconds.** Below 80 samples the frame goes
+through `DenoiseMaterial` on its way to the screen — a bilateral filter, one
+full-screen pass — with its strength wound back as the average takes over, so
+the picture sharpens rather than staying soft and then snapping. `stableNoise`
+is on as well: the same sequence every time from a given camera, so a stopped
+render is the same picture twice rather than two draws of it.
+
+### The renderer is WebGL2, and that is the ceiling
+
+Worth writing down because it will be asked again. `three-gpu-pathtracer` is a
+fragment shader: the BVH, the materials and the environment all go to the GPU as
+textures and every sample is a full-screen draw. There is no WebGPU path in it —
+not in 0.0.24, not in any earlier version — and CPU threads do not apply, because
+no part of the tracing happens on the CPU to be moved off it. Web Workers cannot
+help either; a `WebGLRenderer` belongs to the context that created it.
+
+So the levers are the ones being pulled: bounces (four — enough for a box on a
+sweep, and every extra one is paid for on every sample), tiles (a big frame split
+so the tab stays answerable, a small one not, because a part-drawn frame looks
+like a fault), the resolution cap, stable noise, and the denoiser.
+`filterGlossyFactor` is deliberately left off: it trades caustic noise for a
+blurred highlight, and nothing in this scene is glossy enough to have either.
+
+### The render's own camera
+
+The render view and the 3D view are separate cameras — the 3D view is for
+reading the box and the render is for photographing it, and they want different
+angles. But leaving one to come back to it and finding it re-framed loses
+whatever was set up. So each keeps its own angle, and each hands it back on the
+way out: the render reports `{azimuth, polar, distance}` as it moves and when it
+unmounts, and restores it on the first framing. Switching modes and switching
+back is pixel-identical, which is how it is checked.
+
+## 20. Where a fitting sits
+
+A fitting's position was two millimetre offsets from the panel's corner. That is
+the right answer for a hole that has to line up with something — a bolt pattern,
+a connector body — and the wrong one for anything meant to *look* placed: a
+driver in the middle of a front panel is at the middle of it whatever size the
+box is, and re-typing 109 and 81.8 every time the box changes is not what the
+number means.
+
+So a position carries its units. `mm` is what it was; `ratio` stores a
+proportion of the panel's width and height, resolved to millimetres once, in
+`derive()`, before anything else sees it. Everything downstream — the templates,
+the sheet layouts, the drawing, the kernel's boolean cuts — takes millimetres and
+never learns there was a choice.
+
+### Switching units moves the number, not the fitting
+
+Changing the picker converts what is stored so the fitting stays exactly where it
+is. `convertAt` does that in both directions and rounds neither: a percentage
+rounded to a tenth moves a fitting on a 218 mm panel by a fifth of a millimetre,
+and rounding it on the way back moves it again, so a fitting that had been put
+somewhere deliberately drifts every time somebody looks at the units. The stored
+number is unrounded and the field displays it rounded, which is the same
+arrangement every other length in the app already has.
+
+## 21. The panel you selected
+
+The sidebar asks questions about the box: one thickness, one colour, a list of
+every fitting on it. That is the right way round for setting a box up, and the
+wrong way round once it exists and you are looking at it. The question in front
+of you then is "this panel, thicker" — and answering it in the sidebar means
+finding the face in a grid of six, having first found the switch that turns the
+grid on.
+
+So selecting a panel opens a second panel on the other side, about that face and
+nothing else: its blank size, the sheet it is cut from, where it comes in the
+prominence order, its four edges, the fittings on it, and whether it carries
+cladding or a doubler. Shown in every mode, because the cut list and the drawing
+select panels too and the same face is the same face from all three.
+
+### The controls are the same controls
+
+`Num`, `Colour`, `Segmented`, `Group` and the fitting editor moved out of
+`Controls` into `fields.jsx` and `FittingEditor.jsx` before any of this was
+written. Two copies of a number field is two places for a step, a suffix or an
+aria-label to drift, and the difference shows up as "the colour picker behaves
+differently over here", which is a bug nobody can name. The fitting editor in
+particular numbers its labels by the fitting's place in the *design's* list, so
+a fitting keeps the name it has in the sidebar when it is opened from the
+inspector.
+
+### One face, not six
+
+The design keeps a single carcass thickness with a per-face override beside it,
+and a single colour with the same. That is right for the sidebar — most boxes
+are one thickness all round, and six numbers to keep in step is six chances to
+get one wrong. It is the wrong shape for a control on one panel: with the
+override off, writing to that face either does nothing or moves all six.
+
+`setFaceThickness` and `setFaceColour` switch the override on, seed the other
+five from the uniform value, and then change the one face. The same move
+`setEdgeTreatment` makes when a click lands on an edge of a box that was uniform
+(§15), and for the same reason: the edit you asked for happens and nothing else
+does. Seeded from the *uniform* value rather than from whatever `thicknessBy`
+happens to hold — a design edited before the override was ever switched on can
+carry a stale set, and inheriting those would change five faces nobody touched.
+
+Putting a face back to "as the project" is a real answer and not the same as
+painting it the colour the project happens to be: the first moves when the sheet
+changes and the second does not. So it stores null, and the per-panel switch
+stays on — turning it off because one face went back to the default would drop
+the other five.
+
+### Cladding and doublers, on the face in front of you
+
+The three layers of a face are listed as a stack: cladding outside, carcass,
+doubler inside. Each is either there — with its thickness, and a way to step to
+it without going back to the box — or not, with one button to add it. The
+carcass has no × because the carcass is the box; the empty cell where the ×
+would be is what keeps the three rows in line.
+
+### Naming an edge from the face you are on
+
+The twelve edges are keyed by the two faces that meet along them, which is the
+right key and a poor label. From the front panel, `front|left` is "the left
+edge", and reading it out as "front / left" asks somebody to work out which of
+the two faces they are standing on. So the inspector names each edge by the face
+across the corner, and `edgesOfFace` and `otherFace` do that arithmetic once.
+
+It shows what the design *asks* for, mitre included, which is not what `edgeMap`
+answers: that one drops a mitre to square, because a mitre is a joint rather
+than a decoration, and it answers for all twelve at once. `authoredEdge` gives
+one edge its own answer — with a radius to offer even where the treatment is
+square, or switching an edge from square to fillet offers a fillet of nothing.
+
+### Rank, in what it does rather than where it sits
+
+"2 of 5" is a position in a list, and a position in a list is not what anybody
+wants to know. What rank decides is which panel runs out to the corner and which
+is fitted between two others, so that is what it says: *runs past 3, inside 2*.
+
+### The column comes out of the middle
+
+The inspector is a third column of the app grid, not a floating panel, so the
+viewport gives up the width rather than having it drawn over. The cut list has
+three columns of its own and cannot keep them all at the same time, so it drops
+its parts column while the inspector is open — the same column the 1320 px
+breakpoint drops first, for the same reason.

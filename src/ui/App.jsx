@@ -2,6 +2,7 @@ import React, { useMemo, useState, useCallback, useEffect, Suspense, lazy } from
 import Controls from "./Controls.jsx";
 import Viewport, { RENDER_STYLES, VIEW_PRESETS } from "./Viewport.jsx";
 import CutListView from "./CutListView.jsx";
+import Inspector from "./Inspector.jsx";
 import DrawingView from "./DrawingView.jsx";
 // §19 Loaded when the mode is opened. Physical materials and the environment
 // prefilter pull in a good deal of three that the other modes never touch, and
@@ -40,6 +41,10 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [hovered, setHovered] = useState(null);
   const [camera, setCamera] = useState({ preset: "iso", nonce: 0 });
+  // §19 The rendered view's own camera, kept here because the mode is
+  // unmounted when it is not on screen. Two views of one box, each remembering
+  // where it was left.
+  const [renderCamera, setRenderCamera] = useState(null);
   const [solidEngine, setSolidEngine] = useState("analytic");
   // §15 The armed edge tool, or null for none. Not part of the design: it is
   // what the pointer is for at this moment, not something about the box.
@@ -74,7 +79,11 @@ export default function App() {
   const selectedRow = derived.rows.find((r) => r.panelIndex === selected);
 
   return (
-    <div className="app">
+    // §21 Three columns while a panel is selected: the project on the left, the
+    // box in the middle, that panel on the right. The class is on the app
+    // rather than on the inspector because the middle column has to give up the
+    // width, and the cut list has to give up a column of its own.
+    <div className={selectedRow ? "app inspecting" : "app"}>
       <aside className="side">
         <header className="brand">
           <h1>Sheet Box Designer</h1>
@@ -183,7 +192,8 @@ export default function App() {
             <div className="pane pane-render">
               <Suspense fallback={<div className="render-state">preparing the studio…</div>}>
                 <RenderView derived={derived} design={design}
-                  solids={solidEngine === "kernel" ? kernelSolids.solids : null} hidden={false} />
+                  solids={solidEngine === "kernel" ? kernelSolids.solids : null} hidden={false}
+                  camera={renderCamera} onCamera={setRenderCamera} />
               </Suspense>
             </div>
           ) : null}
@@ -200,6 +210,15 @@ export default function App() {
           </div>
         ) : null}
       </main>
+
+      {/* §21 Selecting a panel is asking a question about it, so the answers are
+          put where the question was asked rather than back in the project
+          controls. Shown in every mode: the cut list and the drawing select
+          panels too, and the same face is the same face from all three. */}
+      {selectedRow ? (
+        <Inspector design={design} set={setDesign} derived={derived} row={selectedRow}
+          colourByFace={colourByFace} onSelect={setSelected} onClose={() => setSelected(null)} />
+      ) : null}
     </div>
   );
 }

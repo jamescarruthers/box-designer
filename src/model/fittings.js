@@ -128,6 +128,62 @@ export function innermostOn(panels, face) {
   return fittingStack(panels, face).at(-1);
 }
 
+/**
+ * §20 Where a fitting sits, in model coordinates, whichever way it was given.
+ *
+ * `units: "ratio"` means `at` is a **percentage** across the panel on each of
+ * its two planar axes — 50/50 is the middle of the face. Anything else means
+ * millimetres in model coordinates, which is what everything downstream reads.
+ *
+ * Percentages are stored as the number typed rather than as a fraction: a
+ * design that says 50 and a control that shows 50 are the same number, and
+ * nothing has to be multiplied by a hundred on the way in or out.
+ *
+ * The point of offering both: a driver is usually *centred*, or a third of the
+ * way up, and that is a proportion. It should stay where it was put when the
+ * box changes size, and an absolute position does not.
+ */
+export function resolveAt(f, panel) {
+  if (f?.units !== "ratio" || !panel) return f.at;
+  const [p, q] = faceAxes(f.face);
+  const along = (axis, percent) => {
+    const [lo, hi] = panel.box[axis];
+    return lo + (hi - lo) * (percent / 100);
+  };
+  return { a: along(p, f.at.a), b: along(q, f.at.b) };
+}
+
+/** The same fitting with its position in millimetres, whatever it was authored in. */
+export const inMillimetres = (f, panel) =>
+  (f?.units === "ratio" ? { ...f, at: resolveAt(f, panel), units: "mm" } : f);
+
+/**
+ * Every fitting, resolved against the panel it is set out from.
+ *
+ * Done once, where the design is derived, so that the twenty places that read
+ * `f.at.a` go on reading a millimetre and never learn that there is another way
+ * to write one down.
+ */
+export const resolveFittings = (fittings, owners) =>
+  (fittings ?? []).map((f) => inMillimetres(f, owners?.[f.face]));
+
+/** Turn a position into the other units, so switching keeps the fitting still. */
+export function convertAt(f, panel, units) {
+  if (!panel || units === f.units) return f.at;
+  const [p, q] = faceAxes(f.face);
+  // Unrounded, both ways. A percentage is shown to one decimal place, but a
+  // stored one that has been rounded is a fitting that shifts a tenth of a
+  // millimetre every time somebody looks at the units control.
+  if (units === "ratio") {
+    const back = (axis, mm) => {
+      const [lo, hi] = panel.box[axis];
+      return hi === lo ? 0 : ((mm - lo) / (hi - lo)) * 100;
+    };
+    return { a: back(p, f.at.a), b: back(q, f.at.b) };
+  }
+  return resolveAt({ ...f, units: "ratio" }, panel);
+}
+
 /** A fitting's position in model space, on the outer surface of its panel. */
 export function fittingOrigin(f, panel) {
   const [a, s] = AXIS[f.face];

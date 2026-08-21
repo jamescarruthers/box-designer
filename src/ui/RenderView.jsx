@@ -23,9 +23,19 @@ import {
   equirectStudio, sweepProfile, sweepShade, framing, surfaceOf, lampDirection,
   RIG, SWEEP, EXPOSURE,
 } from "../three/studio.js";
-import { loadPathTracer } from "../render/pathtrace.js";
+import { loadPathTracer, SETTLED_SAMPLES } from "../render/pathtrace.js";
 
 const POLAR_MIN = 0.12, POLAR_MAX = Math.PI / 2 - 0.02;   // never below the floor
+
+/**
+ * How finely the sweep is divided: along the curve, and across the width.
+ *
+ * The curve carries the whole silhouette of the backdrop, so it gets plenty;
+ * the width carries only the gradient, which is smooth to begin with. Sixty-one
+ * by twenty-five is four thousand triangles — nothing beside the box, and one
+ * of the few places where more of them is straightforwardly better.
+ */
+const SWEEP_STEPS = 60, SWEEP_COLUMNS = 24;
 
 /** The environment, as a texture three can light with. */
 function environmentTexture() {
@@ -60,40 +70,49 @@ export function withColour(geometry, shade) {
 /**
  * The sweep: one profile, extruded sideways, with no seam anywhere in it.
  *
+ * An **indexed** grid, which is the whole reason the curve looks like a curve.
+ * Built as loose triangles every vertex belongs to exactly one of them, so
+ * `computeVertexNormals` has nothing to average and hands back the flat normal
+ * of each face — a smooth quarter-round then reads as a flight of shallow
+ * steps, which is what "the ramp is not smooth" looks like. Shared vertices
+ * average across the faces that meet there, and the shading is continuous.
+ *
  * Split across its width as well as along its profile, because the falloff of
  * §19 is carried in the vertex colours and a quad two vertices wide can only
- * hold two values of it. Twenty-four columns is enough that the gradient is
- * smooth and few enough that the whole backdrop is still a rounding error next
- * to the box.
+ * hold two values of it.
  */
 function sweepMesh({ radius, floorRun, wallRise, width, back }, diagonal) {
-  const profile = sweepProfile(radius, floorRun, wallRise, back);
-  const columns = 24;
+  const profile = sweepProfile(radius, floorRun, wallRise, back, SWEEP_STEPS);
+  const columns = SWEEP_COLUMNS;
   const half = width / 2;
-  const position = [], colour = [];
+  const position = [], colour = [], index = [];
 
-  const push = (row, col) => {
+  for (let row = 0; row < profile.length; row++) {
     const [z, y] = profile[row];
-    const x = -half + (width * col) / columns;
-    position.push(x, y, z);
-    // Distance from the middle of the box, in box diagonals — which is what
-    // `sweepShade` is anchored to, so the pool of light is around the box
-    // rather than smeared over a sheet the size of a room.
-    const shade = sweepShade(Math.hypot(x, y, z) / diagonal);
-    colour.push(shade, shade, shade);
-  };
+    for (let col = 0; col <= columns; col++) {
+      const x = -half + (width * col) / columns;
+      position.push(x, y, z);
+      // Distance from the middle of the box, in box diagonals — which is what
+      // `sweepShade` is anchored to, so the pool of light is around the box
+      // rather than smeared over a sheet the size of a room.
+      const shade = sweepShade(Math.hypot(x, y, z) / diagonal);
+      colour.push(shade, shade, shade);
+    }
+  }
 
-  for (let i = 0; i < profile.length - 1; i++) {
-    for (let c = 0; c < columns; c++) {
-      // Two triangles a cell, wound so the lit side faces the camera.
-      push(i, c); push(i, c + 1); push(i + 1, c + 1);
-      push(i, c); push(i + 1, c + 1); push(i + 1, c);
+  const at = (row, col) => row * (columns + 1) + col;
+  for (let row = 0; row < profile.length - 1; row++) {
+    for (let col = 0; col < columns; col++) {
+      // Wound so the lit side faces the camera.
+      index.push(at(row, col), at(row, col + 1), at(row + 1, col + 1));
+      index.push(at(row, col), at(row + 1, col + 1), at(row + 1, col));
     }
   }
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(position), 3));
   geometry.setAttribute("color", new THREE.BufferAttribute(new Float32Array(colour), 3));
+  geometry.setIndex(index);
   geometry.computeVertexNormals();
 
   const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
@@ -103,10 +122,31 @@ function sweepMesh({ radius, floorRun, wallRise, width, back }, diagonal) {
   return mesh;
 }
 
-export default function RenderView({ derived, design, solids, hidden }) {
+/**
+ * §19 The rendered view.
+ *
+ * `camera` is where the view was left last time and `onCamera` is how it says
+ * where it has got to. The mode is unmounted when it is not on screen — a
+ * second WebGL context and an environment prefilter are not things to keep
+ * warm for a view nobody is looking at — so without this, coming back to it
+ * would throw away whatever angle had been set up. It is its own camera, not
+ * the 3D view's: the two are different views of the same box and each keeps
+ * its own.
+ */
+export default function RenderView({ derived, design, solids, hidden, camera: kept, onCamera }) {
   const host = useRef(null);
   const gl = useRef(null);
+  // Read once, on mount: the view restores where it was left and then owns its
+  // own camera. Held in refs so the scene is not rebuilt every time the app
+  // above it re-renders.
+  const keptRef = useRef(kept);
+  const onCameraRef = useRef(onCamera);
+  onCameraRef.current = onCamera;
   const [trace, setTrace] = useState({ status: "off" });
+  // §19 How far to refine before stopping. A render is finished when it stops
+  // getting better, and that is a judgement about the picture rather than a
+  // number the app can know — so it is offered rather than decided.
+  const [maxSamples, setMaxSamples] = useState(SETTLED_SAMPLES);
 
   // The renderer and scene outlive a re-render, so turning the box does not
   // rebuild it and refining survives a repaint.
@@ -124,7 +164,7 @@ export default function RenderView({ derived, design, solids, hidden }) {
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(35, 1, 1, 100000);
     const target = new THREE.Vector3();
-    const sph = { az: -0.68, pol: 1.16, dist: 1200 };
+    const sph = { az: -0.68, pol: 1.02, dist: 1200 };
 
     const equirect = environmentTexture();
     const pmrem = new THREE.PMREMGenerator(renderer);
@@ -165,7 +205,7 @@ export default function RenderView({ derived, design, solids, hidden }) {
 
     const state = {
       renderer, scene, camera, target, sph, box, stage, sweep, lights, equirect, pmrem,
-      raf: 0, tracer: null, onTrace: null,
+      raf: 0, tracer: null, onTrace: null, kept: keptRef.current, onCamera: onCameraRef.current,
     };
     gl.current = state;
 
@@ -215,10 +255,19 @@ export default function RenderView({ derived, design, solids, hidden }) {
       // scene and the same camera, followed further.
       if (state.tracer?.running) {
         state.tracer.update();
-        state.onTrace?.(state.tracer.samples);
+        state.onTrace?.(state.tracer.samples, state.tracer.done);
+        if (state.tracer.done) {
+          // Every sample it was asked for. Stop taking them; keep the picture.
+          state.tracer.running = false;
+          state.tracer.held = true;
+          return;
+        }
         state.raf = requestAnimationFrame(render);
         return;
       }
+      // A stopped render is held, not discarded: the picture somebody watched
+      // converge stays up until they move the view.
+      if (state.tracer?.held && state.tracer.hasImage) return state.tracer.present();
       renderer.render(scene, camera);
     };
     state.render = render;
@@ -226,7 +275,25 @@ export default function RenderView({ derived, design, solids, hidden }) {
     state.invalidate = invalidate;
     // A moved camera invalidates every sample taken so far — the path tracer
     // averages frames, and averaging two different pictures is a smear.
-    state.moved = () => { state.tracer?.reset(); invalidate(); };
+    //
+    // A trace that was still running picks up again from the new angle. One
+    // that had been stopped and held is let go of here, and only here: turning
+    // the box is the moment somebody has finished with that picture.
+    // Reported on the way out as well as as it moves, so the mode can be left
+    // at any moment and come back to the same angle.
+    state.report = () => state.onCamera?.({
+      azimuth: sph.az, polar: sph.pol, distance: sph.dist,
+    });
+
+    state.moved = () => {
+      if (state.tracer?.held) {
+        state.tracer.held = false;
+        state.onHeldReleased?.();
+      }
+      state.tracer?.reset();
+      state.report();
+      invalidate();
+    };
 
     let drag = null;
     const down = (e) => { drag = { x: e.clientX, y: e.clientY }; el.setPointerCapture?.(e.pointerId); };
@@ -254,6 +321,7 @@ export default function RenderView({ derived, design, solids, hidden }) {
     observer.observe(el);
 
     return () => {
+      state.report();
       observer.disconnect();
       cancelAnimationFrame(state.raf);
       el.removeEventListener("pointerdown", down);
@@ -331,9 +399,12 @@ export default function RenderView({ derived, design, solids, hidden }) {
     state.sweep.add(sweepMesh(view.sweep, state.radius));
     state.target.set(...view.target);
     if (!state.framed) {
-      state.sph.dist = view.distance;
-      state.sph.az = view.azimuth;
-      state.sph.pol = view.polar;
+      // Where it was left, if it has been here before; the framing of §19 if
+      // this is the first time.
+      const from = state.kept ?? view;
+      state.sph.dist = from.distance ?? view.distance;
+      state.sph.az = from.azimuth ?? view.azimuth;
+      state.sph.pol = from.polar ?? view.polar;
       state.framed = true;
     }
 
@@ -368,13 +439,25 @@ export default function RenderView({ derived, design, solids, hidden }) {
 
   useEffect(() => { if (!hidden) gl.current?.invalidate?.(); }, [hidden]);
 
+  // Raising the cap on a render that has already stopped sets it going again;
+  // lowering it below where it has got to stops it where it is.
+  useEffect(() => {
+    const state = gl.current;
+    if (!state?.tracer) return;
+    state.tracer.maxSamples = maxSamples;
+    if (state.tracer.done || !state.tracer.held) return;
+    state.tracer.running = true;
+    state.tracer.held = false;
+    state.invalidate();
+  }, [maxSamples]);
+
   const refine = async () => {
     const state = gl.current;
     if (!state) return;
     if (state.tracer?.running) {                 // a second press stops it
       state.tracer.running = false;
-      setTrace({ status: "paused", samples: state.tracer.samples });
-      state.invalidate();
+      state.tracer.held = true;                  // and the picture stays up
+      setTrace({ status: "held", samples: state.tracer.samples });
       return;
     }
     setTrace({ status: "loading" });
@@ -385,9 +468,13 @@ export default function RenderView({ derived, design, solids, hidden }) {
         size: [state.width ?? host.current.clientWidth, state.height ?? host.current.clientHeight],
       });
       state.tracer = tracer;
+      tracer.maxSamples = maxSamples;
       tracer.running = true;
+      tracer.held = false;
       const scale = tracer.scaleOf(state.width, state.height);
-      state.onTrace = (samples) => setTrace({ status: "tracing", samples, scale });
+      state.onTrace = (samples, done) =>
+        setTrace({ status: done ? "done" : "tracing", samples, scale });
+      state.onHeldReleased = () => setTrace({ status: "off" });
       setTrace({ status: "tracing", samples: 0, scale });
       state.invalidate();
     } catch (error) {
@@ -416,13 +503,18 @@ export default function RenderView({ derived, design, solids, hidden }) {
           </button>
           <button type="button" onClick={save}>Save PNG</button>
         </div>
+        <div className="chip-group samples">
+          <label htmlFor="max-samples">Samples</label>
+          <input id="max-samples" type="number" min="1" max="5000" step="50" value={maxSamples}
+            onChange={(e) => setMaxSamples(Math.max(1, Number(e.target.value) || 1))} />
+        </div>
       </div>
       <div className="render-state">{traceNote(trace)}</div>
     </div>
   );
 }
 
-function traceNote(trace) {
+export function traceNote(trace) {
   if (trace.status === "loading") return "fetching the path tracer…";
   if (trace.status === "tracing") {
     // The scale only when it is not 1: a soft render nobody was told about
@@ -430,7 +522,8 @@ function traceNote(trace) {
     const at = trace.scale && trace.scale < 0.98 ? ` · ${Math.round(trace.scale * 100)}% scale` : "";
     return `path traced, ${trace.samples} sample${trace.samples === 1 ? "" : "s"}${at}`;
   }
-  if (trace.status === "paused") return `path traced, ${trace.samples} samples — stopped`;
+  if (trace.status === "held") return `path traced, ${trace.samples} samples — stopped, turn the view to go back`;
+  if (trace.status === "done") return `path traced, ${trace.samples} samples — done`;
   if (trace.status === "failed") {
     return `${trace.error?.message ?? "the path tracer would not start"} — showing the studio render`;
   }

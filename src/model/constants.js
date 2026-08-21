@@ -41,6 +41,12 @@ export function edgeAxis(key) {
   return AXES.find((ax) => ax !== AXIS[a][0] && ax !== AXIS[b][0]);
 }
 
+/** The four edges a face is one side of. */
+export const edgesOfFace = (face) => EDGES.filter((k) => k.split("|").includes(face));
+
+/** The other face along an edge, from the point of view of one of them. */
+export const otherFace = (key, face) => key.split("|").find((f) => f !== face);
+
 export const LAYERS = ["cladding", "shell", "doubler"];
 
 // §2.1 Prominence presets. Rank 0 is most prominent.
