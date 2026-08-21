@@ -9,7 +9,8 @@
 import React from "react";
 import { FACES, FACE_LABEL } from "../model/constants.js";
 import { newFitting, describeFitting, faceAxes, hasTube, convertAt,
-  driverOuter, driverDepth, driverMagnet, driverMagnetDepth } from "../model/fittings.js";
+  driverOuter, driverDepth, driverMagnet, driverMagnetDepth, driverCone,
+  driverDisplacement, hasVd } from "../model/fittings.js";
 import { Num, Segmented, round } from "./fields.jsx";
 
 /** A new fitting, centred on the face it is being put on. */
@@ -88,6 +89,20 @@ export function FittingEditor({ fitting: f, index, edit, remove, derived, onFace
               value={round(driverMagnet(f))} onChange={(v) => edit({ magnet: v })} />
             <Num label="Magnet deep" aria={`Fitting ${n} magnetDepth`} suffix="mm" step={0.5}
               value={round(driverMagnetDepth(f))} onChange={(v) => edit({ magnetDepth: v })} />
+            {/* §27 Surround to dust cap. Deep on a pro woofer, shallow on a
+                shielded full-range — a proportion of the cutout is a fair
+                guess and never the number. */}
+            <Num label="Cone deep" aria={`Fitting ${n} coneDepth`} suffix="mm" step={0.5}
+              value={round(driverCone(f))} onChange={(v) => edit({ coneDepth: v })} />
+            {/* §28 Vd, by its own name — it is what a datasheet calls the
+                volume a driver takes out of a box, and it is the number that
+                makes the net volume real. Until one is given, what is shown is
+                worked out from the shape that is drawn: a basket drawn solid
+                where a real one is half air, so it reads high. */}
+            <Num label={hasVd(f) ? "Vd" : "Vd (est.)"} aria={`Fitting ${n} displaces`}
+              suffix="l" step={0.01}
+              value={Math.round(driverDisplacement(f) / 1e4) / 100}
+              onChange={(v) => edit({ displaces: v * 1e6 })} />
           </>
         ) : (
           <>

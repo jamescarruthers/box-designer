@@ -5,7 +5,8 @@ import { solve, wallOf, fillFaces, skinOf, boxVolume, DEFAULT_RATIO, DEFAULT_ROU
 import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, partialEdgeIssues } from "../model/bevel.js";
 import { mitreCheck, resolveMitres, applyMitres, mitreIssues, mitreLoss } from "../model/mitre.js";
 import { validate } from "../model/validate.js";
-import { fittingOwners, innermostOn, fittingIssues, fittingNote, hasTube, resolveFittings } from "../model/fittings.js";
+import { fittingOwners, innermostOn, fittingIssues, fittingNote, hasTube, resolveFittings,
+  driverDisplacement, portDisplacement, hasVd } from "../model/fittings.js";
 import { buildCutList, cutListTotals } from "../cutlist/cutlist.js";
 import { nest } from "../cutlist/nest.js";
 import { buildSheet } from "../drawing/sheet.js";
@@ -389,6 +390,22 @@ export function derive(design) {
     ...mitreIssues(rejected),
     ...fittingIssues(fittings, sol.panels, fittingPanels, sol.cavity),
   ];
+  // §27 What is left for the air. A driver's basket and motor stand in the
+  // cavity and a port's tube runs through it, and both take their volume out of
+  // the box the box was sized for. Only what is actually fitted counts: a
+  // fitting naming a face with no panel on it is an error, not a displacement.
+  const fitted = fittings.filter((f) => fittingPanels[f.face]);
+  sol.displaced = fitted.reduce((a, f) =>
+    a + (f.type === "driver" ? driverDisplacement(f) : portDisplacement(f)), 0);
+  sol.cavityVolume = boxVolume(sol.cavity);
+  sol.netVolume = Math.max(0, sol.cavityVolume - sol.displaced);
+  // §28 Whether every driver's displacement came off a datasheet. A port's is
+  // exact — it is a tube, and its size is its size — so only the drivers can
+  // be guesses. Where any is, the drawn basket is solid where a real one is
+  // half air, the displacement reads high, and the net volume therefore reads
+  // *low*: what is shown is a floor, and the readout says so.
+  sol.displacedEstimated = fitted.some((f) => f.type === "driver" && !hasVd(f));
+
   const sectionAt = design.sectionAt ?? sol.E.x / 2;
 
   // The title block names the carcass; anything else appears in the cut list.

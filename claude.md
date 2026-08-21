@@ -2272,3 +2272,65 @@ ones that were asked for. The bevel messages are judged on the second. A design
 that arrives from storage carrying R40 is drawn square, meshes cleanly, and
 still says *R40 cuts through the 18 mm wall*, which is the whole point of
 saying anything.
+
+## 27. Cone depth, and the air that is left
+
+### The last proportion becomes a number
+
+Cone depth was 0.42 of the cutout radius, which suits a typical full-range
+driver and draws a 15 inch pro woofer noticeably too shallow — a real one is
+half as deep again. It is a field now, like the depths of §24.
+
+Unlike those, it is **not** in `DEFAULT_DRIVER`. Left unset it follows the
+cutout, so a new 15 inch driver starts with a 15 inch driver's cone (73.5 mm)
+rather than a 6 inch one's, and typing a number still overrides it for good.
+The depths of §24 do carry fixed defaults, which is worth knowing: a new driver
+starts 78 mm deep whatever its diameter.
+
+### What the box actually holds
+
+A box sized for twelve litres of air does not hold twelve litres once a
+driver's motor is standing in it and a port's tube is running through it. The
+readout shows **Net** beside Cavity whenever something is displacing, and stays
+quiet when nothing is.
+
+A port takes its whole outside — bore and all, because the bore is open to the
+room rather than to the box. A driver's share is integrated over the profile
+that is drawn (§24) rather than guessed at, so the picture and the number can
+never disagree: each segment of the closed loop below the mounting plane sweeps
+a conical frustum, and the signed sum round the loop is what it encloses. The
+profile is clipped at the baffle first, because everything in front of that is
+outside the box.
+
+The integration is checked against shapes whose volume is known without one — a
+cylinder, a cone, a frustum, and a cylinder cut in half by the clip. A cone is
+the case worth having: an implementation that averages the end radii instead of
+summing `r₁² + r₁r₂ + r₂²` gets a cylinder right and a cone wrong by a third.
+
+### It reads high, and says so
+
+The drawn basket is a closed frustum where a real one is half air between the
+spokes, so the figure over-states what a real driver displaces. That is why
+there is a **Displaces** field: a datasheet that publishes Vd publishes the
+better number, and where one is given the arithmetic steps aside.
+
+Which is the honest position rather than a hedge. Modelling the basket as
+spokes would trade a known over-estimate for an unknown one, and the number
+that settles it is on the datasheet either way.
+
+### Vd by its own name
+
+The field is called what a datasheet calls it. Until one is given it shows
+**Vd (est.)** and the figure worked out from the drawn shape; once a real Vd is
+typed it shows **Vd**, and the arithmetic steps aside for good.
+
+The distinction is carried through to the readout, because the two are not
+equally good and the net volume rests on whichever it got. The error has a known
+*direction*: a basket drawn solid over-states what the driver displaces, so the
+air left over reads **low**. What is shown is a floor rather than a figure
+scattered either side of the truth — so where any driver is still on the
+estimate it reads `≥ 11.533 l`, and once every one has its Vd the `≥` goes and
+the number stands on its own.
+
+A port needs none of this. It is a tube, its size is its size, and its
+displacement is exact.
