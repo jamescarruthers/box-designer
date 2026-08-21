@@ -114,6 +114,57 @@ export function setProjectThickness(design, thickness) {
   };
 }
 
+/**
+ * §21 Set one face's thickness, and only that face's.
+ *
+ * The design carries a single thickness for the carcass with a per-face
+ * override switched on beside it, which is right for the sidebar — most boxes
+ * are one thickness all round and six numbers to keep in step is six chances to
+ * get it wrong. It is the wrong shape for a control on one panel, though: with
+ * the override off, writing to that face either does nothing or moves all six.
+ *
+ * So the override is switched on here, seeded from the uniform thickness, and
+ * then the one face is changed. The same move `setEdgeTreatment` makes when a
+ * click lands on an edge of a box that was uniform, and for the same reason:
+ * the edit you asked for happens and nothing else does.
+ */
+export function setFaceThickness(design, face, thickness) {
+  const by = design.perFaceThickness
+    ? design.thicknessBy
+    : Object.fromEntries(FACES.map((f) => [f, design.thickness]));
+  return { ...design, perFaceThickness: true, thicknessBy: { ...by, [face]: thickness } };
+}
+
+/**
+ * §21 Set one face's colour, on the same terms.
+ *
+ * Null puts the face back to following the project, which is a real answer and
+ * not the same as painting it the colour the project happens to be — the first
+ * moves when the sheet changes and the second does not. The per-panel switch
+ * stays on: turning it off again because one face went back to the default
+ * would drop the other five.
+ */
+export function setFaceColour(design, face, hex) {
+  return { ...design, perPanelColour: true, colourBy: { ...design.colourBy, [face]: hex } };
+}
+
+/**
+ * §21 Move one face up or down the prominence order.
+ *
+ * Prominence decides which panel runs past which at every corner, so it is as
+ * much a property of the face you are looking at as its thickness is — and from
+ * the inspector you are pointing at the face rather than at a row in a list.
+ */
+export function moveFace(design, face, delta) {
+  const order = [...design.order];
+  const i = order.indexOf(face);
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= order.length) return design;
+  [order[i], order[j]] = [order[j], order[i]];
+  const match = PROMINENCE_PRESETS.find((p) => p.order.join() === order.join());
+  return { ...design, order, preset: match ? match.id : "custom" };
+}
+
 export function editPanel(design, layer, face, patch) {
   const cur = design[layer][face];
   if (!cur) return design;
@@ -173,6 +224,23 @@ export function setEdgeTreatment(design, key, type, radius) {
   else by[key] = { type, radius: radius ?? by[key]?.radius ?? design.edge.radius };
 
   return { ...design, edge: { ...design.edge, perEdge: true, by } };
+}
+
+/**
+ * §15 What one edge has been *asked* for, uniform setting and all.
+ *
+ * Distinct from `edgeMap`, which answers what will be cut: that one drops a
+ * mitre to square, because a mitre is a joint and not a decoration, and it
+ * answers for all twelve at once. A control on one edge needs the thing the
+ * design says about that edge, mitre included, and a radius to show even when
+ * the treatment is square — otherwise switching an edge from square to fillet
+ * offers a fillet of nothing.
+ */
+export function authoredEdge(design, key) {
+  const cur = design.edge.perEdge
+    ? design.edge.by[key]
+    : (design.edge.type === "none" ? null : { type: design.edge.type, radius: design.edge.radius });
+  return { type: cur?.type ?? "none", radius: cur?.radius ?? design.edge.radius };
 }
 
 /** §15 The edges that have actually been given a treatment. */

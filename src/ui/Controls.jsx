@@ -3,91 +3,10 @@
 import React, { useState } from "react";
 import { FACES, FACE_LABEL, MATERIALS, PROMINENCE_PRESETS, EDGES, edgeAxis, materialById } from "../model/constants.js";
 import { ROUND_STEPS } from "../model/solver.js";
-import { paletteFor, colourName } from "../model/constants.js";
-import { panelColour } from "../three/palette.js";
 import { setIn, freeFaces, addPanel, removePanel, editPanel, setProjectMaterial, setProjectThickness, setEdgeTreatment, treatedEdges } from "./design.js";
-import { newFitting, describeFitting, faceAxes, hasTube, convertAt, FITTING_DEFAULTS } from "../model/fittings.js";
+import { Group, Num, Colour, Segmented, FaceSwatch, StockThicknesses } from "./fields.jsx";
+import { FittingList } from "./FittingEditor.jsx";
 import { fmt } from "../cutlist/cutlist.js";
-
-function Group({ title, note, children }) {
-  return (
-    <section className="group">
-      <h2>{title}</h2>
-      {note ? <p className="note">{note}</p> : null}
-      <div className="group-body">{children}</div>
-    </section>
-  );
-}
-
-function Num({ label, value, onChange, step = 1, min = 0, suffix, list, aria, disabled = false }) {
-  return (
-    <label className={disabled ? "field disabled" : "field"}>
-      <span>{label}</span>
-      <span className="input-wrap">
-        <input type="number" aria-label={aria ?? label} value={value} step={step} min={min} list={list}
-          disabled={disabled}
-          onChange={(e) => onChange(e.target.value === "" ? 0 : Number(e.target.value))} />
-        {suffix ? <em>{suffix}</em> : null}
-      </span>
-    </label>
-  );
-}
-
-/**
- * §18 A colour, chosen by name where the sheet has names for its colours and by
- * eye where it does not.
- *
- * Valchromat comes in twelve; birch ply comes in birch. So the list appears
- * only when there is a list, and the picker is always there beside it — a
- * design is allowed to say "this one, painted" without the app arguing.
- *
- * `value` of null means "as the sheet comes", which is not the same as a hex
- * that happens to match: one follows the sheet when the sheet changes and the
- * other does not.
- */
-function Colour({ label, aria, material, value, onChange, inherit, inheritLabel = "As the sheet comes" }) {
-  const palette = paletteFor(material);
-  // What the swatch shows when nothing has been chosen is what the panel will
-  // actually be, not what the sheet comes in: a face following a green project
-  // is green, and a grey square there would be a plain lie.
-  const shown = value ?? inherit ?? materialById(material).colour;
-  const named = value ? colourName(material, value) : null;
-  return (
-    <label className="field colour-field">
-      <span>{label}</span>
-      <span className="colour-wrap">
-        {palette ? (
-          <select value={named ? value : (value ? "custom" : "")} aria-label={`${aria} colour name`}
-            onChange={(e) => onChange(e.target.value === "custom" ? shown : (e.target.value || null))}>
-            <option value="">{inheritLabel}</option>
-            {palette.map((c) => <option key={c.id} value={c.hex}>{c.name}</option>)}
-            <option value="custom">Something else…</option>
-          </select>
-        ) : (
-          <button type="button" className="linkish" onClick={() => onChange(null)}
-            disabled={!value}>{value ? "Clear" : inheritLabel}</button>
-        )}
-        <input type="color" value={shown} aria-label={`${aria} colour`}
-          onChange={(e) => onChange(e.target.value)} />
-      </span>
-    </label>
-  );
-}
-
-/** The face swatch, shown only while face colouring is on. */
-const FaceSwatch = ({ face, layer, on }) => on
-  ? <i className="swatch" style={{ background: panelColour({ face, layer }) }} /> : null;
-
-function Segmented({ value, options, onChange, ariaLabel }) {
-  return (
-    <div className="segmented" role="group" aria-label={ariaLabel}>
-      {options.map((o) => (
-        <button key={o.id} type="button" className={o.id === value ? "on" : ""}
-          onClick={() => onChange(o.id)}>{o.name}</button>
-      ))}
-    </div>
-  );
-}
 
 export default function Controls({ design, set, derived, colourByFace }) {
   const s = design.start;
@@ -204,7 +123,7 @@ export default function Controls({ design, set, derived, colourByFace }) {
       </Group>
 
       <Group title="Fittings" note="Drivers and ports are cut into the outermost panel of their face. Position is measured from the panel's own low corner, so it reads straight off the face-on view — or as a percentage across it, which keeps a centred driver centred when the box changes size.">
-        <Fittings design={design} set={set} derived={derived} />
+        <FittingList design={design} set={set} derived={derived} />
       </Group>
 
       <Group title="Edge treatment" note="Cut from the outer face after assembly. Blank sizes are unchanged.">
@@ -437,109 +356,6 @@ function LayerStack({ design, set, layer, title, colourByFace }) {
       )}
     </div>
   );
-}
-
-/** §10 Drivers and ports: a hole with a bolt circle, and a hole with a tube. */
-function Fittings({ design, set, derived }) {
-  const list = design.fittings ?? [];
-  const put = (next) => set({ ...design, fittings: next });
-  const edit = (i, patch) => put(list.map((f, j) => (j === i ? { ...f, ...patch } : f)));
-
-  const add = (type) => {
-    const face = "front";
-    const panel = derived.sol.panels.find((p) => p.face === face) ?? derived.sol.panels[0];
-    const [p, q] = faceAxes(panel.face);
-    const at = {
-      a: (panel.box[p][0] + panel.box[p][1]) / 2,
-      b: (panel.box[q][0] + panel.box[q][1]) / 2,
-    };
-    put([...list, newFitting(type, panel.face, at)]);
-  };
-
-  return (
-    <div className="stack">
-      <div className="stack-head">
-        <h3>{list.length ? `${list.length} fitted` : "None"}</h3>
-        <select className="add" value="" aria-label="Add a fitting"
-          onChange={(e) => { if (e.target.value) add(e.target.value); }}>
-          <option value="">Add…</option>
-          <option value="driver">Driver</option>
-          <option value="port">Port</option>
-        </select>
-      </div>
-
-      {list.map((f, i) => {
-        const [p, q] = faceAxes(f.face);
-        const ratio = f.units === "ratio";
-        const panel = derived.fittingPanels?.[f.face];
-        // §20 Switching units moves the number, not the fitting.
-        const setUnits = (units) => edit(i, { units, at: convertAt(f, panel, units) });
-        return (
-          <div className="fitting" key={f.id}>
-            <div className="fitting-head">
-              <select value={f.face} aria-label={`Fitting ${i + 1} face`}
-                onChange={(e) => edit(i, { face: e.target.value })}>
-                {FACES.map((x) => <option key={x} value={x}>{FACE_LABEL[x]}</option>)}
-              </select>
-              <span className="kind">{f.type === "port" ? "Port" : "Driver"}</span>
-              <button type="button" className="drop" aria-label={`Remove fitting ${i + 1}`}
-                onClick={() => put(list.filter((_, j) => j !== i))}>×</button>
-            </div>
-            <div className="fitting-units">
-              <Segmented ariaLabel={`Fitting ${i + 1} units`} value={ratio ? "ratio" : "mm"}
-                onChange={setUnits}
-                options={[{ id: "mm", name: "mm" }, { id: "ratio", name: "% of panel" }]} />
-            </div>
-            <div className="fitting-grid">
-              <Num label={`At ${p}`} aria={`Fitting ${i + 1} at ${p}`} suffix={ratio ? "%" : "mm"}
-                step={ratio ? 1 : 1} value={round(f.at.a)}
-                onChange={(v) => edit(i, { at: { ...f.at, a: v } })} />
-              <Num label={`At ${q}`} aria={`Fitting ${i + 1} at ${q}`} suffix={ratio ? "%" : "mm"}
-                step={ratio ? 1 : 1} value={round(f.at.b)}
-                onChange={(v) => edit(i, { at: { ...f.at, b: v } })} />
-              {f.type === "driver" ? (
-                <>
-                  <Num label="Cutout ⌀" aria={`Fitting ${i + 1} cutout`} suffix="mm" step={0.5} value={f.cutout} onChange={(v) => edit(i, { cutout: v })} />
-                  <Num label="PCD" aria={`Fitting ${i + 1} pcd`} suffix="mm" step={0.5} value={f.pcd} onChange={(v) => edit(i, { pcd: v })} />
-                  <Num label="Bolts" aria={`Fitting ${i + 1} bolts`} value={f.bolts} min={2} onChange={(v) => edit(i, { bolts: Math.max(2, Math.round(v)) })} />
-                  <Num label="Bolt ⌀" aria={`Fitting ${i + 1} boltHole`} suffix="mm" step={0.5} value={f.boltHole} onChange={(v) => edit(i, { boltHole: v })} />
-                </>
-              ) : (
-                <>
-                  {/* The bore is the tube's inside diameter, continuous from the
-                      outer face of the panel to the end of the tube. */}
-                  <Num label="Inside ⌀" aria={`Fitting ${i + 1} diameter`} suffix="mm" step={0.5} value={f.diameter} onChange={(v) => edit(i, { diameter: v })} />
-                  <Num label="Length" aria={`Fitting ${i + 1} length`} suffix="mm" value={f.length}
-                    disabled={!hasTube(f)} onChange={(v) => edit(i, { length: v })} />
-                  <Num label="Wall" aria={`Fitting ${i + 1} wall`} suffix="mm" step={0.5} value={f.wall}
-                    disabled={!hasTube(f)} onChange={(v) => edit(i, { wall: v })} />
-                </>
-              )}
-            </div>
-            {f.type === "port" ? (
-              <label className="check">
-                <input type="checkbox" checked={hasTube(f)} aria-label={`Fitting ${i + 1} tube`}
-                  onChange={(e) => edit(i, { tube: e.target.checked })} />
-                <span>Fit a tube behind the hole</span>
-              </label>
-            ) : null}
-            <p className="note">{describeFitting(f)}</p>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-const round = (v) => Math.round(v * 10) / 10;
-
-/** The thicknesses each material is sold in, offered on every thickness input. */
-function StockThicknesses() {
-  return MATERIALS.map((m) => (
-    <datalist id={`th-${m.id}`} key={m.id}>
-      {m.thicknesses.map((t) => <option key={t} value={t} />)}
-    </datalist>
-  ));
 }
 
 function move(design, set, i, d) {

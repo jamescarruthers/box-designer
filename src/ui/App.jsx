@@ -2,6 +2,7 @@ import React, { useMemo, useState, useCallback, useEffect, Suspense, lazy } from
 import Controls from "./Controls.jsx";
 import Viewport, { RENDER_STYLES, VIEW_PRESETS } from "./Viewport.jsx";
 import CutListView from "./CutListView.jsx";
+import Inspector from "./Inspector.jsx";
 import DrawingView from "./DrawingView.jsx";
 // §19 Loaded when the mode is opened. Physical materials and the environment
 // prefilter pull in a good deal of three that the other modes never touch, and
@@ -78,7 +79,11 @@ export default function App() {
   const selectedRow = derived.rows.find((r) => r.panelIndex === selected);
 
   return (
-    <div className="app">
+    // §21 Three columns while a panel is selected: the project on the left, the
+    // box in the middle, that panel on the right. The class is on the app
+    // rather than on the inspector because the middle column has to give up the
+    // width, and the cut list has to give up a column of its own.
+    <div className={selectedRow ? "app inspecting" : "app"}>
       <aside className="side">
         <header className="brand">
           <h1>Sheet Box Designer</h1>
@@ -205,6 +210,15 @@ export default function App() {
           </div>
         ) : null}
       </main>
+
+      {/* §21 Selecting a panel is asking a question about it, so the answers are
+          put where the question was asked rather than back in the project
+          controls. Shown in every mode: the cut list and the drawing select
+          panels too, and the same face is the same face from all three. */}
+      {selectedRow ? (
+        <Inspector design={design} set={setDesign} derived={derived} row={selectedRow}
+          colourByFace={colourByFace} onSelect={setSelected} onClose={() => setSelected(null)} />
+      ) : null}
     </div>
   );
 }

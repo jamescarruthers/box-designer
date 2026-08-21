@@ -1893,3 +1893,87 @@ and rounding it on the way back moves it again, so a fitting that had been put
 somewhere deliberately drifts every time somebody looks at the units. The stored
 number is unrounded and the field displays it rounded, which is the same
 arrangement every other length in the app already has.
+
+## 21. The panel you selected
+
+The sidebar asks questions about the box: one thickness, one colour, a list of
+every fitting on it. That is the right way round for setting a box up, and the
+wrong way round once it exists and you are looking at it. The question in front
+of you then is "this panel, thicker" — and answering it in the sidebar means
+finding the face in a grid of six, having first found the switch that turns the
+grid on.
+
+So selecting a panel opens a second panel on the other side, about that face and
+nothing else: its blank size, the sheet it is cut from, where it comes in the
+prominence order, its four edges, the fittings on it, and whether it carries
+cladding or a doubler. Shown in every mode, because the cut list and the drawing
+select panels too and the same face is the same face from all three.
+
+### The controls are the same controls
+
+`Num`, `Colour`, `Segmented`, `Group` and the fitting editor moved out of
+`Controls` into `fields.jsx` and `FittingEditor.jsx` before any of this was
+written. Two copies of a number field is two places for a step, a suffix or an
+aria-label to drift, and the difference shows up as "the colour picker behaves
+differently over here", which is a bug nobody can name. The fitting editor in
+particular numbers its labels by the fitting's place in the *design's* list, so
+a fitting keeps the name it has in the sidebar when it is opened from the
+inspector.
+
+### One face, not six
+
+The design keeps a single carcass thickness with a per-face override beside it,
+and a single colour with the same. That is right for the sidebar — most boxes
+are one thickness all round, and six numbers to keep in step is six chances to
+get one wrong. It is the wrong shape for a control on one panel: with the
+override off, writing to that face either does nothing or moves all six.
+
+`setFaceThickness` and `setFaceColour` switch the override on, seed the other
+five from the uniform value, and then change the one face. The same move
+`setEdgeTreatment` makes when a click lands on an edge of a box that was uniform
+(§15), and for the same reason: the edit you asked for happens and nothing else
+does. Seeded from the *uniform* value rather than from whatever `thicknessBy`
+happens to hold — a design edited before the override was ever switched on can
+carry a stale set, and inheriting those would change five faces nobody touched.
+
+Putting a face back to "as the project" is a real answer and not the same as
+painting it the colour the project happens to be: the first moves when the sheet
+changes and the second does not. So it stores null, and the per-panel switch
+stays on — turning it off because one face went back to the default would drop
+the other five.
+
+### Cladding and doublers, on the face in front of you
+
+The three layers of a face are listed as a stack: cladding outside, carcass,
+doubler inside. Each is either there — with its thickness, and a way to step to
+it without going back to the box — or not, with one button to add it. The
+carcass has no × because the carcass is the box; the empty cell where the ×
+would be is what keeps the three rows in line.
+
+### Naming an edge from the face you are on
+
+The twelve edges are keyed by the two faces that meet along them, which is the
+right key and a poor label. From the front panel, `front|left` is "the left
+edge", and reading it out as "front / left" asks somebody to work out which of
+the two faces they are standing on. So the inspector names each edge by the face
+across the corner, and `edgesOfFace` and `otherFace` do that arithmetic once.
+
+It shows what the design *asks* for, mitre included, which is not what `edgeMap`
+answers: that one drops a mitre to square, because a mitre is a joint rather
+than a decoration, and it answers for all twelve at once. `authoredEdge` gives
+one edge its own answer — with a radius to offer even where the treatment is
+square, or switching an edge from square to fillet offers a fillet of nothing.
+
+### Rank, in what it does rather than where it sits
+
+"2 of 5" is a position in a list, and a position in a list is not what anybody
+wants to know. What rank decides is which panel runs out to the corner and which
+is fitted between two others, so that is what it says: *runs past 3, inside 2*.
+
+### The column comes out of the middle
+
+The inspector is a third column of the app grid, not a floating panel, so the
+viewport gives up the width rather than having it drawn over. The cut list has
+three columns of its own and cannot keep them all at the same time, so it drops
+its parts column while the inspector is open — the same column the 1320 px
+breakpoint drops first, for the same reason.
