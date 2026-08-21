@@ -8,7 +8,7 @@
 
 import React from "react";
 import { FACES, FACE_LABEL } from "../model/constants.js";
-import { newFitting, describeFitting, faceAxes, hasTube, convertAt } from "../model/fittings.js";
+import { newFitting, describeFitting, faceAxes, hasTube, convertAt, driverOuter } from "../model/fittings.js";
 import { Num, Segmented, round } from "./fields.jsx";
 
 /** A new fitting, centred on the face it is being put on. */
@@ -70,6 +70,12 @@ export function FittingEditor({ fitting: f, index, edit, remove, derived, onFace
         {f.type === "driver" ? (
           <>
             <Num label="Cutout ⌀" aria={`Fitting ${n} cutout`} suffix="mm" step={0.5} value={f.cutout} onChange={(v) => edit({ cutout: v })} />
+            {/* §22 The frame, which is what has to fit on the panel and what
+                gets drawn. Shown with the fallback filled in rather than blank,
+                so a driver saved before the field existed reads as a number
+                somebody can correct instead of a gap they have to guess at. */}
+            <Num label="Frame ⌀" aria={`Fitting ${n} outer`} suffix="mm" step={0.5}
+              value={round(driverOuter(f))} onChange={(v) => edit({ outer: v })} />
             <Num label="PCD" aria={`Fitting ${n} pcd`} suffix="mm" step={0.5} value={f.pcd} onChange={(v) => edit({ pcd: v })} />
             <Num label="Bolts" aria={`Fitting ${n} bolts`} value={f.bolts} min={2} onChange={(v) => edit({ bolts: Math.max(2, Math.round(v)) })} />
             <Num label="Bolt ⌀" aria={`Fitting ${n} boltHole`} suffix="mm" step={0.5} value={f.boltHole} onChange={(v) => edit({ boltHole: v })} />

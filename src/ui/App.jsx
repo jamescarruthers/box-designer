@@ -38,6 +38,11 @@ export default function App() {
   const [style, setStyle] = useState("shaded-edges");
   const [colourByFace, setColourByFace] = useState(true);
   const [explode, setExplode] = useState(0);
+  // §22 Whether the drivers are drawn on the box. A way of looking at it rather
+  // than something about it, so it lives here beside the render style and not
+  // in the design. On by default: a box with the drivers in it is the picture
+  // somebody is trying to see, and the holes are still there underneath.
+  const [showDrivers, setShowDrivers] = useState(true);
   const [selected, setSelected] = useState(null);
   const [hovered, setHovered] = useState(null);
   const [camera, setCamera] = useState({ preset: "iso", nonce: 0 });
@@ -115,7 +120,7 @@ export default function App() {
             <Viewport derived={derived} style={style} colourByFace={colourByFace} explode={explode}
               selected={selected} hovered={hovered} onSelect={onSelect} hidden={mode !== "view"} camera={camera}
               solids={solidEngine === "kernel" ? kernelSolids.solids : null}
-              edgeTool={edgeTool} onEdgePick={onEdgePick} />
+              edgeTool={edgeTool} onEdgePick={onEdgePick} drivers={showDrivers} />
             <div className="chips">
               <div className="chip-group">
                 {RENDER_STYLES.map((s) => (
@@ -126,6 +131,11 @@ export default function App() {
               <div className="chip-group">
                 <button type="button" className={colourByFace ? "on" : ""} onClick={() => setColourByFace(true)}>By face</button>
                 <button type="button" className={colourByFace ? "" : "on"} onClick={() => setColourByFace(false)}>Material</button>
+              </div>
+              <div className="chip-group">
+                <button type="button" className={showDrivers ? "on" : ""}
+                  aria-pressed={showDrivers}
+                  onClick={() => setShowDrivers(!showDrivers)}>Drivers</button>
               </div>
               <div className="chip-group">
                 {Object.keys(VIEW_PRESETS).map((p) => (
@@ -193,7 +203,8 @@ export default function App() {
               <Suspense fallback={<div className="render-state">preparing the studio…</div>}>
                 <RenderView derived={derived} design={design}
                   solids={solidEngine === "kernel" ? kernelSolids.solids : null} hidden={false}
-                  camera={renderCamera} onCamera={setRenderCamera} />
+                  camera={renderCamera} onCamera={setRenderCamera}
+                  drivers={showDrivers} onDrivers={setShowDrivers} />
               </Suspense>
             </div>
           ) : null}

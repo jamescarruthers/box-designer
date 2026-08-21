@@ -24,6 +24,7 @@ import {
   RIG, SWEEP, EXPOSURE,
 } from "../three/studio.js";
 import { loadPathTracer, SETTLED_SAMPLES } from "../render/pathtrace.js";
+import { driverBody, driverMaterial, placeDriver, driversOn } from "../three/driver.js";
 
 const POLAR_MIN = 0.12, POLAR_MAX = Math.PI / 2 - 0.02;   // never below the floor
 
@@ -133,7 +134,7 @@ function sweepMesh({ radius, floorRun, wallRise, width, back }, diagonal) {
  * the 3D view's: the two are different views of the same box and each keeps
  * its own.
  */
-export default function RenderView({ derived, design, solids, hidden, camera: kept, onCamera }) {
+export default function RenderView({ derived, design, solids, hidden, camera: kept, onCamera, drivers = true, onDrivers }) {
   const host = useRef(null);
   const gl = useRef(null);
   // Read once, on mount: the view restores where it was left and then owns its
@@ -390,6 +391,18 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
       }
     });
 
+    // §22 The drivers. The whole point of the rendered view is that it looks
+    // like the thing being made, and the thing being made is a speaker — a box
+    // with a round hole in it is a box with a round hole in it.
+    if (drivers) {
+      for (const { fitting, panel } of driversOn(derived.fittings, derived.fittingPanels)) {
+        const mesh = new THREE.Mesh(driverBody(fitting), driverMaterial());
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        state.box.add(placeDriver(mesh, fitting, panel, E));
+      }
+    }
+
     // On the floor rather than through it: the geometry is centred on the box's
     // middle, and a photograph of a box hovering is a photograph of a mistake.
     state.box.position.set(0, E.z / 2, 0);
@@ -435,7 +448,7 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
     // that no longer exists.
     if (state.tracer) { state.tracer.dispose(); state.tracer = null; setTrace({ status: "off" }); }
     state.moved?.();
-  }, [derived, solids]);
+  }, [derived, solids, drivers]);
 
   useEffect(() => { if (!hidden) gl.current?.invalidate?.(); }, [hidden]);
 
@@ -503,6 +516,12 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
           </button>
           <button type="button" onClick={save}>Save PNG</button>
         </div>
+        {onDrivers ? (
+          <div className="chip-group">
+            <button type="button" className={drivers ? "on" : ""} aria-pressed={drivers}
+              onClick={() => onDrivers(!drivers)}>Drivers</button>
+          </div>
+        ) : null}
         <div className="chip-group samples">
           <label htmlFor="max-samples">Samples</label>
           <input id="max-samples" type="number" min="1" max="5000" step="50" value={maxSamples}

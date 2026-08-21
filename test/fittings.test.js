@@ -2,7 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { solve, panelBlank } from "../src/model/solver.js";
 import {
-  newFitting, fittingCircles, fittingExtent, fittingOwners, fittingOrigin,
+  newFitting, fittingCircles, fittingExtent, fittingOwners, fittingOrigin, driverOuter,
   fittingStack, innermostOn, hasTube, DEFAULT_PORT,
   fittingIssues, describeFitting, fittingNote, faceAxes, toBlank, blankCircles,
   portOuterRadius, DEFAULT_DRIVER,
@@ -57,10 +57,30 @@ describe("the shape of a driver", () => {
     }
   });
 
-  it("reaches as far as the bolt circle, not just the cutout", () => {
+  it("§22 reaches as far as the frame, which is wider than any of the holes", () => {
+    // It used to stop at the bolt circle, which is what the panel has cut into
+    // it — but what has to fit is the driver, and its frame overhangs the bolts
+    // on every driver ever made. A Pluvia 7P is 112 PCD with 3.1 mm holes and a
+    // 122.3 mm frame: checking the bolts alone passes a driver whose rim is
+    // already 4 mm over the edge.
     const d = centred("driver");
-    expect(fittingExtent(d)).toBe(d.pcd / 2 + d.boltHole / 2);
-    expect(fittingExtent({ ...d, cutout: 400 })).toBe(200);   // ...unless the cutout is bigger
+    expect(fittingExtent(d)).toBe(driverOuter(d) / 2);
+    expect(fittingExtent(d)).toBeGreaterThan(d.pcd / 2 + d.boltHole / 2);
+  });
+
+  it("§22 still counts the holes, in case one of them is the widest", () => {
+    // Nothing says a frame has to be the biggest of the three, and a rule that
+    // quietly stopped checking the other two would be a worse rule.
+    const d = centred("driver");
+    expect(fittingExtent({ ...d, cutout: 400 })).toBe(200);
+    expect(fittingExtent({ ...d, outer: 10 })).toBe(d.pcd / 2 + d.boltHole / 2);
+  });
+
+  it("§22 falls back to the bolt circle for a driver saved before frames existed", () => {
+    // Within a millimetre of the real thing on the driver it was set against.
+    const pluvia = { ...centred("driver"), cutout: 100, pcd: 112, boltHole: 3.1, outer: undefined };
+    expect(driverOuter(pluvia)).toBeCloseTo(121.3, 6);
+    expect(driverOuter({ ...pluvia, outer: 122.3 })).toBe(122.3);
   });
 });
 
@@ -107,9 +127,23 @@ describe("§8 fittings that will not cut", () => {
   });
 
   it("warns when it leaves too little material at the edge", () => {
-    // Extent 76 at a = 80 leaves 4 mm of material: on the panel, but only just.
-    const msgs = issues(newFitting("driver", "front", { a: 80, b: 240 }));
+    // Extent 81 at a = 85 leaves 4 mm of material: on the panel, but only just.
+    // §22 moved out from 80, where the frame now hangs over the edge outright
+    // and earns an error rather than a warning — which the case below checks.
+    const msgs = issues(newFitting("driver", "front", { a: 85, b: 240 }));
     expect(msgs.some((m) => m.level === "warning" && m.text.includes("10 mm"))).toBe(true);
+  });
+
+  it("§22 fails a driver whose frame hangs over the edge, though its bolts do not", () => {
+    // The case the old rule passed: at a = 80 the bolt circle reaches 76 and
+    // clears, and the 81 mm frame does not.
+    const msgs = issues(newFitting("driver", "front", { a: 80, b: 240 }));
+    expect(msgs.some((m) => m.level === "error" && m.text.includes("runs off"))).toBe(true);
+  });
+
+  it("§22 warns when the frame is too small to get a bolt through", () => {
+    const msgs = issues({ ...centred("driver"), outer: 140, pcd: 147 });
+    expect(msgs.some((m) => m.text.includes("fall outside it"))).toBe(true);
   });
 
   it("warns when the bolt holes break into the cutout", () => {
@@ -216,7 +250,7 @@ describe("through the app", () => {
     const front = r.rows.find((x) => x.face === "front" && x.layer === "shell");
     expect(front.fittings).toHaveLength(2);
     expect(front.fittingNote).toBe(fittingNote(design.fittings));
-    expect(front.fittingNote).toContain("Driver ⌀116, 5 × ⌀5 on 147 PCD");
+    expect(front.fittingNote).toContain("Driver ⌀116 in a ⌀162 frame, 5 × ⌀5 on 147 PCD");
     expect(front.fittingNote).toContain("Port ⌀68 × 150");
   });
 
@@ -235,7 +269,10 @@ describe("through the app", () => {
   });
 
   it("describes a fitting the way a cut list should", () => {
-    expect(describeFitting(design.fittings[0])).toBe("Driver ⌀116, 5 × ⌀5 on 147 PCD");
+    // §22 The frame is in the line because it is the number that decides
+    // whether the driver fits, and a cut list that names every hole but not the
+    // thing going into them is describing the wrong object.
+    expect(describeFitting(design.fittings[0])).toBe("Driver ⌀116 in a ⌀162 frame, 5 × ⌀5 on 147 PCD");
     expect(describeFitting(design.fittings[1])).toBe("Port ⌀68 × 150");
   });
 });
