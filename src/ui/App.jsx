@@ -40,6 +40,10 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [hovered, setHovered] = useState(null);
   const [camera, setCamera] = useState({ preset: "iso", nonce: 0 });
+  // §19 The rendered view's own camera, kept here because the mode is
+  // unmounted when it is not on screen. Two views of one box, each remembering
+  // where it was left.
+  const [renderCamera, setRenderCamera] = useState(null);
   const [solidEngine, setSolidEngine] = useState("analytic");
   // §15 The armed edge tool, or null for none. Not part of the design: it is
   // what the pointer is for at this moment, not something about the box.
@@ -183,7 +187,8 @@ export default function App() {
             <div className="pane pane-render">
               <Suspense fallback={<div className="render-state">preparing the studio…</div>}>
                 <RenderView derived={derived} design={design}
-                  solids={solidEngine === "kernel" ? kernelSolids.solids : null} hidden={false} />
+                  solids={solidEngine === "kernel" ? kernelSolids.solids : null} hidden={false}
+                  camera={renderCamera} onCamera={setRenderCamera} />
               </Suspense>
             </div>
           ) : null}

@@ -12,8 +12,8 @@
  */
 import { describe, it, expect } from "vitest";
 import * as THREE from "three";
-import { traceSize, tilesFor, TRACE_PIXEL_CAP, SETTLED_SAMPLES } from "../src/render/pathtrace.js";
-import { withColour } from "../src/ui/RenderView.jsx";
+import { traceSize, tilesFor, TRACE_PIXEL_CAP, SETTLED_SAMPLES, capReached } from "../src/render/pathtrace.js";
+import { withColour, traceNote } from "../src/ui/RenderView.jsx";
 
 const pixels = ([w, h]) => w * h;
 
@@ -103,5 +103,61 @@ describe("§19 every part of the scene carries the same attributes", () => {
   it("takes a shade, for anything that wants to be darker than white", () => {
     // Float32, so 0.4 comes back as the nearest float to 0.4.
     for (const v of withColour(plain(), 0.4).getAttribute("color").array) expect(v).toBeCloseTo(0.4, 6);
+  });
+});
+
+/**
+ * §19 A cap on the samples, and a picture that stays up.
+ *
+ * Two things reported together: a render should stop when it has taken as many
+ * samples as it was asked for, and pressing Stop should not throw the picture
+ * away. It used to snap back to the studio render the instant it stopped, which
+ * discards however long somebody had just spent watching it converge.
+ */
+describe("§19 the sample cap", () => {
+  it("stops a render once it has taken the samples it was asked for", () => {
+    expect(capReached(300, 300)).toBe(true);
+    expect(capReached(301, 300)).toBe(true);
+    expect(capReached(299, 300)).toBe(false);
+  });
+
+  it("treats no cap as no cap, rather than as a cap of nothing", () => {
+    // The fault this exists for: `samples >= 0` is true before the first frame,
+    // so an uncapped render would report itself finished having drawn nothing.
+    expect(capReached(0, 0)).toBe(false);
+    expect(capReached(5000, 0)).toBe(false);
+  });
+
+  it("starts at a cap somebody would be happy to wait for", () => {
+    expect(SETTLED_SAMPLES).toBeGreaterThan(50);
+    expect(capReached(SETTLED_SAMPLES, SETTLED_SAMPLES)).toBe(true);
+  });
+});
+
+describe("§19 what the render says it is doing", () => {
+  it("says a stopped render is stopped, and how to go back", () => {
+    const note = traceNote({ status: "held", samples: 46 });
+    expect(note).toContain("46 samples");
+    // Held rather than discarded, and the way out of it is the view, not a
+    // button — so the note has to say so or the picture looks stuck.
+    expect(note).toMatch(/turn the view/);
+  });
+
+  it("says a capped render is done rather than merely stopped", () => {
+    expect(traceNote({ status: "done", samples: 300 })).toContain("done");
+  });
+
+  it("goes back to offering the trace once the view has been turned", () => {
+    expect(traceNote({ status: "off" })).toBe("studio render · Refine to path trace it");
+  });
+
+  it("counts one sample as a sample", () => {
+    expect(traceNote({ status: "tracing", samples: 1 })).toBe("path traced, 1 sample");
+    expect(traceNote({ status: "tracing", samples: 2 })).toBe("path traced, 2 samples");
+  });
+
+  it("mentions the scale only when it is not tracing at full size", () => {
+    expect(traceNote({ status: "tracing", samples: 4, scale: 1 })).not.toContain("scale");
+    expect(traceNote({ status: "tracing", samples: 4, scale: 0.62 })).toContain("62% scale");
   });
 });

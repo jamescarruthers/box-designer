@@ -5,7 +5,7 @@ import { solve, wallOf, fillFaces, skinOf, boxVolume, DEFAULT_RATIO, DEFAULT_ROU
 import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, partialEdgeIssues } from "../model/bevel.js";
 import { mitreCheck, resolveMitres, applyMitres, mitreIssues, mitreLoss } from "../model/mitre.js";
 import { validate } from "../model/validate.js";
-import { fittingOwners, innermostOn, fittingIssues, fittingNote, hasTube } from "../model/fittings.js";
+import { fittingOwners, innermostOn, fittingIssues, fittingNote, hasTube, resolveFittings } from "../model/fittings.js";
 import { buildCutList, cutListTotals } from "../cutlist/cutlist.js";
 import { nest } from "../cutlist/nest.js";
 import { buildSheet } from "../drawing/sheet.js";
@@ -291,9 +291,12 @@ export function derive(design) {
   // §10 A hole goes all the way: every panel on the face is cut, cladding and
   // doubler included. `fittingPanels` is still the outermost of them, because
   // that is the face a driver bolts to and the surface positions are set out on.
-  const fittings = design.fittings ?? [];
-  const faces = [...new Set(fittings.map((f) => f.face))];
+  const authored = design.fittings ?? [];
+  const faces = [...new Set(authored.map((f) => f.face))];
   const fittingPanels = fittingOwners(sol.panels, faces);
+  // §20 A position can be written as a proportion of the panel it is on.
+  // Resolved here, once, so nothing downstream has to know that.
+  const fittings = resolveFittings(authored, fittingPanels);
   const fittingsOn = (panel) => fittings.filter((f) => f.face === panel.face);
   // A port's tube hangs off the innermost layer, once, however many it bored.
   const tubePanels = Object.fromEntries(faces.map((f) => [f, innermostOn(sol.panels, f)]));

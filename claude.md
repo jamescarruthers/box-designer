@@ -1805,3 +1805,91 @@ stands centred on the origin and the sweep's curve began there, so it rose
 through the box's back half. The profile takes a `back` now — how far behind the
 origin the floor stays flat — set to three quarters of the box's diagonal, which
 clears its furthest corner whichever way the view is turned.
+
+### Smoother, capped, and it keeps the picture
+
+Three things reported together, all about the render being something you sit
+with rather than something you glance at.
+
+**The ramp had facets in it.** The sweep was built as loose triangles — three
+fresh vertices per face — so `computeVertexNormals` had nothing to average
+across: every triangle got its own flat normal and the curve came out as a
+staircase of bands, most visible exactly where the light grazes it. The grid is
+indexed now, 60 steps by 24 columns sharing their vertices, and the same call
+averages the normals into one smooth surface. Roughly a quarter of the vertices
+for a curve with no steps in it.
+
+**A cap on the samples.** The render used to run until stopped, which is fine
+watching it and useless leaving it. There is a Samples box; it starts at 300 and
+the render stops itself there and says *done*. Raising it on a stopped render
+starts it going again from where it got to — the average is still in the buffer
+— and lowering it below the current count stops it where it is. The whole of the
+bug worth guarding is `maxSamples > 0`: a cap of zero means *no cap*, and a cap
+of zero compared with `>=` is a cap that has always already been reached, so an
+uncapped render would report itself finished having drawn nothing.
+
+**Stop keeps the picture.** Pressing Stop used to snap back to the studio
+render, throwing away however long somebody had just spent watching it converge.
+A stopped render is *held* now: the accumulated image stays on screen, drawn by
+`present()` without taking another sample. It is let go of on one event only —
+the view being turned — because that is the moment the picture somebody was
+looking at stopped being a picture of anything. Turning it says so in the status
+line rather than leaving it looking stuck.
+
+**A denoiser for the first twenty seconds.** Below 80 samples the frame goes
+through `DenoiseMaterial` on its way to the screen — a bilateral filter, one
+full-screen pass — with its strength wound back as the average takes over, so
+the picture sharpens rather than staying soft and then snapping. `stableNoise`
+is on as well: the same sequence every time from a given camera, so a stopped
+render is the same picture twice rather than two draws of it.
+
+### The renderer is WebGL2, and that is the ceiling
+
+Worth writing down because it will be asked again. `three-gpu-pathtracer` is a
+fragment shader: the BVH, the materials and the environment all go to the GPU as
+textures and every sample is a full-screen draw. There is no WebGPU path in it —
+not in 0.0.24, not in any earlier version — and CPU threads do not apply, because
+no part of the tracing happens on the CPU to be moved off it. Web Workers cannot
+help either; a `WebGLRenderer` belongs to the context that created it.
+
+So the levers are the ones being pulled: bounces (four — enough for a box on a
+sweep, and every extra one is paid for on every sample), tiles (a big frame split
+so the tab stays answerable, a small one not, because a part-drawn frame looks
+like a fault), the resolution cap, stable noise, and the denoiser.
+`filterGlossyFactor` is deliberately left off: it trades caustic noise for a
+blurred highlight, and nothing in this scene is glossy enough to have either.
+
+### The render's own camera
+
+The render view and the 3D view are separate cameras — the 3D view is for
+reading the box and the render is for photographing it, and they want different
+angles. But leaving one to come back to it and finding it re-framed loses
+whatever was set up. So each keeps its own angle, and each hands it back on the
+way out: the render reports `{azimuth, polar, distance}` as it moves and when it
+unmounts, and restores it on the first framing. Switching modes and switching
+back is pixel-identical, which is how it is checked.
+
+## 20. Where a fitting sits
+
+A fitting's position was two millimetre offsets from the panel's corner. That is
+the right answer for a hole that has to line up with something — a bolt pattern,
+a connector body — and the wrong one for anything meant to *look* placed: a
+driver in the middle of a front panel is at the middle of it whatever size the
+box is, and re-typing 109 and 81.8 every time the box changes is not what the
+number means.
+
+So a position carries its units. `mm` is what it was; `ratio` stores a
+proportion of the panel's width and height, resolved to millimetres once, in
+`derive()`, before anything else sees it. Everything downstream — the templates,
+the sheet layouts, the drawing, the kernel's boolean cuts — takes millimetres and
+never learns there was a choice.
+
+### Switching units moves the number, not the fitting
+
+Changing the picker converts what is stored so the fitting stays exactly where it
+is. `convertAt` does that in both directions and rounds neither: a percentage
+rounded to a tenth moves a fitting on a 218 mm panel by a fifth of a millimetre,
+and rounding it on the way back moves it again, so a fitting that had been put
+somewhere deliberately drifts every time somebody looks at the units. The stored
+number is unrounded and the field displays it rounded, which is the same
+arrangement every other length in the app already has.

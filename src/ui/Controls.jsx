@@ -6,7 +6,7 @@ import { ROUND_STEPS } from "../model/solver.js";
 import { paletteFor, colourName } from "../model/constants.js";
 import { panelColour } from "../three/palette.js";
 import { setIn, freeFaces, addPanel, removePanel, editPanel, setProjectMaterial, setProjectThickness, setEdgeTreatment, treatedEdges } from "./design.js";
-import { newFitting, describeFitting, faceAxes, hasTube, FITTING_DEFAULTS } from "../model/fittings.js";
+import { newFitting, describeFitting, faceAxes, hasTube, convertAt, FITTING_DEFAULTS } from "../model/fittings.js";
 import { fmt } from "../cutlist/cutlist.js";
 
 function Group({ title, note, children }) {
@@ -203,7 +203,7 @@ export default function Controls({ design, set, derived, colourByFace }) {
         <LayerStack design={design} set={set} layer="doubler" title="Doublers" colourByFace={colourByFace} />
       </Group>
 
-      <Group title="Fittings" note="Drivers and ports are cut into the outermost panel of their face. Position is measured from the panel's own low corner, so it reads straight off the face-on view.">
+      <Group title="Fittings" note="Drivers and ports are cut into the outermost panel of their face. Position is measured from the panel's own low corner, so it reads straight off the face-on view — or as a percentage across it, which keeps a centred driver centred when the box changes size.">
         <Fittings design={design} set={set} derived={derived} />
       </Group>
 
@@ -470,6 +470,10 @@ function Fittings({ design, set, derived }) {
 
       {list.map((f, i) => {
         const [p, q] = faceAxes(f.face);
+        const ratio = f.units === "ratio";
+        const panel = derived.fittingPanels?.[f.face];
+        // §20 Switching units moves the number, not the fitting.
+        const setUnits = (units) => edit(i, { units, at: convertAt(f, panel, units) });
         return (
           <div className="fitting" key={f.id}>
             <div className="fitting-head">
@@ -481,10 +485,17 @@ function Fittings({ design, set, derived }) {
               <button type="button" className="drop" aria-label={`Remove fitting ${i + 1}`}
                 onClick={() => put(list.filter((_, j) => j !== i))}>×</button>
             </div>
+            <div className="fitting-units">
+              <Segmented ariaLabel={`Fitting ${i + 1} units`} value={ratio ? "ratio" : "mm"}
+                onChange={setUnits}
+                options={[{ id: "mm", name: "mm" }, { id: "ratio", name: "% of panel" }]} />
+            </div>
             <div className="fitting-grid">
-              <Num label={`At ${p}`} aria={`Fitting ${i + 1} at ${p}`} suffix="mm" value={round(f.at.a)}
+              <Num label={`At ${p}`} aria={`Fitting ${i + 1} at ${p}`} suffix={ratio ? "%" : "mm"}
+                step={ratio ? 1 : 1} value={round(f.at.a)}
                 onChange={(v) => edit(i, { at: { ...f.at, a: v } })} />
-              <Num label={`At ${q}`} aria={`Fitting ${i + 1} at ${q}`} suffix="mm" value={round(f.at.b)}
+              <Num label={`At ${q}`} aria={`Fitting ${i + 1} at ${q}`} suffix={ratio ? "%" : "mm"}
+                step={ratio ? 1 : 1} value={round(f.at.b)}
                 onChange={(v) => edit(i, { at: { ...f.at, b: v } })} />
               {f.type === "driver" ? (
                 <>
