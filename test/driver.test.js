@@ -11,7 +11,7 @@ import { describe, it, expect } from "vitest";
 import * as THREE from "three";
 import {
   DEFAULT_DRIVER, DRIVER_SHAPE, driverOuter, driverProfile, driverConeFrom,
-  driverStandoff, fittingOrigin,
+  driverStandoff, fittingOrigin, fittingIssues,
 } from "../src/model/fittings.js";
 import { driverBody, aimAt, faceNormal, placeDriver, driversOn, SEAT } from "../src/three/driver.js";
 import { toThree } from "../src/three/panelGeometry.js";
@@ -220,5 +220,93 @@ describe("§22 which fittings get drawn", () => {
     const orphan = [{ ...PLUVIA, id: "c", face: "top", at: { a: 1, b: 1 } }];
     expect(driversOn(orphan, { front: panel })).toEqual([]);
     expect(driversOn(undefined, { front: panel })).toEqual([]);
+  });
+});
+
+/**
+ * §22 One driver shape, every driver.
+ *
+ * Asked directly: does it still look like a driver at 2 inches and at 15? The
+ * shape is proportions of the two numbers a datasheet gives, so it should — but
+ * "should" is what a test is for, and a number being typed passes through every
+ * value on its way to the one that was meant.
+ */
+describe("§22 the shape scales across every driver somebody might fit", () => {
+  // Cutout and frame diameter, off manufacturers' drawings.
+  const REAL = [
+    ["2in micro", 45, 57], ["3in full range", 68, 80], ["4in Pluvia", 100, 122.3],
+    ["5.25in", 116, 140], ["6.5in", 146, 170], ["8in", 184, 218],
+    ["10in", 230, 270], ["12in", 277, 315], ["15in woofer", 350, 390],
+  ];
+
+  it("draws a closed body, the width of its frame, at every size", () => {
+    for (const [name, cutout, outer] of REAL) {
+      const f = { ...DEFAULT_DRIVER, cutout, outer };
+      const profile = driverProfile(f);
+      expect(profile[0][0], name).toBe(0);
+      expect(profile.at(-1)[0], name).toBeCloseTo(0, 9);
+      expect(Math.max(...profile.map(([r]) => r)), name).toBeCloseTo(outer / 2, 9);
+    }
+  });
+
+  it("keeps every proportion in step with the driver's own size", () => {
+    // The test that would catch a stray absolute millimetre: double the driver
+    // and every part of it doubles, so a 15 inch reads the same as a 3 inch.
+    const small = driverProfile({ ...DEFAULT_DRIVER, cutout: 50, outer: 61.15 });
+    const big = driverProfile({ ...DEFAULT_DRIVER, cutout: 200, outer: 244.6 });
+    // Everything scales except the slop, which is deliberately absolute: it is
+    // a workshop clearance, not a proportion, so quadrupling the driver leaves
+    // it where it was and the two profiles differ by that much and no more.
+    const tolerance = DRIVER_SHAPE.slop * 4;
+    for (let i = 0; i < small.length; i++) {
+      expect(Math.abs(big[i][0] - small[i][0] * 4)).toBeLessThanOrEqual(tolerance);
+      expect(Math.abs(big[i][1] - small[i][1] * 4)).toBeLessThanOrEqual(tolerance);
+    }
+    // And the parts that carry no clearance scale exactly.
+    expect(big.at(-1)[1]).toBeCloseTo(small.at(-1)[1] * 4, 6);
+    expect(Math.max(...big.map(([r]) => r))).toBeCloseTo(Math.max(...small.map(([r]) => r)) * 4, 6);
+  });
+
+  it("stands further proud the bigger it gets, and never sinks in", () => {
+    let last = 0;
+    for (const [name, cutout, outer] of REAL) {
+      const proud = driverStandoff({ ...DEFAULT_DRIVER, cutout, outer });
+      expect(proud, name).toBeGreaterThan(last);
+      last = proud;
+    }
+  });
+
+  it("keeps the frame clear of the hole at every size", () => {
+    for (const [name, cutout, outer] of REAL) {
+      const profile = driverProfile({ ...DEFAULT_DRIVER, cutout, outer });
+      for (const [r, h] of profile) {
+        if (h < 0) expect(r, name).toBeLessThanOrEqual(cutout / 2 - DRIVER_SHAPE.slop + 1e-9);
+      }
+    }
+  });
+});
+
+describe("§22 a frame narrower than its own cutout", () => {
+  const impossible = { ...DEFAULT_DRIVER, cutout: 100, outer: 8 };
+
+  it("still draws something that is a driver, rather than a knot", () => {
+    // A number being typed passes through every value on the way: "8" on the
+    // road to "80" turned the contour inside out, and the body came out as a
+    // self-intersecting mess rather than as anything.
+    const profile = driverProfile(impossible);
+    expect(profile[1][0]).toBeGreaterThanOrEqual(profile[0][0]);
+    expect(profile[3][0]).toBeGreaterThanOrEqual(profile[2][0]);
+    // Clamped to the hole it covers, and no wider.
+    expect(Math.max(...profile.map(([r]) => r))).toBeCloseTo(impossible.cutout / 2, 9);
+    for (const [r, h] of profile) {
+      expect(Number.isFinite(r) && Number.isFinite(h)).toBe(true);
+    }
+  });
+
+  it("is still called what it is", () => {
+    const panel = { face: "front", layer: "shell", box: { x: [0, 300], y: [0, 18], z: [0, 400] } };
+    const f = { ...impossible, id: "x", face: "front", at: { a: 150, b: 200 } };
+    const msgs = fittingIssues([f], [panel], { front: panel }, null);
+    expect(msgs.some((m) => m.level === "error" && /fall through the hole/.test(m.text))).toBe(true);
   });
 });

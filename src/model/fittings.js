@@ -257,8 +257,13 @@ export const DRIVER_SHAPE = {
 export const driverConeFrom = (steps = 8) => 6 + steps;
 
 export function driverProfile(f, steps = 8) {
-  const Ro = driverOuter(f) / 2;
-  const Rc = f.cutout / 2;
+  const Rc = Math.max(0, f.cutout) / 2;
+  // A frame is never narrower than the hole it sits over — but a number being
+  // typed passes through every value on its way, and "8" on the road to "80" on
+  // a 100 mm cutout turned the profile inside out: the contour doubled back on
+  // itself and the body came out as a knot. Clamped, so what is drawn is always
+  // a driver; `fittingIssues` says the number is wrong.
+  const Ro = Math.max(driverOuter(f) / 2, Rc);
   const flange = driverOuter(f) * DRIVER_SHAPE.flange;
   const roll = Rc * DRIVER_SHAPE.surround;
   const cone = Rc * DRIVER_SHAPE.cone;
@@ -349,6 +354,11 @@ export function fittingIssues(fittings, panels, owners, cavity) {
       }
     }
 
+    // §22 A frame narrower than the hole it covers is not a driver.
+    if (f.type === "driver" && driverOuter(f) < f.cutout) {
+      msgs.push({ level: "error",
+        text: `${label}: the ⌀${round1(driverOuter(f))} frame is narrower than its own ⌀${f.cutout} cutout — it would fall through the hole.` });
+    }
     // §22 A frame narrower than its own bolt circle cannot be bolted down.
     if (f.type === "driver" && driverOuter(f) < f.pcd + f.boltHole) {
       msgs.push({ level: "warning",

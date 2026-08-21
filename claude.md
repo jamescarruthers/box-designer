@@ -2063,6 +2063,23 @@ In the 3D view each driver goes in a group of its own, because the explode pass
 sets `position` on everything it moves and would otherwise overwrite where on
 the panel the driver sits.
 
+### One shape, every driver
+
+Asked directly: does it still look like a driver at 2 inches and at 15? It does,
+because every part of it is a proportion of the two numbers a datasheet gives —
+a 15 inch woofer, a 6.5 inch mid and a 2 inch tweeter on one baffle each read as
+themselves. There is one length that is deliberately absolute, the half
+millimetre of clearance into the hole, and a test says so by quadrupling a
+driver and checking everything else quadruples with it.
+
+The case that did break was not a size at all. A frame narrower than its own
+cutout turns the profile inside out — the contour doubles back and the body
+comes out as a knot — and it is not an exotic input: a number being typed passes
+through every value on its way, so "8" on the road to "80" against a 100 mm
+cutout produced exactly that. The drawn radius is clamped to the hole it covers,
+so what is on screen is always a driver, and `fittingIssues` says the number is
+wrong rather than the picture quietly being nonsense.
+
 ### It needs the hole to be cut
 
 The cone is recessed below the baffle, which is where a cone is. The analytic
