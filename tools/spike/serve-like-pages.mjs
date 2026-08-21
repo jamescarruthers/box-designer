@@ -25,9 +25,14 @@ createServer(async (req, res) => {
     // Pages compresses; so does this. Everything else is byte-for-byte.
     const wants = (req.headers["accept-encoding"] ?? "").includes("gzip");
     const headers = { "Content-Type": type };
-    // §11 The kernel needs these to use more than one thread.
-    headers["Cross-Origin-Opener-Policy"] = "same-origin";
-    headers["Cross-Origin-Embedder-Policy"] = "require-corp";
+    // §11 The kernel needs these to use more than one thread. Pages CANNOT
+    // send them — the service worker is the only thing supplying them there —
+    // so BARE=1 leaves them off and makes this a real rehearsal of production
+    // rather than a friendlier version of it.
+    if (!process.env.BARE) {
+      headers["Cross-Origin-Opener-Policy"] = "same-origin";
+      headers["Cross-Origin-Embedder-Policy"] = "require-corp";
+    }
     if (wants && /\.(wasm|js|mjs|css|html|json|svg)$/.test(file)) {
       const key = `${file}:gz`;
       let gz = cache.get(key);
