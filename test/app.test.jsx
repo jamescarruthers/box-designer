@@ -389,6 +389,28 @@ describe("the app", () => {
     expect(readout(container, "Net")).not.toContain("≥");
   });
 
+  it("§29 flares the back of a cutout from the fitting's own controls", () => {
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByLabelText("Add a fitting"), { target: { value: "driver" } });
+
+    // Square to begin with, and the radius has nothing to act on.
+    const radius = screen.getByLabelText("Fitting 1 flare");
+    expect(radius.disabled).toBe(true);
+    expect(container.querySelector(".fitting .note").textContent).not.toContain("inside");
+
+    fireEvent.click(within(container.querySelector(".fitting-flare")).getByRole("button", { name: "Fillet" }));
+    expect(screen.getByLabelText("Fitting 1 flare").disabled).toBe(false);
+    expect(container.querySelector(".fitting .note").textContent).toContain("fillet inside");
+
+    // §29 The cap is the panel and the bolt circle, and it is enforced rather
+    // than merely declared: a radius typed past it comes back at it.
+    fireEvent.change(screen.getByLabelText("Fitting 1 flare"), { target: { value: "40" } });
+    expect(Number(screen.getByLabelText("Fitting 1 flare").value)).toBe(12.5);
+
+    fireEvent.click(within(container.querySelector(".fitting-flare")).getByRole("button", { name: "Square" }));
+    expect(container.querySelector(".fitting .note").textContent).not.toContain("inside");
+  });
+
   it("§13 keeps the design across a reload, and lets you get rid of it", () => {
     render(<App />);
     fireEvent.change(screen.getByLabelText("Thickness"), { target: { value: "21" } });

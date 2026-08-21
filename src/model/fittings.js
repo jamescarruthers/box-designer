@@ -10,6 +10,7 @@
 
 import { AXIS, AXES, FACE_LABEL } from "./constants.js";
 import { panelAxes } from "./solver.js";
+import { BEVEL_MARGIN } from "./bevel.js";
 
 /** The two planar axes of a face, in x, y, z order. */
 export const faceAxes = (face) => panelAxes(face).planar;
@@ -121,6 +122,50 @@ export function fittingExtent(f) {
   if (f.type === "port") return f.diameter / 2;
   return Math.max(f.cutout / 2, f.pcd / 2 + f.boltHole / 2, driverOuter(f) / 2);
 }
+
+/**
+ * §29 The bevel run round the back of a cutout, where one is asked for.
+ *
+ * A driver's hole is cut square through the baffle, and the rear corner of it
+ * is right where the cone's back wave leaves. Chamfering or rounding that
+ * corner opens the throat out into the box instead of leaving the driver
+ * breathing through a square-edged tube of baffle. On a doubled baffle it
+ * matters more, because the tube is twice as long.
+ *
+ * Only the cutout gets it. Bolt holes are clearance holes and a flare round
+ * one is a way of losing the bolt.
+ */
+/**
+ * §29 The largest flare a cutout will take, in a panel of a given thickness.
+ *
+ * Measured, twice over. Bore a hole in a bare panel and sweep the radius: it
+ * builds at every half-millimetre up to `thickness - 0.5` and refuses at the
+ * thickness itself — the §26 rule, arrived at again on a different shape, since
+ * a flare that reaches the front face has taken the material it was to be cut
+ * into.
+ *
+ * The bolt circle is the other limit and the one that bites first. A flare
+ * opens the rim outward as it goes back, and where its outer circle lands
+ * *within* the bolt holes OCCT refuses it — an 18 mm baffle took 13 mm and not
+ * 13.5, which is the rim reaching 71.5 mm against holes that start at 71. Past
+ * them it builds again, and a flare that swallows the bolt holes is not a
+ * flare, it is a bigger hole with no bolts left. So it stops short of them.
+ */
+export function largestFlare(f, thickness) {
+  if (!(thickness > 0)) return 0;
+  let most = thickness - BEVEL_MARGIN;
+  if (f?.bolts > 0 && f.pcd > 0 && f.boltHole > 0) {
+    most = Math.min(most, (f.pcd / 2 - f.boltHole / 2) - f.cutout / 2 - BEVEL_MARGIN);
+  }
+  return Math.max(0, Number(most.toFixed(4)));
+}
+
+export const cutoutFlare = (f) => {
+  const flare = f?.flare;
+  if (f?.type !== "driver" || !flare) return null;
+  if (flare.type !== "fillet" && flare.type !== "chamfer") return null;
+  return flare.radius > 0 ? flare : null;
+};
 
 /** The outside radius of a port's tube, which is what has to clear the cavity. */
 export const portOuterRadius = (f) => f.diameter / 2 + f.wall;
@@ -560,8 +605,12 @@ export function describeFitting(f) {
     // §24 The depth is in the line because it is the number that decides
     // whether the driver fits the box at all, and it is the one dimension of a
     // driver that none of the flat views can show.
+    const flare = cutoutFlare(f);
+    // §29 In the line because it is a cut somebody has to make, and the only
+    // one of a driver's holes that is not simply a diameter.
+    const back = flare ? `, ${flare.type === "fillet" ? "R" : ""}${round1(flare.radius)}${flare.type === "fillet" ? "" : " mm"} ${flare.type} inside` : "";
     return `Driver ⌀${f.cutout} in a ⌀${round1(driverOuter(f))} frame, ${round1(driverDepth(f))} deep, `
-      + `${f.bolts} × ⌀${f.boltHole} on ${f.pcd} PCD`;
+      + `${f.bolts} × ⌀${f.boltHole} on ${f.pcd} PCD${back}`;
   }
   return hasTube(f) ? `Port ⌀${f.diameter} × ${f.length}` : `Port ⌀${f.diameter}, no tube`;
 }

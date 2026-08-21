@@ -5,7 +5,7 @@ import {
   newFitting, fittingCircles, fittingExtent, fittingOwners, fittingOrigin, driverOuter,
   fittingStack, innermostOn, hasTube, DEFAULT_PORT,
   fittingIssues, describeFitting, fittingNote, faceAxes, toBlank, blankCircles,
-  portOuterRadius, DEFAULT_DRIVER,
+  portOuterRadius, DEFAULT_DRIVER, cutoutFlare, largestFlare,
 } from "../src/model/fittings.js";
 import { fittingGeometry, fittingDimensions, FACE_ON, toView } from "../src/drawing/fittings.js";
 import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
@@ -355,6 +355,50 @@ describe("§10 a fitting punches through every layer of its face", () => {
     expect(withTube).toHaveLength(1);
     expect(withTube[0].layer).toBe("doubler");
     expect(innermostOn(d.sol.panels, "back")).toBe(withTube[0]);
+  });
+
+  /**
+   * §29 A flare is cut where the hole comes out into the box.
+   *
+   * The bore goes through every layer on the face; the flare is one cut at the
+   * back of the stack. Given to all of them it would appear inside the baffle
+   * where two panels meet, which is not a place a router can reach and not a
+   * shape anybody asked for.
+   */
+  it("flares the innermost panel of the stack and no other", () => {
+    const flare = { type: "fillet", radius: 8 };
+    const d = derive({
+      ...DEFAULT_DESIGN,
+      cladding: { front: { material: "birch", thickness: 6 } },
+      doubler: { front: { material: "birch", thickness: 12 } },
+      fittings: [{ ...centred("driver"), flare }],
+    });
+    const flared = d.sol.panels.filter((p) => d.fittingsOn(p).some((f) => cutoutFlare(f)));
+    expect(flared).toHaveLength(1);
+    expect(flared[0].layer).toBe("doubler");
+    // The other two are cut, and cut square.
+    const cut = d.sol.panels.filter((p) => d.fittingsOn(p).length);
+    expect(cut).toHaveLength(3);
+  });
+
+  it("moves the flare to the carcass when nothing is behind it", () => {
+    const d = derive({ ...DEFAULT_DESIGN,
+      fittings: [{ ...centred("driver"), flare: { type: "chamfer", radius: 6 } }] });
+    const flared = d.sol.panels.filter((p) => d.fittingsOn(p).some((f) => cutoutFlare(f)));
+    expect(flared).toHaveLength(1);
+    expect(flared[0].layer).toBe("shell");
+  });
+
+  it("clamps a flare the panel behind it can no longer take", () => {
+    // Saved against a thick baffle, opened against a thin one: what comes out
+    // is the biggest flare this panel will take, not the one the kernel refuses.
+    const thin = { ...DEFAULT_DESIGN, thickness: 9,
+      thicknessBy: Object.fromEntries(["front", "back", "left", "right", "top", "bottom"].map((f) => [f, 9])) };
+    const d = derive({ ...thin, fittings: [{ ...centred("driver"), flare: { type: "fillet", radius: 16 } }] });
+    const on = d.sol.panels.flatMap((p) => d.fittingsOn(p)).filter((f) => cutoutFlare(f));
+    expect(on).toHaveLength(1);
+    expect(on[0].flare.radius).toBe(largestFlare(on[0], 9));
+    expect(on[0].flare.radius).toBe(8.5);
   });
 
   it("catches a bore that fits the carcass but runs off the doubler behind it", () => {

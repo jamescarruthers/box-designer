@@ -13,9 +13,9 @@ import {
   noEdges, uniformEdges, edgeOwners, fullLengthEdges, applicableEdges, panelBevels,
 } from "../src/model/bevel.js";
 import { PROMINENCE_PRESETS } from "../src/model/constants.js";
-import { assembly, volumeOf, panelSolid, edgesOf, edgeMidpoint, cutFittings, portTube } from "../src/occt/solids.js";
+import { assembly, volumeOf, panelSolid, edgesOf, edgeMidpoint, cutFittings, portTube, cutoutRim } from "../src/occt/solids.js";
 import { applyMitres, mitreBevels, mitreLoss } from "../src/model/mitre.js";
-import { newFitting, fittingOwners, portOuterRadius } from "../src/model/fittings.js";
+import { newFitting, fittingOwners, portOuterRadius, largestFlare, cutoutFlare } from "../src/model/fittings.js";
 import { viewGeometry, hiddenLineRemoval, isoGeometry, VIEW_AXES, ISO_VIEW } from "../src/occt/hlr.js";
 import { kernelViews } from "../src/occt/drawing.js";
 import { OPS } from "../src/occt/worker.js";
@@ -273,6 +273,89 @@ describe("§10 fittings, cut for real", () => {
   it("cuts nothing when there are no fittings", () => {
     expect(vol(cutFittings(oc, panelSolid(oc, panel(), {}), panel(), []))).toBeCloseTo(vol(solid([])), 6);
   }, 120000);
+});
+
+/**
+ * §29 The back of a driver's hole.
+ *
+ * Cut square, a driver in a doubled baffle breathes out through an inch of
+ * square-edged tube. Rounding or breaking that rear corner opens the throat
+ * into the box, and it is a real cut somebody makes with a router, so the
+ * kernel makes it too rather than the view merely suggesting it.
+ */
+describe("§29 flaring the inside of a cutout", () => {
+  const panel = () => fittingOwners(carcass().panels, ["front"]).front;
+  const at = { a: 118, b: 240 };
+  const bare = (extra = {}) => ({ ...newFitting("driver", "front", at), bolts: 0, ...extra });
+  const solid = (fittings) => cutFittings(oc, panelSolid(oc, panel(), {}), panel(), fittings);
+  const vol = (shape) => volumeOf(oc, shape);
+
+  it("finds the rim of the cutout and not the bolt holes", () => {
+    const f = newFitting("driver", "front", at);      // five bolt holes
+    const rim = cutoutRim(oc, solid([f]), panel(), f);
+    expect(rim.length).toBeGreaterThan(0);
+    // Every edge it found is the cutout's own radius from the cutout's centre.
+    for (const edge of rim) {
+      const m = edgeMidpoint(oc, edge);
+      expect(Math.hypot(m.point.x - at.a, m.point.z - at.b)).toBeCloseTo(f.cutout / 2, 6);
+    }
+  }, 120000);
+
+  it("takes material away, and more of it for a bigger radius", () => {
+    const square = vol(solid([bare()]));
+    const small = vol(solid([bare({ flare: { type: "fillet", radius: 4 } })]));
+    const big = vol(solid([bare({ flare: { type: "fillet", radius: 10 } })]));
+    expect(small).toBeLessThan(square);
+    expect(big).toBeLessThan(small);
+  }, 120000);
+
+  it("takes more away as a chamfer than as a fillet of the same radius", () => {
+    // The chamfer is the straight cut across the corner; the fillet bulges back
+    // toward it and leaves the material under the arc.
+    const R = 8;
+    const fillet = vol(solid([bare({ flare: { type: "fillet", radius: R } })]));
+    const chamfer = vol(solid([bare({ flare: { type: "chamfer", radius: R } })]));
+    expect(chamfer).toBeLessThan(fillet);
+  }, 120000);
+
+  it("leaves a square cutout alone when nothing was asked for", () => {
+    expect(cutoutFlare(bare())).toBe(null);
+    expect(cutoutFlare(bare({ flare: { type: "none", radius: 8 } }))).toBe(null);
+    expect(vol(solid([bare({ flare: { type: "none", radius: 8 } })])))
+      .toBeCloseTo(vol(solid([bare()])), 6);
+  }, 120000);
+
+  /**
+   * §29 The guard, checked against the thing it is guarding.
+   *
+   * `largestFlare` is a measurement rather than a guess — without bolt holes
+   * OCCT builds every radius up to `thickness - 0.5` and refuses the thickness
+   * itself, and with them it refuses a rim landing among the holes. A rule
+   * about what the kernel will do is worth nothing if the kernel is not asked.
+   */
+  it("builds every flare the rule allows, on a bare panel and a bolted one", () => {
+    const t = 18;
+    for (const f of [bare(), newFitting("driver", "front", at)]) {
+      const most = largestFlare(f, t);
+      expect(most).toBeGreaterThan(0);
+      for (const type of ["fillet", "chamfer"]) {
+        const shape = solid([{ ...f, flare: { type, radius: most } }]);
+        expect(vol(shape)).toBeGreaterThan(0);
+        expect(vol(shape)).toBeLessThan(vol(solid([f])));
+      }
+    }
+  }, 180000);
+
+  it("stops the bolted driver short of its bolt circle, and the bare one at the wall", () => {
+    const f = newFitting("driver", "front", at);
+    // The rim may not land among the holes: they start at pcd/2 - boltHole/2.
+    expect(f.cutout / 2 + largestFlare(f, 18)).toBeLessThan(f.pcd / 2 - f.boltHole / 2);
+    // With no bolts to reach, the wall is the only limit, and it is §26's.
+    expect(largestFlare(bare(), 18)).toBe(17.5);
+    expect(largestFlare(bare(), 12)).toBe(11.5);
+    // Nothing to cut into is nothing to cut.
+    expect(largestFlare(bare(), 0)).toBe(0);
+  });
 });
 
 describe("§4 triangles for the 3D view", () => {

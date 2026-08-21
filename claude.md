@@ -2348,3 +2348,53 @@ goes and the number stands on its own.
 
 A port needs none of this. It is a tube, its size is its size, and its
 displacement is exact.
+
+## §29 The back of the hole
+
+A driver's cutout is a hole through the baffle, and the corner where it comes
+out into the box is right where the cone's rear wave leaves. Cut square — and
+more so through a doubled baffle, where the hole is twice as long — the driver
+breathes out through a short square-edged tube. Rounding or breaking that rear
+corner opens the throat into the box, and it is a cut somebody makes with a
+router, so it is a shape the kernel makes rather than a note on a drawing.
+
+Each driver carries its own **Inside the cutout**: Square, Chamfer or Fillet,
+with the radius beside it. Only the cutout gets it; a flare round a clearance
+hole is a way of losing the bolt.
+
+### One cut, on the panel where the hole comes out
+
+The bore goes through every layer on the face — cladding, carcass, doubler —
+and the flare is one cut at the back of that stack, wherever the stack ends. So
+it is given to the innermost panel of the face and stripped from the rest:
+handed to all of them it would appear inside the baffle at a glued joint, which
+is not a place a router reaches and not a shape anybody asked for. A doubled
+front flares the doubler; an undoubled one flares the carcass.
+
+### The largest flare that will cut, measured twice
+
+Bore a hole in a bare panel and sweep the radius half a millimetre at a time.
+OCCT builds every flare up to `thickness - 0.5` and refuses the thickness
+itself — the §26 rule arrived at again on a different shape, and for the same
+reason: a flare that reaches the front face has eaten the material it was to be
+cut into.
+
+The bolt circle is the other limit and it bites first. A flare opens the rim
+outward as it goes back, and where that rim lands *among* the bolt holes the
+kernel refuses it — an 18 mm baffle took a 13 mm chamfer and not 13.5, which is
+the rim reaching 71.5 mm against holes starting at 71. Wider still it builds
+again, but a flare that swallows the bolt holes is not a flare, it is a bigger
+hole with no bolts left. So `largestFlare` stops short of them, and the control
+clamps to it — the §26 position, that an impossible shape is better prevented
+than reported.
+
+Both halves are checked against the kernel rather than argued: every radius the
+rule allows is built in the test, on a bare panel and a bolted one, fillet and
+chamfer alike.
+
+### What it looks like
+
+On the default box, from behind the exploded baffle: square is 1128 triangles
+and a hard rim, a 12 mm fillet is 2754 and a lit band curving away into the
+hole, a 12 mm chamfer is 1310 and one flat cone. The cut list says which, since
+it is a cut somebody has to make: *Driver ⌀116 … , R12 fillet inside*.

@@ -1,12 +1,12 @@
 // The design state, and everything derived from it.
 
 import { EDGES, FACES, MATERIALS, PROMINENCE_PRESETS, DEFAULT_KERF, rankFromOrder, materialById, paletteFor } from "../model/constants.js";
-import { solve, wallOf, fillFaces, skinOf, boxVolume, DEFAULT_RATIO, DEFAULT_ROUND } from "../model/solver.js";
+import { solve, wallOf, fillFaces, skinOf, boxVolume, panelThickness, DEFAULT_RATIO, DEFAULT_ROUND } from "../model/solver.js";
 import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, partialEdgeIssues } from "../model/bevel.js";
 import { mitreCheck, resolveMitres, applyMitres, mitreIssues, mitreLoss } from "../model/mitre.js";
 import { validate } from "../model/validate.js";
 import { fittingOwners, innermostOn, fittingIssues, fittingNote, hasTube, resolveFittings,
-  driverDisplacement, portDisplacement, hasDisplacement } from "../model/fittings.js";
+  driverDisplacement, portDisplacement, hasDisplacement, cutoutFlare, largestFlare } from "../model/fittings.js";
 import { buildCutList, cutListTotals } from "../cutlist/cutlist.js";
 import { nest } from "../cutlist/nest.js";
 import { buildSheet } from "../drawing/sheet.js";
@@ -367,9 +367,22 @@ export function derive(design) {
   // §20 A position can be written as a proportion of the panel it is on.
   // Resolved here, once, so nothing downstream has to know that.
   const fittings = resolveFittings(authored, fittingPanels);
-  const fittingsOn = (panel) => fittings.filter((f) => f.face === panel.face);
   // A port's tube hangs off the innermost layer, once, however many it bored.
   const tubePanels = Object.fromEntries(faces.map((f) => [f, innermostOn(sol.panels, f)]));
+  // §29 So does the flare. The bore goes through cladding, carcass and doubler
+  // alike, but "the inside of the cutout" is one place — where the hole comes
+  // out into the box — and that is the innermost panel of the stack, whichever
+  // layer happens to be innermost on that face. The radius is clamped to what
+  // that panel can take, so a design saved when the baffle was thicker comes
+  // back with a flare it can still cut rather than one the kernel refuses.
+  const flareOn = (f, panel) => {
+    const flare = cutoutFlare(f);
+    if (!flare || tubePanels[f.face] !== panel) return f.flare ? { ...f, flare: null } : f;
+    const most = largestFlare(f, panelThickness(panel));
+    return flare.radius <= most ? f : { ...f, flare: { ...flare, radius: most } };
+  };
+  const fittingsOn = (panel) => fittings.filter((f) => f.face === panel.face)
+    .map((f) => flareOn(f, panel));
   const tubesOn = (panel) =>
     fittings.filter((f) => hasTube(f) && tubePanels[f.face] === panel);
 
