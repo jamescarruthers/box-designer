@@ -2189,3 +2189,41 @@ part nobody sees:
 - a **depth shallower than the driver's own cone** is not a depth. The profile
   clamps so that what is drawn is still a driver, and the message says the
   number is wrong rather than the picture quietly being something else.
+
+## 25. One panel's failure is one panel's failure
+
+Reported as **`working: 7210856 — showing the ring-stack solids`**, with the
+observation that removing the fillets made it work again.
+
+Two faults in one line. OCCT refused a shape and threw; the throw came from the
+whole job, so six panels were replaced by a sentence because one edge on one of
+them could not be cut. And the sentence was a pointer.
+
+### Why the message was a number
+
+Emscripten throws a C++ exception as the bare address of it — `___cxa_throw`
+ends in `throw ptr`, and a number has no `message`. The worker did
+`String(error?.message ?? error)`, which on a number is the number. This build
+has no exception-message helper compiled in and no `Standard_Failure` binding,
+so the text OCCT put in the exception cannot be read back out of the pointer at
+all. What can be done is to stop pretending: a thrown number is named for what
+it is rather than printed.
+
+### Why losing one panel lost the box
+
+`meshPanels` mapped over the panels with nothing between them, so the first
+throw ended the job. It catches per panel now. A panel that will not cut comes
+back marked instead of meshed, and the views already fall back to the analytic
+ring stack for anything without positions (§4) — so what is on screen is the
+box, with one panel drawn the approximate way, and the note says which panel and
+that it happened. Six panels for one bad edge was the wrong trade.
+
+### What is still open
+
+The shape that provokes it has not been pinned down. Fillets are implicated —
+removing them clears it — but a fillet on its own does not do it: sweeping
+radius against thickness and against box size on a clean page passes at every
+size tried. An earlier sweep that appeared to indict large radii was reusing one
+page across cases and could not be reproduced from a clean one, so it is not
+evidence. The fallback above makes the fault survivable rather than fatal; it
+does not make it go away.

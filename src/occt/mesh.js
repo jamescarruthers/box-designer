@@ -118,21 +118,57 @@ export function triangulate(oc, shape, E, {
  * `sol.panels`. The edges come from the topology, not from the triangles — see
  * edges.js for why that matters at a fillet.
  */
+/**
+ * §25 What OCCT threw, in words.
+ *
+ * Emscripten throws a C++ exception as the bare pointer to it — a number, with
+ * no `message` and nothing else on it. Printed straight out that reads as
+ * `working: 7210856`, which tells somebody the kernel failed and nothing
+ * whatever about why. The build has no exception-message helper compiled in, so
+ * the number cannot be turned into the text OCCT put in it; what it can be
+ * turned into is an honest sentence saying which of the two it is.
+ */
+const REFUSED = "the geometry engine would not build this panel";
+
+export function describeShapeFailure(error) {
+  // A number is the pointer; nothing at all is a throw with nothing on it.
+  // `String(undefined)` is the word "undefined", which is truthy and useless,
+  // so the nullish check has to come before the conversion rather than after.
+  if (error == null || typeof error === "number") return REFUSED;
+  const text = String(error.message ?? error).trim();
+  return text && text !== "undefined" ? text : REFUSED;
+}
+
 export function meshPanels(oc, panels, bevelsFor, E, opts = {}) {
   const fittingsFor = opts.fittingsFor ?? (() => []);
   // Separate from the fittings: the bore goes through every layer of a face,
   // the tube hangs off the innermost one only.
   const tubesFor = opts.tubesFor ?? (() => []);
   return panels.map((panel, i) => {
-    const on = fittingsFor(i, panel);
-    const solid = panelSolid(oc, panel, bevelsFor(i, panel), on);
-    const mesh = triangulate(oc, solid, E, opts);
-    // §10 A port's tube is a separate body standing off the panel, so it meshes
-    // separately and rides along with its panel for selection and exploding.
-    const tubes = tubesFor(i, panel).map((f) => {
-      const t = portTube(oc, panel, f);
-      return { ...triangulate(oc, t, E, opts), edges: edgeSegments(oc, t, E, opts), fitting: f };
-    });
-    return { ...mesh, edges: edgeSegments(oc, solid, E, opts), tubes };
+    // §25 One panel at a time, and one panel's failure at a time.
+    //
+    // OCCT refuses shapes it cannot build — a bevel it will not run round a
+    // corner is the one that turns up — and it refuses them by throwing. Thrown
+    // from the whole job, that lost the whole box: six panels replaced by a
+    // sentence, for one edge on one of them. Caught here, the panel that could
+    // not be cut comes back marked, the other five are the kernel's own, and
+    // the views already fall back to the analytic stack for anything without
+    // positions (§4). What is on screen is then the box, with one panel drawn
+    // the approximate way, which is a great deal better than no box.
+    try {
+      const on = fittingsFor(i, panel);
+      const solid = panelSolid(oc, panel, bevelsFor(i, panel), on);
+      const mesh = triangulate(oc, solid, E, opts);
+      // §10 A port's tube is a separate body standing off the panel, so it
+      // meshes separately and rides along with its panel for selection and
+      // exploding.
+      const tubes = tubesFor(i, panel).map((f) => {
+        const t = portTube(oc, panel, f);
+        return { ...triangulate(oc, t, E, opts), edges: edgeSegments(oc, t, E, opts), fitting: f };
+      });
+      return { ...mesh, edges: edgeSegments(oc, solid, E, opts), tubes };
+    } catch (error) {
+      return { failed: describeShapeFailure(error), face: panel.face, layer: panel.layer };
+    }
   });
 }

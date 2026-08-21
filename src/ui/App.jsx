@@ -13,6 +13,7 @@ import { loadDesign, saveDesign, forgetDesign } from "./storage.js";
 import { useKernelSolids } from "./useKernelSolids.js";
 import { kernelProgress } from "../occt/kernel.js";
 import { fmt } from "../cutlist/cutlist.js";
+import { FACE_LABEL } from "../model/constants.js";
 
 /** §15 The treatments a click can apply. Mitre is here too: without it there
  *  would be no way to reach one once the list shows only what has been set. */
@@ -250,7 +251,15 @@ function solidNote(k) {
     // way to see it otherwise: GitHub Pages cannot send COOP and COEP, so the
     // service worker is the only thing supplying them and it can quietly fail.
     const how = k.threaded ? "threaded" : k.isolated ? "one thread" : "one thread, not isolated";
-    return `B-Rep, ${k.triangles} triangles, ${k.ms} ms, ${how}`;
+    const note = `B-Rep, ${k.triangles} triangles, ${k.ms} ms, ${how}`;
+    // §25 A panel the kernel would not build is drawn from the ring stack
+    // instead. Said plainly, and only when it happened: the box is on screen
+    // either way, and which panel it was is what somebody needs to know.
+    const refused = k.refused ?? [];
+    if (!refused.length) return note;
+    const which = refused.map((r) => FACE_LABEL[r.face] ?? r.face).join(", ");
+    return `${note} · ${refused.length} panel${refused.length === 1 ? "" : "s"} `
+      + `(${which}) would not cut — ring stack for ${refused.length === 1 ? "it" : "those"}`;
   }
   return "";
 }

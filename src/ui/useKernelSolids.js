@@ -44,10 +44,14 @@ export function useKernelSolids(derived, enabled, attempt = 0) {
     })
       .then((solids) => {
         if (!live) return;
+        // §25 Panels the kernel would not build come back marked rather than
+        // missing, and the views fall back to the analytic stack for those.
+        const refused = solids.filter((m) => m?.failed);
         setState({
           status: "ready", solids,
           ms: Math.round(performance.now() - t0),
-          triangles: solids.reduce((a, m) => a + m.triangles, 0),
+          triangles: solids.reduce((a, m) => a + (m.triangles ?? 0), 0),
+          refused,
           // What the worker actually did. Cross-origin isolation only says
           // threads are allowed; it does not say the pool came up, and asking
           // for parallel meshing when it has not is how the kernel hangs.

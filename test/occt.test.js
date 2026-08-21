@@ -21,7 +21,7 @@ import { kernelViews } from "../src/occt/drawing.js";
 import { OPS } from "../src/occt/worker.js";
 import { buildIsometric } from "../src/drawing/iso.js";
 import { mergeViewLines, describe as describeLines } from "../src/occt/merge.js";
-import { triangulate, meshPanels, meshVolume } from "../src/occt/mesh.js";
+import { triangulate, meshPanels, meshVolume, describeShapeFailure } from "../src/occt/mesh.js";
 import { edgeSegments } from "../src/occt/edges.js";
 import { viewLines, segEnds } from "../src/drawing/hlr.js";
 import { panelPositions, inwardCount } from "../src/three/panelGeometry.js";
@@ -523,4 +523,62 @@ describe("§11 the drawing job the worker runs", () => {
     expect(meshes).toHaveLength(sol.panels.length);
     expect(meshes.every((m) => m.positions.length > 0)).toBe(true);
   }, 180000);
+});
+
+/**
+ * §25 One panel's failure is one panel's failure.
+ *
+ * Reported as "working: 7210856 — showing the ring-stack solids": OCCT refused
+ * a shape, threw, and the whole box went with it — six panels replaced by a
+ * sentence because one edge on one of them could not be cut. And the sentence
+ * was a pointer, because Emscripten throws a C++ exception as the bare address
+ * of it and this build has no helper compiled in to read the text back out.
+ */
+describe("§25 a panel the kernel will not build", () => {
+  const sol = carcass();
+  const edges = uniformEdges("fillet", 6);
+  const owners = edgeOwners(sol.env, sol.panels);
+  const bevels = (i, p) => panelBevels(i, p, edges, owners);
+
+  it("loses that panel and no other", () => {
+    // The third panel throws the way OCCT throws: a bare number.
+    const meshes = meshPanels(oc, sol.panels, (i, p) => {
+      if (i === 2) { throw 7210856; }                    // eslint-disable-line no-throw-literal
+      return bevels(i, p);
+    }, sol.E);
+
+    expect(meshes).toHaveLength(sol.panels.length);
+    expect(meshes[2].failed).toBeTruthy();
+    expect(meshes[2].positions).toBeUndefined();
+    expect(meshes[2].face).toBe(sol.panels[2].face);
+    // Every other panel is the kernel's own work, not a casualty.
+    for (const [i, m] of meshes.entries()) {
+      if (i === 2) continue;
+      expect(m.failed, `panel ${i}`).toBeUndefined();
+      expect(m.positions.length, `panel ${i}`).toBeGreaterThan(0);
+      expect(m.triangles, `panel ${i}`).toBeGreaterThan(0);
+    }
+  });
+
+  it("says something a person can read, not an address", () => {
+    // The whole of the reported symptom: a number with no message on it.
+    expect(describeShapeFailure(7210856)).toMatch(/geometry engine/);
+    expect(describeShapeFailure(7210856)).not.toMatch(/7210856/);
+    // Anything that is a real error keeps what it said.
+    expect(describeShapeFailure(new Error("boolean failed on the front"))).toBe("boolean failed on the front");
+    expect(describeShapeFailure(undefined)).toMatch(/geometry engine/);
+  });
+
+  it("leaves the views something to fall back to", () => {
+    // §4 The viewport reads `solids[i].positions` and draws the analytic ring
+    // stack when there is none, so a marked panel is drawn the approximate way
+    // rather than not drawn — which is what makes losing one survivable.
+    const meshes = meshPanels(oc, sol.panels, (i, p) => {
+      if (i === 0) { throw 7210856; }                    // eslint-disable-line no-throw-literal
+      return bevels(i, p);
+    }, sol.E);
+    const positions = meshes[0]?.positions
+      ?? panelPositions(sol.panels[0], bevels(0, sol.panels[0]), sol.E).positions;
+    expect(positions.length).toBeGreaterThan(0);
+  });
 });
