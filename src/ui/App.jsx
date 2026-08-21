@@ -50,7 +50,13 @@ export default function App() {
   // unmounted when it is not on screen. Two views of one box, each remembering
   // where it was left.
   const [renderCamera, setRenderCamera] = useState(null);
-  const [solidEngine, setSolidEngine] = useState("analytic");
+  // §23 OpenCASCADE from the start. The analytic ring stacks are an
+  // approximation that was never asked to carry fittings — they cannot cut a
+  // hole — so a box with a driver in it is drawn wrong by the engine that used
+  // to be the default. The kernel is not a second opinion any more; it is the
+  // one that models what is being made, and the ring stacks are what is on
+  // screen while it loads and what is left if it cannot.
+  const [solidEngine, setSolidEngine] = useState("kernel");
   // §15 The armed edge tool, or null for none. Not part of the design: it is
   // what the pointer is for at this moment, not something about the box.
   const [edgeTool, setEdgeTool] = useState(null);

@@ -2074,3 +2074,51 @@ reads properly — frame, surround, cone, dust cap.
 That is not a fault in the driver. It is the analytic path being an
 approximation that was never asked to carry fittings, and the first thing that
 has made the difference plain.
+
+## 23. OpenCASCADE by default
+
+The analytic ring stacks were the default because they are instant and always
+there. §22 made the cost of that plain: they cannot cut a hole, so a box with a
+driver in it is drawn wrong by the engine that was drawing it — frame and
+surround on a solid baffle, with the cone hidden behind the panel it is recessed
+into. The kernel is not a second opinion any more. It is the one that models
+what is being made.
+
+So the app opens on it. The ring stacks are what is on screen while it loads and
+what is left if it never arrives — a fallback rather than a peer.
+
+### Nothing waits for it
+
+The panels are drawn from the ring stacks on the first frame and swapped for
+B-Rep when the kernel lands, which is machinery §11 already had for the toggle.
+Measured cold against a server that compresses the way Pages does
+(`tools/spike/serve-like-pages.mjs` — `vite preview` sends the kernel whole,
+10.6 MB against the 4.0 MB a browser really downloads, which makes any timing
+taken against it far too gloomy):
+
+| connection | box on screen | kernel in |
+| --- | --- | --- |
+| unthrottled | 0.47 s | 1.0 s |
+| 4G, 1.5 Mbit | 1.6 s | 22.4 s |
+| slow 3G, 400 kbit | 5.2 s | 83.8 s |
+
+The box is up and turnable in every one of those, with the download counting
+itself out in the corner.
+
+### Eighty-four seconds is not a stall
+
+Slow 3G finishing at 83.8 s against a 90 s deadline looks like a fault waiting
+to happen, and it is not one: the deadline is on **silence**, not on elapsed
+time (§11). Every block of bytes restarts the clock, so a download that is
+merely slow never trips it and a kernel that has actually deadlocked still does
+after ninety seconds of nothing. Worth writing down because the arithmetic looks
+alarming and the design is already right — the fix here was to check, not to
+raise a number.
+
+### What the tests had to learn
+
+Every test that mounts the app now asks for a kernel, and none of them wants ten
+megabytes of wasm in jsdom to find out whether a button works. `stubKernel`
+answers the call and never resolves, which leaves those tests looking at exactly
+what they looked at before: the analytic stacks, with the kernel still on its
+way. The toggle's own tests start from one job in flight rather than from none.

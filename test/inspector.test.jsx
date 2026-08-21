@@ -19,6 +19,14 @@ vi.mock("three", async (importOriginal) => {
   return { ...actual, WebGLRenderer: StubRenderer };
 });
 
+// §23 The kernel is the default engine now, so mounting the app asks for it.
+// Held at "still loading", which is the analytic ring stacks on screen — what
+// these tests were looking at before the default changed.
+vi.mock("../src/occt/client.js", async () => {
+  const { stubKernel } = await import("./stub-kernel.js");
+  return stubKernel().module;
+});
+
 import App from "../src/ui/App.jsx";
 import { setFaceThickness, setFaceColour, moveFace, authoredEdge, derive, DEFAULT_DESIGN } from "../src/ui/design.js";
 import { edgesOfFace, otherFace, FACES } from "../src/model/constants.js";

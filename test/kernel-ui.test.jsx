@@ -45,12 +45,21 @@ const quiet = () => vi.spyOn(console, "error").mockImplementation(() => {});
 const kernelOn = () => fireEvent.click(screen.getByRole("button", { name: "OpenCASCADE" }));
 const kernelOff = () => fireEvent.click(screen.getByRole("button", { name: "Analytic" }));
 
+// §23 The kernel is the default engine, so mounting the app already asks it for
+// a mesh: these start from one job in flight rather than from none.
+
 describe("§11 the engine toggle", () => {
-  it("asks the kernel once when switched on, and drops the job when switched off", async () => {
+  it("§23 asks the kernel for a mesh as soon as the app opens", async () => {
     render(<App />);
-    kernelOn();
     expect(calls).toHaveLength(1);
     expect(calls[0].op).toBe("mesh");
+    // And says so, rather than looking like a page that has not finished.
+    expect(screen.getByRole("button", { name: "OpenCASCADE" }).className).toContain("on");
+  });
+
+  it("drops the job when the engine is switched off", async () => {
+    render(<App />);
+    expect(calls).toHaveLength(1);
 
     kernelOff();
     // Off means off: the answer is no longer wanted, and the client is told so
@@ -60,7 +69,6 @@ describe("§11 the engine toggle", () => {
 
   it("says it is waiting rather than showing nothing at all", async () => {
     const { container } = render(<App />);
-    kernelOn();
     expect(container.querySelector(".solid-state").textContent).toMatch(/waiting for the kernel/);
 
     await act(async () => calls[0].opts.onProgress({ phase: "fetching", loaded: 4_000_000 }));
@@ -70,7 +78,6 @@ describe("§11 the engine toggle", () => {
   it("offers a way back when a job fails, and takes it", async () => {
     const hush = quiet();
     const { container } = render(<App />);
-    kernelOn();
     await act(async () => {
       calls[0].reject(new Error("the kernel stopped while working: nothing for 90 s"));
       await Promise.resolve();
@@ -89,7 +96,6 @@ describe("§11 the engine toggle", () => {
   it("switches back on after a failure without needing the design to change", async () => {
     const hush = quiet();
     render(<App />);
-    kernelOn();
     await act(async () => {
       calls[0].reject(new Error("the kernel was restarted after a stall"));
       await Promise.resolve();
@@ -103,7 +109,6 @@ describe("§11 the engine toggle", () => {
 
   it("shows the mesh once it lands, and what it cost", async () => {
     const { container } = render(<App />);
-    kernelOn();
     await act(async () => {
       calls[0].opts.onProgress({ phase: "working", isolated: true, threaded: false });
       calls[0].resolve([{ positions: new Float32Array(9), triangles: 4 }]);
