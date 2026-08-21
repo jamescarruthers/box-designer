@@ -144,6 +144,43 @@ describe("the app", () => {
     expect(readout(container, "Envelope").split(" × ").every((v) => Number(v) % 10 === 0)).toBe(true);
   });
 
+  it("§18 colours the sheet from its own range, and one panel apart from it", () => {
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByLabelText("Stock").closest(".group").querySelector("select"),
+      { target: { value: "valchromat" } });
+
+    // Valchromat is the one sheet with names for its colours.
+    const named = screen.getByLabelText("Sheet colour name");
+    expect([...named.options].map((o) => o.text)).toContain("Green Mint");
+    fireEvent.change(named, { target: { value: "#548772" } });
+
+    fireEvent.click(screen.getByLabelText("Colour per panel"));
+    fireEvent.change(screen.getByLabelText("Front colour name"), { target: { value: "#da646c" } });
+
+    // The part templates are drawn in whichever colouring is on, so with
+    // material colouring they are drawn in the colours the panels are made of.
+    fireEvent.click(screen.getByRole("button", { name: "Material" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    const fills = [...container.querySelectorAll(".parts figure svg > rect")]
+      .map((e) => e.getAttribute("fill"));
+    expect(fills).toContain("#548772");              // Green Mint, five panels
+    expect(fills).toContain("#da646c");              // Red, the front
+    expect(fills.filter((f) => f === "#548772")).toHaveLength(5);
+  });
+
+  it("§18 drops the colours when the sheet changes, rather than keeping a stale one", () => {
+    const { container } = render(<App />);
+    const sheetSelect = screen.getByLabelText("Stock").closest(".group").querySelector("select");
+    fireEvent.change(sheetSelect, { target: { value: "valchromat" } });
+    fireEvent.change(screen.getByLabelText("Sheet colour name"), { target: { value: "#da646c" } });
+    expect(screen.getByLabelText("Sheet colour").value).toBe("#da646c");
+
+    fireEvent.change(sheetSelect, { target: { value: "birch" } });
+    // Birch ply does not come in red, and the picker says so by showing birch.
+    expect(screen.getByLabelText("Sheet colour").value).toBe("#e0c48c");
+    expect(container.querySelector("[aria-label='Sheet colour name']")).toBe(null);
+  });
+
   it("reports an error when the walls meet", () => {
     const { container } = render(<App />);
     // On an internal basis the envelope grows to keep the cavity, so the walls

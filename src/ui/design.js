@@ -1,6 +1,6 @@
 // The design state, and everything derived from it.
 
-import { EDGES, FACES, MATERIALS, PROMINENCE_PRESETS, DEFAULT_KERF, rankFromOrder, materialById } from "../model/constants.js";
+import { EDGES, FACES, MATERIALS, PROMINENCE_PRESETS, DEFAULT_KERF, rankFromOrder, materialById, paletteFor } from "../model/constants.js";
 import { solve, wallOf, fillFaces, skinOf, boxVolume, DEFAULT_RATIO, DEFAULT_ROUND } from "../model/solver.js";
 import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, partialEdgeIssues } from "../model/bevel.js";
 import { mitreCheck, resolveMitres, applyMitres, mitreIssues, mitreLoss } from "../model/mitre.js";
@@ -25,6 +25,12 @@ export const DEFAULT_DESIGN = {
   // nobody can cut to and everybody has to read.
   round: DEFAULT_ROUND,
   material: DEFAULT_MATERIAL,
+  // §18 The sheet's colour. Null means the colour it comes in — birch ply is
+  // the colour birch ply is, and a design that has not said otherwise should
+  // not be carrying a hex code that happens to equal the default.
+  colour: null,
+  perPanelColour: false,
+  colourBy: {},
   stockIndex: 0,
   grainLocked: false,
   kerf: DEFAULT_KERF,
@@ -45,9 +51,24 @@ export const DEFAULT_DESIGN = {
 
 export const LAYER_KEY = { cladding: "cladding", doubler: "doubler" };
 
-/** A new cladding or doubler panel inherits the project's sheet. */
+/** A new cladding or doubler panel inherits the project's sheet, colour and all. */
 export function inheritedPanel(design) {
-  return { material: design.material, thickness: design.thickness };
+  const panel = { material: design.material, thickness: design.thickness };
+  if (design.colour) panel.colour = design.colour;
+  return panel;
+}
+
+/**
+ * §18 What colour a shell panel is.
+ *
+ * Per face when that is switched on and the face has been given one, then the
+ * project's colour, then the colour the sheet comes in. Each step is a fallback
+ * rather than a copy, so changing the sheet moves every panel that was only
+ * following it and leaves the ones that were not.
+ */
+export function shellColour(design, face) {
+  if (design.perPanelColour && design.colourBy?.[face]) return design.colourBy[face];
+  return design.colour ?? materialById(design.material).colour;
 }
 
 /** The faces a layer has no panel on yet. */
@@ -70,6 +91,13 @@ export function removePanel(design, layer, face) {
  */
 export function setProjectMaterial(design, id) {
   const next = { ...design, material: id, stockIndex: 0 };
+  // §18 A colour belongs to a range. Valchromat's Green Mint is not a thing you
+  // can order in birch ply, so changing the sheet drops the colours with it
+  // rather than carrying a number across that no longer means anything.
+  if (id !== design.material) {
+    next.colour = null;
+    next.colourBy = {};
+  }
   if (design.thickness === materialById(design.material).thickness) {
     next.thickness = materialById(id).thickness;
     next.thicknessBy = Object.fromEntries(FACES.map((f) =>
@@ -95,6 +123,8 @@ export function editPanel(design, layer, face, patch) {
   if (patch.material && patch.thickness === undefined && cur.thickness === materialById(cur.material).thickness) {
     next.thickness = materialById(patch.material).thickness;
   }
+  // §18 As above: the colour went with the old sheet unless it is being set here.
+  if (patch.material && patch.colour === undefined) delete next.colour;
   return { ...design, [layer]: { ...design[layer], [face]: next } };
 }
 
@@ -186,9 +216,14 @@ export function thicknessMap(design) {
 /** The sheet a given panel is cut from. Shell panels use the project material. */
 export function panelSpec(design, panel) {
   if (panel.layer === "shell") {
-    return { material: design.material, thickness: thicknessMap(design)[panel.face] };
+    return {
+      material: design.material,
+      thickness: thicknessMap(design)[panel.face],
+      colour: shellColour(design, panel.face),
+    };
   }
-  return design[panel.layer]?.[panel.face] ?? inheritedPanel(design);
+  const entry = design[panel.layer]?.[panel.face] ?? inheritedPanel(design);
+  return { ...entry, colour: entry.colour ?? materialById(entry.material).colour };
 }
 
 /** Stock size for a material: the project's choice for the project sheet, else the first. */
@@ -249,7 +284,8 @@ export function derive(design) {
   const specFor = (panel) => {
     const spec = panelSpec(design, panel);
     const m = materialById(spec.material);
-    return { materialId: m.id, material: m.name, colour: m.colour, grained: m.grained };
+    // §18 The panel's colour if it has been given one, the sheet's otherwise.
+    return { materialId: m.id, material: m.name, colour: spec.colour ?? m.colour, grained: m.grained };
   };
 
   // §10 A hole goes all the way: every panel on the face is cut, cladding and

@@ -102,6 +102,23 @@ input:focus, select:focus { outline: 1px solid var(--accent); border-color: var(
 .face-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
 .face-grid .field { grid-template-columns: 42px 1fr; gap: 4px; }
 
+/* §18 A colour: named where the sheet has names, picked by eye where it does
+   not, and the swatch itself is the control rather than a preview beside one. */
+.colour-field .colour-wrap { display: grid; grid-template-columns: 1fr 26px; gap: 4px; align-items: center; }
+.colour-field select, .colour-field .linkish { min-width: 0; font-size: 10.5px; }
+.colour-wrap input[type="color"], .stack-colour {
+  width: 100%; height: 20px; padding: 0; border: 1px solid var(--line-2);
+  border-radius: 2px; background: transparent; cursor: pointer;
+}
+.colour-wrap input[type="color"]::-webkit-color-swatch-wrapper,
+.stack-colour::-webkit-color-swatch-wrapper { padding: 1px; }
+.colour-wrap input[type="color"]::-webkit-color-swatch,
+.stack-colour::-webkit-color-swatch { border: 0; border-radius: 1px; }
+/* One to a row: a colour's name is a word or two and a two-column grid cuts
+   "As the sheet" down to "As tl". */
+.colour-grid { display: grid; gap: 4px; }
+.colour-grid .field { grid-template-columns: 58px 1fr; gap: 4px; }
+
 .prominence { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .prominence li {
   display: grid; grid-template-columns: 16px auto 1fr auto; align-items: center;
@@ -299,7 +316,7 @@ table.cuts .edgework { color: var(--ink-3); }
 .stack .empty { margin: 0; color: var(--ink-3); font-size: 10.5px; }
 .stack-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 .stack-list li {
-  display: grid; grid-template-columns: 1fr 54px 100px 16px; gap: 4px; align-items: center;
+  display: grid; grid-template-columns: 1fr 50px 88px 26px 16px; gap: 4px; align-items: center;
   background: var(--bg-3); padding: 3px 4px; border-radius: 2px;
 }
 .stack-face { display: flex; align-items: center; color: var(--ink-2); font-size: 11px; }
@@ -379,3 +396,15 @@ table.cuts .edgework { color: var(--ink-3); }
 .fitting-grid .field { grid-template-columns: 52px 1fr; gap: 4px; }
 .fitting-grid .field > span:first-child { font-size: 10px; }
 .fitting .note { margin: 5px 0 0; font-size: 9.5px; }
+
+/* §19 The rendered view: a canvas, and as little else as the job allows. */
+.render-mode { position: relative; width: 100%; height: 100%; }
+.render-canvas { width: 100%; height: 100%; touch-action: none; cursor: grab; }
+.render-canvas:active { cursor: grabbing; }
+.render-chips { position: absolute; left: 10px; top: 10px; }
+.render-state {
+  position: absolute; right: 10px; bottom: 10px;
+  background: rgb(20 24 29 / 0.9); border: 1px solid var(--line-2);
+  padding: 4px 10px; border-radius: 3px; color: var(--ink-3);
+  font-size: 10.5px; font-style: italic;
+}

@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { FACES, FACE_LABEL, MATERIALS, PROMINENCE_PRESETS, EDGES, edgeAxis, materialById } from "../model/constants.js";
 import { ROUND_STEPS } from "../model/solver.js";
+import { paletteFor, colourName } from "../model/constants.js";
 import { panelColour } from "../three/palette.js";
 import { setIn, freeFaces, addPanel, removePanel, editPanel, setProjectMaterial, setProjectThickness, setEdgeTreatment, treatedEdges } from "./design.js";
 import { newFitting, describeFitting, faceAxes, hasTube, FITTING_DEFAULTS } from "../model/fittings.js";
@@ -27,6 +28,47 @@ function Num({ label, value, onChange, step = 1, min = 0, suffix, list, aria, di
           disabled={disabled}
           onChange={(e) => onChange(e.target.value === "" ? 0 : Number(e.target.value))} />
         {suffix ? <em>{suffix}</em> : null}
+      </span>
+    </label>
+  );
+}
+
+/**
+ * §18 A colour, chosen by name where the sheet has names for its colours and by
+ * eye where it does not.
+ *
+ * Valchromat comes in twelve; birch ply comes in birch. So the list appears
+ * only when there is a list, and the picker is always there beside it — a
+ * design is allowed to say "this one, painted" without the app arguing.
+ *
+ * `value` of null means "as the sheet comes", which is not the same as a hex
+ * that happens to match: one follows the sheet when the sheet changes and the
+ * other does not.
+ */
+function Colour({ label, aria, material, value, onChange, inherit, inheritLabel = "As the sheet comes" }) {
+  const palette = paletteFor(material);
+  // What the swatch shows when nothing has been chosen is what the panel will
+  // actually be, not what the sheet comes in: a face following a green project
+  // is green, and a grey square there would be a plain lie.
+  const shown = value ?? inherit ?? materialById(material).colour;
+  const named = value ? colourName(material, value) : null;
+  return (
+    <label className="field colour-field">
+      <span>{label}</span>
+      <span className="colour-wrap">
+        {palette ? (
+          <select value={named ? value : (value ? "custom" : "")} aria-label={`${aria} colour name`}
+            onChange={(e) => onChange(e.target.value === "custom" ? shown : (e.target.value || null))}>
+            <option value="">{inheritLabel}</option>
+            {palette.map((c) => <option key={c.id} value={c.hex}>{c.name}</option>)}
+            <option value="custom">Something else…</option>
+          </select>
+        ) : (
+          <button type="button" className="linkish" onClick={() => onChange(null)}
+            disabled={!value}>{value ? "Clear" : inheritLabel}</button>
+        )}
+        <input type="color" value={shown} aria-label={`${aria} colour`}
+          onChange={(e) => onChange(e.target.value)} />
       </span>
     </label>
   );
@@ -123,6 +165,23 @@ export default function Controls({ design, set, derived, colourByFace }) {
             {FACES.map((f) => (
               <Num key={f} label={FACE_LABEL[f]} suffix="mm" step={0.5} value={design.thicknessBy[f]}
                 onChange={(v) => set(setIn(design, ["thicknessBy", f], v))} />
+            ))}
+          </div>
+        ) : null}
+        <Colour label="Colour" aria="Sheet" material={design.material} value={design.colour}
+          onChange={(hex) => set({ ...design, colour: hex })} />
+        <label className="check">
+          <input type="checkbox" checked={design.perPanelColour}
+            onChange={(e) => set({ ...design, perPanelColour: e.target.checked })} />
+          <span>Colour per panel</span>
+        </label>
+        {design.perPanelColour ? (
+          <div className="colour-grid">
+            {FACES.map((f) => (
+              <Colour key={f} label={FACE_LABEL[f]} aria={FACE_LABEL[f]} material={design.material}
+                value={design.colourBy?.[f] ?? null} inheritLabel="As the sheet"
+                inherit={design.colour ?? materialById(design.material).colour}
+                onChange={(hex) => set(setIn(design, ["colourBy", f], hex))} />
             ))}
           </div>
         ) : null}
@@ -365,6 +424,10 @@ function LayerStack({ design, set, layer, title, colourByFace }) {
                   onChange={(e) => set(editPanel(design, layer, face, { material: e.target.value }))}>
                   {MATERIALS.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
                 </select>
+                <input type="color" className="stack-colour"
+                  value={entry.colour ?? materialById(entry.material).colour}
+                  aria-label={`${title} ${FACE_LABEL[face]} colour`}
+                  onChange={(e) => set(editPanel(design, layer, face, { colour: e.target.value }))} />
                 <button type="button" className="drop" aria-label={`Remove ${title} ${FACE_LABEL[face]}`}
                   onClick={() => set(removePanel(design, layer, face))}>×</button>
               </li>
