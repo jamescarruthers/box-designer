@@ -12,7 +12,7 @@ import * as THREE from "three";
 import {
   DEFAULT_DRIVER, DRIVER_SHAPE, driverOuter, driverProfile, driverConeFrom,
   driverStandoff, fittingOrigin, fittingIssues, driverCone,
-  driverDisplacement, portDisplacement, revolvedVolume, clipBelow,
+  driverDisplacement, portDisplacement, revolvedVolume, clipBelow, hasVd,
 } from "../src/model/fittings.js";
 import { driverBody, aimAt, faceNormal, placeDriver, driversOn, SEAT } from "../src/three/driver.js";
 import { toThree } from "../src/three/panelGeometry.js";
@@ -435,5 +435,43 @@ describe("§27 how much a fitting displaces", () => {
     expect(portDisplacement(port)).toBeCloseTo(Math.PI * 37 * 37 * 150, 3);
     // And a port with no tube behind it takes nothing.
     expect(portDisplacement({ ...port, tube: false })).toBe(0);
+  });
+});
+
+/**
+ * §28 Vd is the datasheet's word for it, and the better number.
+ *
+ * The arithmetic of §27 draws a basket solid where a real one is half air, so
+ * it over-states what a driver takes out of a box. That matters for the figure
+ * it feeds: an over-stated displacement makes the air left over read *low*, so
+ * what the readout shows is a floor rather than an estimate scattered either
+ * side of the truth. Which of the two it got has to be answerable.
+ */
+describe("§28 a given Vd against a worked-out one", () => {
+  const PLUVIA_FULL = { ...PLUVIA, depth: 71.5, magnet: 75.8, magnetDepth: 37, coneDepth: 21 };
+
+  it("knows whether it was given one", () => {
+    expect(hasVd(PLUVIA_FULL)).toBe(false);
+    expect(hasVd({ ...PLUVIA_FULL, displaces: 180000 })).toBe(true);
+    // Zero is a given figure, not a missing one: a driver can displace nothing
+    // worth counting and saying so is different from saying nothing.
+    expect(hasVd({ ...PLUVIA_FULL, displaces: 0 })).toBe(true);
+    expect(hasVd({ ...PLUVIA_FULL, displaces: -1 })).toBe(false);
+    expect(hasVd({ ...PLUVIA_FULL, displaces: null })).toBe(false);
+  });
+
+  it("uses the given one over its own", () => {
+    const worked = driverDisplacement(PLUVIA_FULL);
+    expect(driverDisplacement({ ...PLUVIA_FULL, displaces: 180000 })).toBe(180000);
+    // And the two differ, or there would be nothing to prefer.
+    expect(worked).not.toBe(180000);
+  });
+
+  it("over-states rather than under-states, which is why the net is a floor", () => {
+    // The whole justification for showing "≥": a real Pluvia 7P is nearer
+    // 0.2 litres than the third of a litre the solid basket comes to.
+    const worked = driverDisplacement(PLUVIA_FULL);
+    expect(worked).toBeGreaterThan(200000);
+    expect(worked).toBeLessThan(500000);
   });
 });

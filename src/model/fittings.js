@@ -368,8 +368,17 @@ export function driverProfile(f, steps = 8) {
  * that gives the figure gives it as Vd; where one does, `displaces` takes it
  * and this is not used.
  */
+/**
+ * §28 Whether this driver's displacement is the datasheet's or ours.
+ *
+ * Worth being able to ask, because the two are not equally good and the net
+ * volume rests on whichever it got. A published Vd is a measurement; the
+ * arithmetic below is an over-estimate with a known reason.
+ */
+export const hasVd = (f) => Number.isFinite(f?.displaces) && f.displaces >= 0;
+
 export function driverDisplacement(f, steps = 8) {
-  if (Number.isFinite(f?.displaces) && f.displaces >= 0) return f.displaces;
+  if (hasVd(f)) return f.displaces;
   const profile = driverProfile(f, steps);
   // Clipped at the mounting face: everything in front of it is outside the box.
   const clipped = clipBelow(profile, 0);

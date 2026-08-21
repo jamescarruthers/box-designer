@@ -2317,3 +2317,20 @@ better number, and where one is given the arithmetic steps aside.
 Which is the honest position rather than a hedge. Modelling the basket as
 spokes would trade a known over-estimate for an unknown one, and the number
 that settles it is on the datasheet either way.
+
+### Vd by its own name
+
+The field is called what a datasheet calls it. Until one is given it shows
+**Vd (est.)** and the figure worked out from the drawn shape; once a real Vd is
+typed it shows **Vd**, and the arithmetic steps aside for good.
+
+The distinction is carried through to the readout, because the two are not
+equally good and the net volume rests on whichever it got. The error has a known
+*direction*: a basket drawn solid over-states what the driver displaces, so the
+air left over reads **low**. What is shown is a floor rather than a figure
+scattered either side of the truth — so where any driver is still on the
+estimate it reads `≥ 11.533 l`, and once every one has its Vd the `≥` goes and
+the number stands on its own.
+
+A port needs none of this. It is a tube, its size is its size, and its
+displacement is exact.

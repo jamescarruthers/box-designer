@@ -60,8 +60,18 @@ export default function Controls({ design, set, derived, colourByFace }) {
               it. Shown only when something is displacing, so a box with no
               fittings does not carry two identical numbers. */}
           {derived.sol.displaced > 0 ? (
-            <div><dt>Net</dt><dd title={`less ${(derived.sol.displaced / 1e6).toFixed(3)} l displaced`}>
-              {(derived.sol.netVolume / 1e6).toFixed(3)} l</dd></div>
+            <div>
+              <dt>Net</dt>
+              {/* §28 "At least", where any driver's displacement is our own
+                  arithmetic rather than its datasheet's Vd. The basket is drawn
+                  solid, so the displacement reads high and the air left over
+                  reads low — the true figure is above this one, not around it. */}
+              <dd title={derived.sol.displacedEstimated
+                ? `less ${(derived.sol.displaced / 1e6).toFixed(3)} l displaced, estimated from the shape — give each driver its Vd for the real figure`
+                : `less ${(derived.sol.displaced / 1e6).toFixed(3)} l displaced`}>
+                {derived.sol.displacedEstimated ? "≥ " : ""}{(derived.sol.netVolume / 1e6).toFixed(3)} l
+              </dd>
+            </div>
           ) : null}
         </dl>
       </Group>

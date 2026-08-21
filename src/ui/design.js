@@ -6,7 +6,7 @@ import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, pa
 import { mitreCheck, resolveMitres, applyMitres, mitreIssues, mitreLoss } from "../model/mitre.js";
 import { validate } from "../model/validate.js";
 import { fittingOwners, innermostOn, fittingIssues, fittingNote, hasTube, resolveFittings,
-  driverDisplacement, portDisplacement } from "../model/fittings.js";
+  driverDisplacement, portDisplacement, hasVd } from "../model/fittings.js";
 import { buildCutList, cutListTotals } from "../cutlist/cutlist.js";
 import { nest } from "../cutlist/nest.js";
 import { buildSheet } from "../drawing/sheet.js";
@@ -399,6 +399,12 @@ export function derive(design) {
     a + (f.type === "driver" ? driverDisplacement(f) : portDisplacement(f)), 0);
   sol.cavityVolume = boxVolume(sol.cavity);
   sol.netVolume = Math.max(0, sol.cavityVolume - sol.displaced);
+  // §28 Whether every driver's displacement came off a datasheet. A port's is
+  // exact — it is a tube, and its size is its size — so only the drivers can
+  // be guesses. Where any is, the drawn basket is solid where a real one is
+  // half air, the displacement reads high, and the net volume therefore reads
+  // *low*: what is shown is a floor, and the readout says so.
+  sol.displacedEstimated = fitted.some((f) => f.type === "driver" && !hasVd(f));
 
   const sectionAt = design.sectionAt ?? sol.E.x / 2;
 
