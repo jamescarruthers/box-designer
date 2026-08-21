@@ -80,6 +80,14 @@ input[type="number"], input[type="text"], select {
   padding: 4px 7px; border-radius: 2px; min-width: 0;
 }
 input[type="number"] { padding-right: 26px; text-align: right; }
+/* No spinner. The suffix is drawn over exactly where the arrows would be, so
+   they were never going to be seen — but they still took about 7 px out of the
+   content box, and a number input that is 79 px wide has not got 7 px to spare:
+   "163.5" came out as "163." with the tail pushed under the "mm". Arrow keys
+   still step the value; nothing is lost but the collision. */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
 input:focus, select:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
 
 .row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
@@ -474,3 +482,17 @@ table.cuts .edgework { color: var(--ink-3); }
 .inspector .edge-row input:disabled { opacity: 0.4; }
 .inspector .field { grid-template-columns: 74px 1fr; }
 .inspector .fitting-head .on-face { color: var(--ink-2); }
+
+/* A fitting's numbers, one to a row.
+ *
+ * Two columns is what the sidebar does, and at 314 px it works. The inspector
+ * is 300 px with a group's padding inside it, which leaves 127 px a column —
+ * and a number input reserves 26 px on its right for the suffix and 7 px on its
+ * left, so a 50 px box has nowhere to put its digits. It did not truncate them
+ * either: it pushed them out of view entirely, and the field read as empty.
+ *
+ * So one to a row, and the label goes back to the narrow one the fitting grid
+ * asks for — the rule above widened it for the inspector's other fields, and
+ * being later in the file it was winning here too. */
+.inspector .fitting-grid { grid-template-columns: 1fr; }
+.inspector .fitting-grid .field { grid-template-columns: 62px 1fr; gap: 6px; }
