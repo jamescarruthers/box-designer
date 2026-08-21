@@ -26,10 +26,10 @@ import {
   setEdgeTreatment, authoredEdge,
 } from "./design.js";
 
-const LAYER_LABEL = { cladding: "Cladding", shell: "Carcass", doubler: "Doubler" };
+const LAYER_LABEL = { cladding: "Cladding", shell: "Carcass", doubler: "Doubler", lagging: "Lagging" };
 
 /** The layers a face could carry, outermost first — which is how they stack. */
-const LAYER_ORDER = ["cladding", "shell", "doubler"];
+const LAYER_ORDER = ["cladding", "shell", "doubler", "lagging"];
 
 export default function Inspector({ design, set, derived, row, colourByFace, onSelect, onClose }) {
   const face = row.face;
@@ -66,7 +66,7 @@ export default function Inspector({ design, set, derived, row, colourByFace, onS
         <Sheet design={design} set={set} row={row} />
 
         <Group title="Layers on this face"
-          note="Cladding lies outside the carcass and grows the box. A doubler lies inside and eats the cavity.">
+          note="Cladding lies outside the carcass and grows the box. A doubler lies inside and eats the cavity, and lagging lines it.">
           <ul className="layer-list">
             {LAYER_ORDER.map((l) => {
               const here = onThisFace.find((r) => r.layer === l);
@@ -236,10 +236,10 @@ function FaceEdges({ design, set, derived, face }) {
                 walls this edge joins. */}
             <input type="number" min="0" step="0.5" value={radius}
               disabled={type === "mitre" || type === "none"}
-              max={largestBevelAt(derived.sol.wall, key)}
+              max={largestBevelAt(derived.sol.board ?? derived.sol.wall, key)}
               aria-label={`${FACE_LABEL[face]} ${across} edge radius`}
               onChange={(e) => set(setEdgeTreatment(design, key, type,
-                Math.min(Number(e.target.value) || 0, largestBevelAt(derived.sol.wall, key))))} />
+                Math.min(Number(e.target.value) || 0, largestBevelAt(derived.sol.board ?? derived.sol.wall, key))))} />
           </div>
         );
       })}

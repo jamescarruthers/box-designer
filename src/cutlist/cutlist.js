@@ -4,7 +4,7 @@ import { LAYERS, FACE_LABEL } from "../model/constants.js";
 import { panelBlank, panelThickness, boxVolume } from "../model/solver.js";
 import { panelBevels, panelEdgeNote } from "../model/bevel.js";
 
-const LAYER_LABEL = { cladding: "Cladding", shell: "Carcass", doubler: "Doubler" };
+const LAYER_LABEL = { cladding: "Cladding", shell: "Carcass", doubler: "Doubler", lagging: "Lagging" };
 
 /**
  * Sort by layer, then by area descending, and number after sorting so the

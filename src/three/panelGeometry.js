@@ -163,7 +163,7 @@ export function panelEdgeLoops(panel, bevels = {}, E) {
 }
 
 // §4 Explode offsets, per layer, along the face normal.
-export const EXPLODE_SCALE = { cladding: 1.5, shell: 1.0, doubler: 0.45 };
+export const EXPLODE_SCALE = { cladding: 1.5, shell: 1.0, doubler: 0.45, lagging: 0.2 };
 
 /** In three coordinates the normal is (x → s, z → s, y → −s). */
 export function explodeOffset(panel, amount) {

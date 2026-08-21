@@ -205,11 +205,21 @@ export function fittingOwners(panels, faces) {
 }
 
 /**
- * The panel a port's tube hangs off: the innermost, since the tube stands into
- * the cavity. One tube per port however many layers the bore went through.
+ * The panel a port's tube hangs off, and the one whose cutout is flared: the
+ * innermost, since the tube stands into the cavity and the flare is cut where
+ * the hole comes out. One tube per port however many layers the bore went
+ * through.
+ *
+ * §30 The lining does not count. A tube is glued into the hole in the board and
+ * passes through the felt on its way; a flare is routed, and felt is not
+ * routed. Both belong to the innermost thing made of board — which is what this
+ * returns, falling back to the whole stack in the case where a face is lining
+ * and nothing else.
  */
 export function innermostOn(panels, face) {
-  return fittingStack(panels, face).at(-1);
+  const stack = fittingStack(panels, face);
+  const board = stack.filter((p) => p.layer !== "lagging");
+  return (board.length ? board : stack).at(-1);
 }
 
 /**

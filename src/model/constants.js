@@ -47,7 +47,7 @@ export const edgesOfFace = (face) => EDGES.filter((k) => k.split("|").includes(f
 /** The other face along an edge, from the point of view of one of them. */
 export const otherFace = (key, face) => key.split("|").find((f) => f !== face);
 
-export const LAYERS = ["cladding", "shell", "doubler"];
+export const LAYERS = ["cladding", "shell", "doubler", "lagging"];
 
 // §2.1 Prominence presets. Rank 0 is most prominent.
 export const PROMINENCE_PRESETS = [
@@ -97,6 +97,33 @@ export const MATERIALS = [
 ];
 
 /**
+ * §30 What a box is lined with.
+ *
+ * Kept apart from the sheets rather than added to them. A carcass cannot be cut
+ * from felt, and a dropdown that offers it alongside birch invites exactly that
+ * mistake — so the sheet list stays the sheet list and this one is offered only
+ * where a lining is being chosen. Everything else about them matches: an id, a
+ * colour, the thicknesses they come in, and a stock size to lay parts out on,
+ * which for these is a roll's width and a length off it.
+ */
+export const LAGGINGS = [
+  { id: "felt", name: "Acoustic felt", colour: "#5c5852", grained: false, lagging: true,
+    stock: [[5000, 1000], [2000, 1000]],
+    thickness: 10, thicknesses: [6, 10, 12, 16, 20, 25] },
+  { id: "wadding", name: "Polyester wadding", colour: "#d5d2c8", grained: false, lagging: true,
+    stock: [[5000, 1500]],
+    thickness: 25, thicknesses: [12, 20, 25, 40, 50] },
+  { id: "bitumen", name: "Bitumen pad", colour: "#2e2b28", grained: false, lagging: true,
+    stock: [[1000, 500], [500, 250]],
+    thickness: 4, thicknesses: [2, 3, 4, 6] },
+  { id: "wool", name: "Long-fibre wool", colour: "#c9bfa8", grained: false, lagging: true,
+    stock: [[3000, 1000]],
+    thickness: 25, thicknesses: [15, 25, 30, 50] },
+];
+
+export const isLagging = (id) => LAGGINGS.some((m) => m.id === id);
+
+/**
  * §18 Valchromat's twelve colours.
  *
  * Dyed through rather than faced, which is the whole point of the board and the
@@ -141,6 +168,7 @@ export function colourName(materialId, hex) {
   return found?.name ?? null;
 }
 
-export const materialById = (id) => MATERIALS.find((m) => m.id === id) ?? MATERIALS[0];
+export const materialById = (id) =>
+  MATERIALS.find((m) => m.id === id) ?? LAGGINGS.find((m) => m.id === id) ?? MATERIALS[0];
 
 export const DEFAULT_KERF = 3.2;

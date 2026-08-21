@@ -8,7 +8,7 @@
 // which is a bug nobody can name.
 
 import React from "react";
-import { paletteFor, colourName, materialById, MATERIALS } from "../model/constants.js";
+import { paletteFor, colourName, materialById, MATERIALS, LAGGINGS } from "../model/constants.js";
 import { panelColour } from "../three/palette.js";
 
 export function Group({ title, note, children }) {
@@ -97,7 +97,9 @@ export function Segmented({ value, options, onChange, ariaLabel }) {
 
 /** The thicknesses each material is sold in, offered on every thickness input. */
 export function StockThicknesses() {
-  return MATERIALS.map((m) => (
+  // §30 Linings as well as sheets: the thickness box on a lagging panel offers
+  // the thicknesses felt is sold in, not the ones birch ply is.
+  return [...MATERIALS, ...LAGGINGS].map((m) => (
     <datalist id={`th-${m.id}`} key={m.id}>
       {m.thicknesses.map((t) => <option key={t} value={t} />)}
     </datalist>

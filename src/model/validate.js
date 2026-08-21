@@ -35,7 +35,9 @@ export function validate(sol, edges, asked = edges) {
     }
   }
 
-  msgs.push(...bevelIssues(asked, sol.wall, sol.skin ?? skinFrom(sol)));
+  // §30 Judged against the board rather than the whole wall: a lining behind a
+  // bevel is not something the bevel can be cut into.
+  msgs.push(...bevelIssues(asked, sol.board ?? sol.wall, sol.skin ?? skinFrom(sol)));
 
   if (!sol.closureExact) {
     msgs.push({ level: "error",

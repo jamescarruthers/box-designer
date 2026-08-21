@@ -2398,3 +2398,56 @@ On the default box, from behind the exploded baffle: square is 1128 triangles
 and a hard rim, a 12 mm fillet is 2754 and a lit band curving away into the
 hole, a 12 mm chamfer is 1310 and one flat cone. The cut list says which, since
 it is a cut somebody has to make: *Driver ⌀116 … , R12 fillet inside*.
+
+## §30 Lagging
+
+A box is lined before it is listened to: felt, wadding, bitumen pads on the
+walls. Lagging is that lining, added a face at a time exactly the way a doubler
+is, and it is a fourth application of §2's one rule — `shellLayer` again, inside
+the doubler, with the cavity being the air inside the lining rather than inside
+the boards.
+
+Which means the arithmetic comes out right without being argued into shape.
+The volume still closes to the envelope, because the same tiling that made
+three layers exact makes four exact. And a box sized to twelve litres and then
+lined with ten millimetres of felt **grows** to hold twelve litres, rather than
+quietly holding ten and a half: the lining is in the wall, and the wall is what
+the envelope is derived from. On the default box, lining every face with 10 mm
+takes 218 × 263 × 327 to 238 × 283 × 347, and the cavity stays at 12.022 l.
+
+### Linings are not sheets
+
+`LAGGINGS` is its own list — felt, wadding, bitumen, long-fibre wool — and it is
+deliberately not merged into `MATERIALS`. A carcass cannot be cut from felt, and
+a Sheet dropdown offering it invites exactly that. So the sheet list stays the
+sheet list, the lagging control is given the linings, and `materialById` looks
+in both because everything downstream — nesting, thicknesses, colour — treats
+them alike. A new lagging panel starts as the first lining at the thickness it
+comes in, rather than inheriting the project sheet the way cladding does.
+
+### The wall and the board
+
+Adding lagging to the wall introduced one real hazard, caught before it shipped:
+`largestBevel` is capped by the wall, so 10 mm of felt would have offered a
+20 mm fillet on an 18 mm carcass. That is not a rounded corner, it is a hole in
+the box with something soft showing through.
+
+So the solver returns two figures. `wall` is everything between outside and air,
+and it derives the envelope. `board` is cladding + carcass + doubler, and it is
+what a bevel may be cut into — every bevel cap and every bevel message reads it.
+Lined or bare, the limit on the default box is 17.5 mm and the message still
+says *R24 cuts through the 18 mm wall*.
+
+The same distinction runs through the fittings. A hole goes through the lining
+like everything else on that face, but the **innermost** panel — the one a port
+tube hangs off and the one whose cutout is flared (§29) — is the innermost thing
+made of *board*. A tube is glued into the hole in the baffle and passes through
+the felt on its way; a flare is routed, and felt is not routed.
+
+### Where it shows
+
+Six more parts in the cut list, labelled Lagging and nested on a roll of their
+own material rather than on the birch. Its own hatch in section — widely spaced
+and opposed, so a felted wall does not read as another board — and the sheet
+note names it. In 3D it explodes the least of any layer, since it is the last
+thing in and the first thing you would take out.

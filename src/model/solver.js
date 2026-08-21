@@ -33,8 +33,29 @@ export function fillFaces(value) {
   return Object.fromEntries(FACES.map((f) => [f, value?.[f] ?? 0]));
 }
 
-/** wall[f] = cladding[f] + thickness[f] + doubler[f] */
-export function wallOf(cladding, thickness, doubler) {
+/**
+ * wall[f] = cladding[f] + thickness[f] + doubler[f] + lagging[f]
+ *
+ * §30 Lagging is in the wall for the same reason a doubler is: it stands
+ * between the outside of the box and the air inside it. A box asked for twelve
+ * litres of cavity and then lined with ten millimetres of felt has to grow to
+ * still hold twelve, and the wall is where that is reckoned.
+ */
+export function wallOf(cladding, thickness, doubler, lagging = {}) {
+  return Object.fromEntries(FACES.map((f) =>
+    [f, (cladding[f] || 0) + (thickness[f] || 0) + (doubler[f] || 0) + (lagging[f] || 0)]));
+}
+
+/**
+ * §30 The board in a wall: everything but the lining.
+ *
+ * A bevel is cut into the outside of the box and §26's rule is that it has to
+ * leave material behind it. Felt is not that material. Counting the lining in
+ * would let a 20 mm fillet be cut on an 18 mm carcass because there was 10 mm
+ * of wadding glued behind it — which is not a rounded corner, it is a hole in
+ * the box with something soft showing through.
+ */
+export function boardOf(cladding, thickness, doubler) {
   return Object.fromEntries(FACES.map((f) =>
     [f, (cladding[f] || 0) + (thickness[f] || 0) + (doubler[f] || 0)]));
 }
@@ -128,15 +149,17 @@ export function panelThickness(panel) {
 }
 
 /**
- * Solve the whole box. Returns envelope, the three layers' panels, the cavity
+ * Solve the whole box. Returns envelope, the four layers' panels, the cavity
  * and the volume-closure residual (§2.4 invariant 2).
  */
 export function solve(input) {
   const cladding = fillFaces(input.cladding);
   const thickness = fillFaces(input.thickness);
   const doubler = fillFaces(input.doubler);
+  const lagging = fillFaces(input.lagging);
   const rank = input.rank ?? rankFromOrder(input.order ?? FACES);
-  const wall = wallOf(cladding, thickness, doubler);
+  const wall = wallOf(cladding, thickness, doubler, lagging);
+  const board = boardOf(cladding, thickness, doubler);
 
   const E = input.envelope ?? deriveEnvelope(input.start, wall,
     input.round === undefined ? 0.1 : input.round);
@@ -145,17 +168,21 @@ export function solve(input) {
   const L0 = shellLayer(env, cladding, rank, "cladding");
   const L1 = shellLayer(L0.inner, thickness, rank, "shell");
   const L2 = shellLayer(L1.inner, doubler, rank, "doubler");
+  // §30 One rule, applied four times now. The lining is the innermost of them,
+  // so the cavity is the air inside the lagging rather than inside the boards.
+  const L3 = shellLayer(L2.inner, lagging, rank, "lagging");
 
-  const panels = [...L0.parts, ...L1.parts, ...L2.parts];
-  const cavity = L2.inner;
+  const panels = [...L0.parts, ...L1.parts, ...L2.parts, ...L3.parts];
+  const cavity = L3.inner;
 
   const envVolume = boxVolume(env);
   const closure = envVolume - (panels.reduce((a, p) => a + boxVolume(p.box), 0) + boxVolume(cavity));
 
   return {
-    E, env, rank, wall, cladding, thickness, doubler,
+    E, env, rank, wall, board, cladding, thickness, doubler, lagging,
     panels, cavity, envVolume,
     carcassInner: L1.inner,          // inside the shell, before doublers
+    boardInner: L2.inner,            // §30 inside the boards, before the lining
     internal: boxSize(cavity),
     closure,
     // The invariant is exact in arithmetic; in doubles it is exact to rounding.

@@ -416,7 +416,8 @@ function dimensions(sol, L) {
 }
 
 const NOTE = "ALL DIMENSIONS IN MILLIMETRES. BRACKETED DIMENSIONS ARE FOR REFERENCE. " +
-  "HIDDEN DETAIL DASHED. HATCHING IN SECTION: COARSE = CARCASS, OPPOSED = DOUBLER, FINE = CLADDING.";
+  "HIDDEN DETAIL DASHED. HATCHING IN SECTION: COARSE = CARCASS, OPPOSED = DOUBLER, FINE = CLADDING, " +
+  "WIDE = LAGGING.";
 
 /** §6.4 One note when every edge shares a treatment, leadered labels otherwise. */
 export function edgeNote(edges) {

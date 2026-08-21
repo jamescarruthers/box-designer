@@ -411,6 +411,25 @@ describe("the app", () => {
     expect(container.querySelector(".fitting .note").textContent).not.toContain("inside");
   });
 
+  it("§30 lines a face with lagging from the sidebar, chosen off the linings", () => {
+    const { container } = render(<App />);
+    const before = container.querySelector(".modes .stat").textContent;
+
+    fireEvent.change(screen.getByLabelText("Add lagging"), { target: { value: "back" } });
+    expect(screen.getByLabelText("Lagging Back thickness").value).toBe("10");
+    expect(screen.getByLabelText("Lagging Back material").value).toBe("felt");
+    // The lining list, not the sheet list: no birch ply in it.
+    const options = [...screen.getByLabelText("Lagging Back material").options].map((o) => o.value);
+    expect(options).toContain("wadding");
+    expect(options).not.toContain("birch");
+
+    // Sized to a volume, so lining it grows the box by the lining.
+    expect(container.querySelector(".modes .stat").textContent).not.toBe(before);
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    expect([...container.querySelectorAll("table.cuts tbody tr")]
+      .some((r) => r.textContent.includes("Lagging"))).toBe(true);
+  });
+
   it("§13 keeps the design across a reload, and lets you get rid of it", () => {
     render(<App />);
     fireEvent.change(screen.getByLabelText("Thickness"), { target: { value: "21" } });
