@@ -199,10 +199,29 @@ describe("the app", () => {
     expect(container.querySelector(".messages .error").textContent).toMatch(/Internal (width|depth|height)/);
   });
 
-  it("warns when a bevel cuts past the outer skin, and errors when it cuts through the wall", () => {
+  it("§26 will not take a radius bigger than the wall it would be cut from", () => {
+    // It used to take it, call it an error, and send it to the kernel anyway —
+    // where OCCT refused the shape and threw, and the whole box was lost for
+    // one edge. Now the number cannot be entered: 40 on an 18 mm wall becomes
+    // 17.5, the largest that still leaves material behind the fillet (§26).
     const { container } = render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "Fillet" }));
-    fireEvent.change(screen.getByLabelText("Radius"), { target: { value: "40" } });
+    const radius = screen.getByLabelText("Radius");
+    fireEvent.change(radius, { target: { value: "40" } });
+    expect(Number(radius.value)).toBe(17.5);
+    // And nothing is wrong, because nothing impossible was asked for.
+    expect(container.querySelector(".messages .error")).toBe(null);
+  });
+
+  it("§26 still says so if a design arrives carrying one", () => {
+    // The cap is on the control; a design saved before it existed, or edited
+    // by hand, can still hold a radius the wall will not take. That one is
+    // dropped before the kernel sees it and the message says why — judged on
+    // what was asked for rather than on what survived.
+    localStorage.setItem("sheet-box-designer/design/1", JSON.stringify({
+      edge: { type: "fillet", radius: 40, perEdge: false, by: {} },
+    }));
+    const { container } = render(<App />);
     expect(container.querySelector(".messages .error").textContent).toContain("cuts through");
   });
 

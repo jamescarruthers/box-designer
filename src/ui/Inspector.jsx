@@ -20,6 +20,7 @@ import {
 import { fmt } from "../cutlist/cutlist.js";
 import { Group, Num, Colour, FaceSwatch } from "./fields.jsx";
 import { FittingList } from "./FittingEditor.jsx";
+import { largestBevelAt } from "../model/bevel.js";
 import {
   setFaceThickness, setFaceColour, moveFace, addPanel, removePanel, editPanel,
   setEdgeTreatment, authoredEdge,
@@ -231,10 +232,14 @@ function FaceEdges({ design, set, derived, face }) {
               <option value="fillet" disabled={!canBevel}>Fillet</option>
               <option value="mitre" disabled={!canMitre}>Mitre</option>
             </select>
+            {/* §26 The same cap as the sidebar's: the thinner of the two
+                walls this edge joins. */}
             <input type="number" min="0" step="0.5" value={radius}
               disabled={type === "mitre" || type === "none"}
+              max={largestBevelAt(derived.sol.wall, key)}
               aria-label={`${FACE_LABEL[face]} ${across} edge radius`}
-              onChange={(e) => set(setEdgeTreatment(design, key, type, Number(e.target.value) || 0))} />
+              onChange={(e) => set(setEdgeTreatment(design, key, type,
+                Math.min(Number(e.target.value) || 0, largestBevelAt(derived.sol.wall, key))))} />
           </div>
         );
       })}
