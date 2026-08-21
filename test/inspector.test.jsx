@@ -8,6 +8,8 @@
  * override on before it writes, or it either does nothing or moves all six.
  */
 import React from "react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
 
@@ -239,5 +241,44 @@ describe("§21 the inspector in the app", () => {
     fireEvent.click(screen.getByRole("button", { name: new RegExp(`Inspect the ${face} doubler`, "i") }));
     expect(container.querySelector(".inspector").getAttribute("aria-label"))
       .toBe(`${face} doubler panel`);
+  });
+});
+
+/**
+ * §21 The stylesheet, on the two points that made a field unreadable.
+ *
+ * Reported as "the fittings panel is a bit tight — the numbers are not
+ * visible", and it was worse than tight: every number input in the inspector
+ * showed nothing at all. Two causes, and neither is reachable from jsdom, which
+ * does no layout — so this reads the stylesheet and checks the two rules that
+ * have to hold. Brittle in the way a CSS test is, and worth it for a fault that
+ * empties a control without emptying its value.
+ */
+describe("§21 the fitting fields have room for their numbers", () => {
+  // From the project root: under jsdom `import.meta.url` is not a file URL.
+  const css = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
+  const at = (selector) => css.indexOf(selector);
+
+  it("gives the inspector's fitting grid one column, not two", () => {
+    // 300 px, less a group's padding, is 127 px a column — and a number input
+    // spends 33 px of its own width on padding before a digit is drawn.
+    expect(css).toMatch(/\.inspector \.fitting-grid \{[^}]*grid-template-columns:\s*1fr\s*[;}]/);
+  });
+
+  it("puts the fitting label back to its narrow width, after the wider rule", () => {
+    // The whole bug: `.inspector .field` and `.fitting-grid .field` have the
+    // same specificity, so the later one wins. The inspector's wider label was
+    // later, and it took 22 px off every fitting input in the panel.
+    const wide = at(".inspector .field {");
+    const narrow = at(".inspector .fitting-grid .field {");
+    expect(wide).toBeGreaterThan(-1);
+    expect(narrow).toBeGreaterThan(wide);
+  });
+
+  it("hides the number spinner, which is where the suffix is drawn", () => {
+    // About 7 px inside the content box, on a control that overlays its own
+    // "mm" there. It is what turned 163.5 into "163." in the sidebar.
+    expect(css).toMatch(/input\[type="number"\]::-webkit-inner-spin-button/);
+    expect(css).toMatch(/appearance:\s*textfield/);
   });
 });

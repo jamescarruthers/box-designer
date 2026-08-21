@@ -1977,3 +1977,27 @@ viewport gives up the width rather than having it drawn over. The cut list has
 three columns of its own and cannot keep them all at the same time, so it drops
 its parts column while the inspector is open — the same column the 1320 px
 breakpoint drops first, for the same reason.
+
+### The fitting fields had nowhere to put their digits
+
+Reported as "the fittings panel is a bit tight — the numbers are not visible",
+and it was worse than tight: every number input in the inspector showed nothing
+at all, suffix only. Two causes stacked.
+
+The first is specificity. `.inspector .field` and `.fitting-grid .field` have the
+same weight, so the later one wins, and the inspector's wider label was later —
+it took 22 px off every fitting input in the panel without touching the sidebar.
+The second is that two columns does not fit in 300 px. Less a group's padding
+that is 127 px a column, and a number input spends 33 px of its own width on
+padding before a digit is drawn: 7 px on the left and 26 px reserved on the
+right for the suffix. What was left was 50 px, and the value was not truncated
+but pushed out of view entirely. So the inspector puts a fitting's numbers one
+to a row, and restates the narrow label after the rule that widened it.
+
+The sidebar was clipping too, marginally: `163.5` came out as `163.`. Measuring
+the text said it fitted in the room the padding left — 36 px of digits in 44 px —
+and the screenshot said it did not, which is the useful disagreement. Chromium
+reserves about 7 px inside the content box for the number spinner, and the app
+draws its "mm" over exactly that spot, so the arrows were never going to be seen
+and were costing the width anyway. They are turned off, everywhere: arrow keys
+still step the value, and every number field in the app gained 7 px.
