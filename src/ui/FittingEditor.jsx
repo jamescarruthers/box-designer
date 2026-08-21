@@ -8,7 +8,8 @@
 
 import React from "react";
 import { FACES, FACE_LABEL } from "../model/constants.js";
-import { newFitting, describeFitting, faceAxes, hasTube, convertAt, driverOuter } from "../model/fittings.js";
+import { newFitting, describeFitting, faceAxes, hasTube, convertAt,
+  driverOuter, driverDepth, driverMagnet, driverMagnetDepth } from "../model/fittings.js";
 import { Num, Segmented, round } from "./fields.jsx";
 
 /** A new fitting, centred on the face it is being put on. */
@@ -79,6 +80,14 @@ export function FittingEditor({ fitting: f, index, edit, remove, derived, onFace
             <Num label="PCD" aria={`Fitting ${n} pcd`} suffix="mm" step={0.5} value={f.pcd} onChange={(v) => edit({ pcd: v })} />
             <Num label="Bolts" aria={`Fitting ${n} bolts`} value={f.bolts} min={2} onChange={(v) => edit({ bolts: Math.max(2, Math.round(v)) })} />
             <Num label="Bolt ⌀" aria={`Fitting ${n} boltHole`} suffix="mm" step={0.5} value={f.boltHole} onChange={(v) => edit({ boltHole: v })} />
+            {/* §24 Behind the baffle. Depth is overall and measured from the
+                mounting face, which is how a datasheet gives it. */}
+            <Num label="Depth" aria={`Fitting ${n} depth`} suffix="mm" step={0.5}
+              value={round(driverDepth(f))} onChange={(v) => edit({ depth: v })} />
+            <Num label="Magnet ⌀" aria={`Fitting ${n} magnet`} suffix="mm" step={0.5}
+              value={round(driverMagnet(f))} onChange={(v) => edit({ magnet: v })} />
+            <Num label="Magnet deep" aria={`Fitting ${n} magnetDepth`} suffix="mm" step={0.5}
+              value={round(driverMagnetDepth(f))} onChange={(v) => edit({ magnetDepth: v })} />
           </>
         ) : (
           <>
