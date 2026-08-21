@@ -1820,8 +1820,13 @@ averages the normals into one smooth surface. Roughly a quarter of the vertices
 for a curve with no steps in it.
 
 **A cap on the samples.** The render used to run until stopped, which is fine
-watching it and useless leaving it. There is a Samples box; it starts at 300 and
-the render stops itself there and says *done*. Raising it on a stopped render
+watching it and useless leaving it. There is a Samples box; it starts at 30 and
+the render stops itself there and says *done*. Thirty is a tenth of the work 300
+was, and it lands under `DENOISE_UNTIL`, so the picture it stops on is one the
+filter is still smoothing — soft rather than grainy. How long that actually
+takes is the machine's business and not something to put a number on here: on
+the software renderer in a headless container a single sample is about six
+seconds, and on a real GPU thirty of them are gone before you look up. Raising it on a stopped render
 starts it going again from where it got to — the average is still in the buffer
 — and lowering it below the current count stops it where it is. The whole of the
 bug worth guarding is `maxSamples > 0`: a cap of zero means *no cap*, and a cap
@@ -2311,26 +2316,138 @@ summing `r₁² + r₁r₂ + r₂²` gets a cylinder right and a cone wrong by a
 
 The drawn basket is a closed frustum where a real one is half air between the
 spokes, so the figure over-states what a real driver displaces. That is why
-there is a **Displaces** field: a datasheet that publishes Vd publishes the
-better number, and where one is given the arithmetic steps aside.
+there is a **Displaces** field: where a datasheet publishes the driver's
+displacement it publishes the better number, and where one is given the
+arithmetic steps aside.
 
 Which is the honest position rather than a hedge. Modelling the basket as
 spokes would trade a known over-estimate for an unknown one, and the number
 that settles it is on the datasheet either way.
 
-### Vd by its own name
+### It is not Vd, and the field does not say Vd
 
-The field is called what a datasheet calls it. Until one is given it shows
-**Vd (est.)** and the figure worked out from the drawn shape; once a real Vd is
-typed it shows **Vd**, and the arithmetic steps aside for good.
+Briefly it did, and that was wrong. **Vd** is a Thiele-Small parameter,
+Sd × Xmax: the air the *cone* sweeps at full excursion while the driver is
+working. What a cabinet's net capacity needs is the volume the driver's *body*
+occupies standing still — magnet, basket, cone and all — taking air out of the
+box whether it is playing or not. Both are volumes belonging to a driver and
+they are otherwise unrelated, so borrowing the shorter name for the other
+quantity puts a wrong figure in a right-looking box.
+
+The field is **Displaces**, in litres. Until a figure is given it reads
+**Displaces (est.)** and shows what the drawn shape works out to; type the
+datasheet's figure over it and the arithmetic steps aside for good.
 
 The distinction is carried through to the readout, because the two are not
 equally good and the net volume rests on whichever it got. The error has a known
 *direction*: a basket drawn solid over-states what the driver displaces, so the
 air left over reads **low**. What is shown is a floor rather than a figure
 scattered either side of the truth — so where any driver is still on the
-estimate it reads `≥ 11.533 l`, and once every one has its Vd the `≥` goes and
-the number stands on its own.
+estimate it reads `≥ 11.533 l`, and once every one has a real figure the `≥`
+goes and the number stands on its own.
 
 A port needs none of this. It is a tube, its size is its size, and its
 displacement is exact.
+
+## §29 The back of the hole
+
+A driver's cutout is a hole through the baffle, and the corner where it comes
+out into the box is right where the cone's rear wave leaves. Cut square — and
+more so through a doubled baffle, where the hole is twice as long — the driver
+breathes out through a short square-edged tube. Rounding or breaking that rear
+corner opens the throat into the box, and it is a cut somebody makes with a
+router, so it is a shape the kernel makes rather than a note on a drawing.
+
+Each driver carries its own **Inside the cutout**: Square, Chamfer or Fillet,
+with the radius beside it. Only the cutout gets it; a flare round a clearance
+hole is a way of losing the bolt.
+
+### One cut, on the panel where the hole comes out
+
+The bore goes through every layer on the face — cladding, carcass, doubler —
+and the flare is one cut at the back of that stack, wherever the stack ends. So
+it is given to the innermost panel of the face and stripped from the rest:
+handed to all of them it would appear inside the baffle at a glued joint, which
+is not a place a router reaches and not a shape anybody asked for. A doubled
+front flares the doubler; an undoubled one flares the carcass.
+
+### The largest flare that will cut, measured twice
+
+Bore a hole in a bare panel and sweep the radius half a millimetre at a time.
+OCCT builds every flare up to `thickness - 0.5` and refuses the thickness
+itself — the §26 rule arrived at again on a different shape, and for the same
+reason: a flare that reaches the front face has eaten the material it was to be
+cut into.
+
+The bolt circle is the other limit and it bites first. A flare opens the rim
+outward as it goes back, and where that rim lands *among* the bolt holes the
+kernel refuses it — an 18 mm baffle took a 13 mm chamfer and not 13.5, which is
+the rim reaching 71.5 mm against holes starting at 71. Wider still it builds
+again, but a flare that swallows the bolt holes is not a flare, it is a bigger
+hole with no bolts left. So `largestFlare` stops short of them, and the control
+clamps to it — the §26 position, that an impossible shape is better prevented
+than reported.
+
+Both halves are checked against the kernel rather than argued: every radius the
+rule allows is built in the test, on a bare panel and a bolted one, fillet and
+chamfer alike.
+
+### What it looks like
+
+On the default box, from behind the exploded baffle: square is 1128 triangles
+and a hard rim, a 12 mm fillet is 2754 and a lit band curving away into the
+hole, a 12 mm chamfer is 1310 and one flat cone. The cut list says which, since
+it is a cut somebody has to make: *Driver ⌀116 … , R12 fillet inside*.
+
+## §30 Lagging
+
+A box is lined before it is listened to: felt, wadding, bitumen pads on the
+walls. Lagging is that lining, added a face at a time exactly the way a doubler
+is, and it is a fourth application of §2's one rule — `shellLayer` again, inside
+the doubler, with the cavity being the air inside the lining rather than inside
+the boards.
+
+Which means the arithmetic comes out right without being argued into shape.
+The volume still closes to the envelope, because the same tiling that made
+three layers exact makes four exact. And a box sized to twelve litres and then
+lined with ten millimetres of felt **grows** to hold twelve litres, rather than
+quietly holding ten and a half: the lining is in the wall, and the wall is what
+the envelope is derived from. On the default box, lining every face with 10 mm
+takes 218 × 263 × 327 to 238 × 283 × 347, and the cavity stays at 12.022 l.
+
+### Linings are not sheets
+
+`LAGGINGS` is its own list — felt, wadding, bitumen, long-fibre wool — and it is
+deliberately not merged into `MATERIALS`. A carcass cannot be cut from felt, and
+a Sheet dropdown offering it invites exactly that. So the sheet list stays the
+sheet list, the lagging control is given the linings, and `materialById` looks
+in both because everything downstream — nesting, thicknesses, colour — treats
+them alike. A new lagging panel starts as the first lining at the thickness it
+comes in, rather than inheriting the project sheet the way cladding does.
+
+### The wall and the board
+
+Adding lagging to the wall introduced one real hazard, caught before it shipped:
+`largestBevel` is capped by the wall, so 10 mm of felt would have offered a
+20 mm fillet on an 18 mm carcass. That is not a rounded corner, it is a hole in
+the box with something soft showing through.
+
+So the solver returns two figures. `wall` is everything between outside and air,
+and it derives the envelope. `board` is cladding + carcass + doubler, and it is
+what a bevel may be cut into — every bevel cap and every bevel message reads it.
+Lined or bare, the limit on the default box is 17.5 mm and the message still
+says *R24 cuts through the 18 mm wall*.
+
+The same distinction runs through the fittings. A hole goes through the lining
+like everything else on that face, but the **innermost** panel — the one a port
+tube hangs off and the one whose cutout is flared (§29) — is the innermost thing
+made of *board*. A tube is glued into the hole in the baffle and passes through
+the felt on its way; a flare is routed, and felt is not routed.
+
+### Where it shows
+
+Six more parts in the cut list, labelled Lagging and nested on a roll of their
+own material rather than on the birch. Its own hatch in section — widely spaced
+and opposed, so a felted wall does not read as another board — and the sheet
+note names it. In 3D it explodes the least of any layer, since it is the last
+thing in and the first thing you would take out.

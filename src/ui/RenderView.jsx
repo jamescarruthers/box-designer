@@ -23,7 +23,7 @@ import {
   equirectStudio, sweepProfile, sweepShade, framing, surfaceOf, lampDirection,
   RIG, SWEEP, EXPOSURE,
 } from "../three/studio.js";
-import { loadPathTracer, SETTLED_SAMPLES } from "../render/pathtrace.js";
+import { loadPathTracer, START_SAMPLES } from "../render/pathtrace.js";
 import { driverBody, driverMaterial, placeDriver, driversOn } from "../three/driver.js";
 
 const POLAR_MIN = 0.12, POLAR_MAX = Math.PI / 2 - 0.02;   // never below the floor
@@ -147,7 +147,7 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
   // §19 How far to refine before stopping. A render is finished when it stops
   // getting better, and that is a judgement about the picture rather than a
   // number the app can know — so it is offered rather than decided.
-  const [maxSamples, setMaxSamples] = useState(SETTLED_SAMPLES);
+  const [maxSamples, setMaxSamples] = useState(START_SAMPLES);
 
   // The renderer and scene outlive a re-render, so turning the box does not
   // rebuild it and refining survives a repaint.
@@ -524,7 +524,7 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
         ) : null}
         <div className="chip-group samples">
           <label htmlFor="max-samples">Samples</label>
-          <input id="max-samples" type="number" min="1" max="5000" step="50" value={maxSamples}
+          <input id="max-samples" type="number" min="1" max="5000" step="1" value={maxSamples}
             onChange={(e) => setMaxSamples(Math.max(1, Number(e.target.value) || 1))} />
         </div>
       </div>

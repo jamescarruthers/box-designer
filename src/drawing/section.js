@@ -7,6 +7,10 @@ export const HATCH = {
   shell:    { id: "hatch-carcass",  angle: 45,  pitch: 2.2, label: "CARCASS" },
   doubler:  { id: "hatch-doubler",  angle: -45, pitch: 2.2, label: "DOUBLER" },
   cladding: { id: "hatch-cladding", angle: 45,  pitch: 1.2, label: "CLADDING" },
+  // §30 A lining is not a board and should not read as one in section. Widely
+  // spaced and the other way up, so a felted wall is told from a doubled one at
+  // a glance rather than by counting lines.
+  lagging:  { id: "hatch-lagging",  angle: -45, pitch: 4.5, label: "LAGGING" },
 };
 
 /**

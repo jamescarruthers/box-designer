@@ -1,12 +1,12 @@
 // The design state, and everything derived from it.
 
-import { EDGES, FACES, MATERIALS, PROMINENCE_PRESETS, DEFAULT_KERF, rankFromOrder, materialById, paletteFor } from "../model/constants.js";
-import { solve, wallOf, fillFaces, skinOf, boxVolume, DEFAULT_RATIO, DEFAULT_ROUND } from "../model/solver.js";
+import { EDGES, FACES, MATERIALS, LAGGINGS, PROMINENCE_PRESETS, DEFAULT_KERF, rankFromOrder, materialById, paletteFor } from "../model/constants.js";
+import { solve, wallOf, boardOf, fillFaces, skinOf, boxVolume, panelThickness, DEFAULT_RATIO, DEFAULT_ROUND } from "../model/solver.js";
 import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, partialEdgeIssues } from "../model/bevel.js";
 import { mitreCheck, resolveMitres, applyMitres, mitreIssues, mitreLoss } from "../model/mitre.js";
 import { validate } from "../model/validate.js";
 import { fittingOwners, innermostOn, fittingIssues, fittingNote, hasTube, resolveFittings,
-  driverDisplacement, portDisplacement, hasVd } from "../model/fittings.js";
+  driverDisplacement, portDisplacement, hasDisplacement, cutoutFlare, largestFlare } from "../model/fittings.js";
 import { buildCutList, cutListTotals } from "../cutlist/cutlist.js";
 import { nest } from "../cutlist/nest.js";
 import { buildSheet } from "../drawing/sheet.js";
@@ -44,16 +44,26 @@ export const DEFAULT_DESIGN = {
   // material and thickness, inherited from the project sheet and then editable.
   cladding: {},
   doubler: {},
+  // §30 The lining. Inside the doubler, added a side at a time the same way,
+  // and out of a roll rather than a sheet.
+  lagging: {},
   edge: { type: "none", radius: 12, perEdge: false, by: {} },
   // §10's biggest gap: the holes that make a box a speaker.
   fittings: [],
   sectionAt: null,
 };
 
-export const LAYER_KEY = { cladding: "cladding", doubler: "doubler" };
+export const LAYER_KEY = { cladding: "cladding", doubler: "doubler", lagging: "lagging" };
 
-/** A new cladding or doubler panel inherits the project's sheet, colour and all. */
-export function inheritedPanel(design) {
+/**
+ * A new cladding or doubler panel inherits the project's sheet, colour and all.
+ *
+ * §30 Lagging cannot: the project sheet is a board, and a lining is not made of
+ * board. It starts as the first lining material at the thickness that one comes
+ * in, and carries its own colour from there.
+ */
+export function inheritedPanel(design, layer) {
+  if (layer === "lagging") return { material: LAGGINGS[0].id, thickness: LAGGINGS[0].thickness };
   const panel = { material: design.material, thickness: design.thickness };
   if (design.colour) panel.colour = design.colour;
   return panel;
@@ -76,7 +86,7 @@ export function shellColour(design, face) {
 export const freeFaces = (design, layer) => FACES.filter((f) => !design[layer]?.[f]);
 
 export function addPanel(design, layer, face) {
-  return { ...design, [layer]: { ...design[layer], [face]: inheritedPanel(design) } };
+  return { ...design, [layer]: { ...design[layer], [face]: inheritedPanel(design, layer) } };
 }
 
 export function removePanel(design, layer, face) {
@@ -291,7 +301,7 @@ export function panelSpec(design, panel) {
       colour: shellColour(design, panel.face),
     };
   }
-  const entry = design[panel.layer]?.[panel.face] ?? inheritedPanel(design);
+  const entry = design[panel.layer]?.[panel.face] ?? inheritedPanel(design, panel.layer);
   return { ...entry, colour: entry.colour ?? materialById(entry.material).colour };
 }
 
@@ -308,10 +318,13 @@ export function derive(design) {
   const thickness = thicknessMap(design);
   const cladding = layerThickness(design.cladding);
   const doubler = layerThickness(design.doubler);
+  const lagging = layerThickness(design.lagging);
   const rank = rankFromOrder(design.order);
-  const wall = wallOf(cladding, thickness, doubler);
+  const wall = wallOf(cladding, thickness, doubler, lagging);
+  // §30 What a bevel may be cut from is the board, not the board plus the felt.
+  const board = boardOf(cladding, thickness, doubler);
 
-  const sol = solve({ start: design.start, thickness, cladding, doubler, rank, round: design.round });
+  const sol = solve({ start: design.start, thickness, cladding, doubler, lagging, rank, round: design.round });
 
   // §12 Mitres redistribute material between two panels: the one that butted
   // grows out to the corner and both are cut back 45°. Applied before anything
@@ -342,13 +355,16 @@ export function derive(design) {
   }));
   sol.skin = skinOf(cladding, thickness);
   sol.wall = wall;
+  // §30 The number every bevel control is capped by. Named `wall` where it is
+  // read, because that is the wall as far as a bevel is concerned.
+  sol.board = board;
 
   // A bevel can only be cut along an edge one panel runs the whole length of.
   const requestedEdges = edgeMap(design);
   const owners = edgeOwners(sol.env, sol.panels);
   const fullLength = fullLengthEdges(sol.env, sol.panels, owners);
   // §26 Nothing asks the kernel for a bevel the wall cannot take.
-  const edges = applicableEdges(requestedEdges, fullLength, wall);
+  const edges = applicableEdges(requestedEdges, fullLength, board);
   const material = materialById(design.material);
 
   const specFor = (panel) => {
@@ -367,9 +383,22 @@ export function derive(design) {
   // §20 A position can be written as a proportion of the panel it is on.
   // Resolved here, once, so nothing downstream has to know that.
   const fittings = resolveFittings(authored, fittingPanels);
-  const fittingsOn = (panel) => fittings.filter((f) => f.face === panel.face);
   // A port's tube hangs off the innermost layer, once, however many it bored.
   const tubePanels = Object.fromEntries(faces.map((f) => [f, innermostOn(sol.panels, f)]));
+  // §29 So does the flare. The bore goes through cladding, carcass and doubler
+  // alike, but "the inside of the cutout" is one place — where the hole comes
+  // out into the box — and that is the innermost panel of the stack, whichever
+  // layer happens to be innermost on that face. The radius is clamped to what
+  // that panel can take, so a design saved when the baffle was thicker comes
+  // back with a flare it can still cut rather than one the kernel refuses.
+  const flareOn = (f, panel) => {
+    const flare = cutoutFlare(f);
+    if (!flare || tubePanels[f.face] !== panel) return f.flare ? { ...f, flare: null } : f;
+    const most = largestFlare(f, panelThickness(panel));
+    return flare.radius <= most ? f : { ...f, flare: { ...flare, radius: most } };
+  };
+  const fittingsOn = (panel) => fittings.filter((f) => f.face === panel.face)
+    .map((f) => flareOn(f, panel));
   const tubesOn = (panel) =>
     fittings.filter((f) => hasTube(f) && tubePanels[f.face] === panel);
 
@@ -404,7 +433,7 @@ export function derive(design) {
   // be guesses. Where any is, the drawn basket is solid where a real one is
   // half air, the displacement reads high, and the net volume therefore reads
   // *low*: what is shown is a floor, and the readout says so.
-  sol.displacedEstimated = fitted.some((f) => f.type === "driver" && !hasVd(f));
+  sol.displacedEstimated = fitted.some((f) => f.type === "driver" && !hasDisplacement(f));
 
   const sectionAt = design.sectionAt ?? sol.E.x / 2;
 

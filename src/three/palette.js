@@ -6,7 +6,7 @@ export const FACE_COLOUR = {
   top: "#ac8bd8", bottom: "#6c4fa2",     // z, violet
 };
 
-export const LAYER_LIGHTNESS = { cladding: [0.02, 0.09], shell: [0, 0], doubler: [-0.05, -0.13] };
+export const LAYER_LIGHTNESS = { cladding: [0.02, 0.09], shell: [0, 0], doubler: [-0.05, -0.13], lagging: [-0.1, -0.2] };
 
 export const SELECT_EMISSIVE = 0x5f2110;
 export const ACCENT = "#e8703a";

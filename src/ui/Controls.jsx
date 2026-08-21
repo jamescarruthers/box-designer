@@ -1,7 +1,7 @@
 // §7 Control groups: starting point, material, prominence, reinforcement, edge treatment.
 
 import React, { useState } from "react";
-import { FACES, FACE_LABEL, MATERIALS, PROMINENCE_PRESETS, EDGES, edgeAxis, materialById } from "../model/constants.js";
+import { FACES, FACE_LABEL, MATERIALS, LAGGINGS, PROMINENCE_PRESETS, EDGES, edgeAxis, materialById } from "../model/constants.js";
 import { ROUND_STEPS } from "../model/solver.js";
 import { setIn, freeFaces, addPanel, removePanel, editPanel, setProjectMaterial, setProjectThickness, setEdgeTreatment, treatedEdges } from "./design.js";
 import { largestBevel, largestBevelAt } from "../model/bevel.js";
@@ -63,11 +63,12 @@ export default function Controls({ design, set, derived, colourByFace }) {
             <div>
               <dt>Net</dt>
               {/* §28 "At least", where any driver's displacement is our own
-                  arithmetic rather than its datasheet's Vd. The basket is drawn
-                  solid, so the displacement reads high and the air left over
-                  reads low — the true figure is above this one, not around it. */}
+                  arithmetic rather than a figure off its datasheet. The basket
+                  is drawn solid, so the displacement reads high and the air
+                  left over reads low — the true figure is above this one,
+                  not around it. */}
               <dd title={derived.sol.displacedEstimated
-                ? `less ${(derived.sol.displaced / 1e6).toFixed(3)} l displaced, estimated from the shape — give each driver its Vd for the real figure`
+                ? `less ${(derived.sol.displaced / 1e6).toFixed(3)} l displaced, estimated from the shape — give each driver the displacement off its datasheet for the real figure`
                 : `less ${(derived.sol.displaced / 1e6).toFixed(3)} l displaced`}>
                 {derived.sol.displacedEstimated ? "≥ " : ""}{(derived.sol.netVolume / 1e6).toFixed(3)} l
               </dd>
@@ -140,6 +141,14 @@ export default function Controls({ design, set, derived, colourByFace }) {
         <LayerStack design={design} set={set} layer="doubler" title="Doublers" colourByFace={colourByFace} />
       </Group>
 
+      {/* §30 Its own group rather than a third stack under Reinforcement: felt
+          reinforces nothing. It is added the same way and sized the same way,
+          and it is chosen from the linings rather than from the sheets. */}
+      <Group title="Lagging" note="Lining on the inside of the box, a face at a time. It sits inside the doublers and takes its thickness out of the cavity, so a box sized to a volume grows to keep it.">
+        <LayerStack design={design} set={set} layer="lagging" title="Lagging"
+          colourByFace={colourByFace} materials={LAGGINGS} />
+      </Group>
+
       <Group title="Fittings" note="Drivers and ports are cut into the outermost panel of their face. Position is measured from the panel's own low corner, so it reads straight off the face-on view — or as a percentage across it, which keeps a centred driver centred when the box changes size.">
         <FittingList design={design} set={set} derived={derived} />
       </Group>
@@ -153,9 +162,9 @@ export default function Controls({ design, set, derived, colourByFace }) {
             material it is cut from is not a bevel, and letting one be typed
             only moved the failure into the kernel. */}
         <Num label="Radius" suffix="mm" step={0.5} value={design.edge.radius}
-          max={largestBevel(derived.sol.wall)}
+          max={largestBevel(derived.sol.board ?? derived.sol.wall)}
           onChange={(v) => set(setIn(design, ["edge", "radius"], v))} />
-        <p className="note">Up to {fmt(largestBevel(derived.sol.wall))} mm: a bevel has to leave material behind it, and this applies to every edge, so the thinnest wall sets the limit.</p>
+        <p className="note">Up to {fmt(largestBevel(derived.sol.board ?? derived.sol.wall))} mm: a bevel has to leave material behind it, and this applies to every edge, so the thinnest wall sets the limit.</p>
         <label className="check">
           <input type="checkbox" checked={design.edge.perEdge}
             onChange={(e) => set(setIn(design, ["edge", "perEdge"], e.target.checked))} />
@@ -208,10 +217,10 @@ export default function Controls({ design, set, derived, colourByFace }) {
                       </select>
                       <input type="number" min="0" step="0.5" value={cur.radius ?? design.edge.radius}
                         disabled={cur.type === "mitre"}
-                        max={largestBevelAt(derived.sol.wall, k)}
+                        max={largestBevelAt(derived.sol.board ?? derived.sol.wall, k)}
                         aria-label={`${k} radius`}
                         onChange={(e) => set(setEdgeTreatment(design, k, cur.type,
-                          Math.min(Number(e.target.value) || 0, largestBevelAt(derived.sol.wall, k))))} />
+                          Math.min(Number(e.target.value) || 0, largestBevelAt(derived.sol.board ?? derived.sol.wall, k))))} />
                       <button type="button" className="drop" aria-label={`Square ${k}`}
                         title="Back to square"
                         onClick={() => set(setEdgeTreatment(design, k, "none"))}>×</button>
@@ -333,7 +342,7 @@ function Prominence({ design, set, colourByFace }) {
 }
 
 /** A list of added panels for one layer, plus a side picker to add another. */
-function LayerStack({ design, set, layer, title, colourByFace }) {
+function LayerStack({ design, set, layer, title, colourByFace, materials = MATERIALS }) {
   const entries = Object.entries(design[layer] ?? {});
   const free = freeFaces(design, layer);
   return (
@@ -366,7 +375,7 @@ function LayerStack({ design, set, layer, title, colourByFace }) {
                 <select value={entry.material}
                   aria-label={`${title} ${FACE_LABEL[face]} material`}
                   onChange={(e) => set(editPanel(design, layer, face, { material: e.target.value }))}>
-                  {MATERIALS.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                  {materials.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
                 </select>
                 <input type="color" className="stack-colour"
                   value={entry.colour ?? materialById(entry.material).colour}

@@ -10,7 +10,8 @@ import React from "react";
 import { FACES, FACE_LABEL } from "../model/constants.js";
 import { newFitting, describeFitting, faceAxes, hasTube, convertAt,
   driverOuter, driverDepth, driverMagnet, driverMagnetDepth, driverCone,
-  driverDisplacement, hasVd } from "../model/fittings.js";
+  driverDisplacement, hasDisplacement, innermostOn, largestFlare } from "../model/fittings.js";
+import { panelThickness } from "../model/solver.js";
 import { Num, Segmented, round } from "./fields.jsx";
 
 /** A new fitting, centred on the face it is being put on. */
@@ -42,6 +43,12 @@ export function FittingEditor({ fitting: f, index, edit, remove, derived, onFace
   const ratio = f.units === "ratio";
   const panel = derived.fittingPanels?.[f.face];
   const n = index + 1;
+  // §29 The flare is cut where the hole comes out into the box, so what limits
+  // it is the innermost panel on that face — the doubler if there is one, the
+  // carcass if there is not.
+  const inner = derived.sol?.panels ? innermostOn(derived.sol.panels, f.face) : null;
+  const flare = f.flare?.type && f.flare.type !== "none" ? f.flare : { type: "none", radius: 0 };
+  const mostFlare = inner ? largestFlare(f, panelThickness(inner)) : 0;
   // §20 Switching units moves the number, not the fitting.
   const setUnits = (units) => edit({ units, at: convertAt(f, panel, units) });
   return (
@@ -94,15 +101,26 @@ export function FittingEditor({ fitting: f, index, edit, remove, derived, onFace
                 guess and never the number. */}
             <Num label="Cone deep" aria={`Fitting ${n} coneDepth`} suffix="mm" step={0.5}
               value={round(driverCone(f))} onChange={(v) => edit({ coneDepth: v })} />
-            {/* §28 Vd, by its own name — it is what a datasheet calls the
-                volume a driver takes out of a box, and it is the number that
-                makes the net volume real. Until one is given, what is shown is
-                worked out from the shape that is drawn: a basket drawn solid
-                where a real one is half air, so it reads high. */}
-            <Num label={hasVd(f) ? "Vd" : "Vd (est.)"} aria={`Fitting ${n} displaces`}
+            {/* §28 The volume this driver takes out of the box by standing
+                in it — the number that makes the net volume real. Deliberately
+                not labelled Vd: that is Sd × Xmax, the air the cone sweeps
+                while it works, which is a different quantity altogether. Until
+                a figure is given, what is shown is worked out from the shape
+                that is drawn: a basket drawn solid where a real one is half
+                air, so it reads high. */}
+            <Num label={hasDisplacement(f) ? "Displaces" : "Displaces (est.)"} aria={`Fitting ${n} displaces`}
               suffix="l" step={0.01}
               value={Math.round(driverDisplacement(f) / 1e4) / 100}
               onChange={(v) => edit({ displaces: v * 1e6 })} />
+            {/* §29 The back of the hole, where the cone's rear wave leaves.
+                Square-edged it is a short tube of baffle in the way of it; the
+                radius is capped at what that panel can take and at the bolt
+                circle, so what the control offers is always a shape the kernel
+                will cut. */}
+            <Num label="Flare R" aria={`Fitting ${n} flare`} suffix="mm" step={0.5}
+              value={round(flare.radius)} max={mostFlare}
+              disabled={flare.type === "none"}
+              onChange={(v) => edit({ flare: { ...flare, radius: v } })} />
           </>
         ) : (
           <>
@@ -116,6 +134,19 @@ export function FittingEditor({ fitting: f, index, edit, remove, derived, onFace
           </>
         )}
       </div>
+      {f.type === "driver" ? (
+        <div className="fitting-flare">
+          <span className="flare-label">Inside the cutout</span>
+          <Segmented ariaLabel={`Fitting ${n} flare type`} value={flare.type}
+            onChange={(type) => edit({ flare: {
+              type,
+              // A flare turned on for the first time starts at something usable
+              // rather than at zero, which would look like nothing happening.
+              radius: flare.radius > 0 ? Math.min(flare.radius, mostFlare) : Math.min(6, mostFlare),
+            } })}
+            options={[{ id: "none", name: "Square" }, { id: "chamfer", name: "Chamfer" }, { id: "fillet", name: "Fillet" }]} />
+        </div>
+      ) : null}
       {f.type === "port" ? (
         <label className="check">
           <input type="checkbox" checked={hasTube(f)} aria-label={`Fitting ${n} tube`}

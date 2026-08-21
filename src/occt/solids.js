@@ -7,7 +7,7 @@
 // and booleans for sections and, later, cutouts.
 
 import { AXIS, PAIR, AXES, edgeKey } from "../model/constants.js";
-import { fittingCircles, faceAxes, portOuterRadius } from "../model/fittings.js";
+import { fittingCircles, faceAxes, portOuterRadius, cutoutFlare } from "../model/fittings.js";
 
 /** Every distinct edge of a shape, deduped: the explorer visits each one per face. */
 export function edgesOf(oc, shape) {
@@ -204,8 +204,53 @@ export function cutFittings(oc, shape, panel, fittings) {
       if (!(c.d > 0)) continue;
       result = new oc.BRepAlgoAPI_Cut_3(result, bore(oc, panel, f.face, c.at, c.d / 2), new oc.Message_ProgressRange_1()).Shape();
     }
+    // §29 After the hole is through, not before: the edge to be flared does not
+    // exist until the bore has made it.
+    const flare = cutoutFlare(f);
+    if (flare) result = flareCutout(oc, result, panel, f, flare);
   }
   return result;
+}
+
+/**
+ * §29 The circular edges where a cutout breaks through the inner face.
+ *
+ * Found by where they lie rather than by asking the curve what it is: a bore
+ * through a solid leaves its rim as one closed circle in some builds and as two
+ * half-arcs either side of the cylinder's seam in others, and both answer the
+ * same geometric question — a point on the inner face, the cutout's radius from
+ * its centre. Bolt holes sit at their own radius about their own centres and do
+ * not match, which is the point: a flare round a clearance hole is a way of
+ * losing the bolt.
+ */
+export function cutoutRim(oc, shape, panel, f) {
+  const [a, s] = AXIS[f.face];
+  const [p, q] = faceAxes(f.face);
+  const inner = s < 0 ? panel.box[a][1] : panel.box[a][0];
+  const radius = f.cutout / 2;
+  const out = [];
+  for (const edge of edgesOf(oc, shape)) {
+    const m = edgeMidpoint(oc, edge);
+    if (Math.abs(m.point[a] - inner) > NEAR) continue;
+    const d = Math.hypot(m.point[p] - f.at.a, m.point[q] - f.at.b);
+    if (Math.abs(d - radius) > 1e-6) continue;
+    out.push(edge);
+  }
+  return out;
+}
+
+/** §29 Round or break the back of one cutout. */
+export function flareCutout(oc, shape, panel, f, flare) {
+  const rim = cutoutRim(oc, shape, panel, f);
+  if (!rim.length) return shape;
+  if (flare.type === "chamfer") {
+    const mk = new oc.BRepFilletAPI_MakeChamfer(shape);
+    for (const edge of rim) mk.Add_2(flare.radius, edge);
+    return mk.Shape();
+  }
+  const mk = new oc.BRepFilletAPI_MakeFillet(shape, oc.ChFi3d_FilletShape.ChFi3d_Rational);
+  for (const edge of rim) mk.Add_2(flare.radius, edge);
+  return mk.Shape();
 }
 
 /** A port tube: an annulus standing off the panel's inner face into the cavity. */

@@ -12,7 +12,7 @@ import * as THREE from "three";
 import {
   DEFAULT_DRIVER, DRIVER_SHAPE, driverOuter, driverProfile, driverConeFrom,
   driverStandoff, fittingOrigin, fittingIssues, driverCone,
-  driverDisplacement, portDisplacement, revolvedVolume, clipBelow, hasVd,
+  driverDisplacement, portDisplacement, revolvedVolume, clipBelow, hasDisplacement,
 } from "../src/model/fittings.js";
 import { driverBody, aimAt, faceNormal, placeDriver, driversOn, SEAT } from "../src/three/driver.js";
 import { toThree } from "../src/three/panelGeometry.js";
@@ -424,7 +424,7 @@ describe("§27 how much a fitting displaces", () => {
 
   it("takes the datasheet's own figure over its own arithmetic", () => {
     // A real basket is half air between the spokes and the drawn one is solid,
-    // so the integration is an upper bound. Where Vd is published, it wins.
+    // so the integration is an upper bound. A published figure wins over it.
     expect(driverDisplacement({ ...PLUVIA_FULL, displaces: 200000 })).toBe(200000);
     expect(driverDisplacement({ ...PLUVIA_FULL, displaces: 0 })).toBe(0);
   });
@@ -439,7 +439,11 @@ describe("§27 how much a fitting displaces", () => {
 });
 
 /**
- * §28 Vd is the datasheet's word for it, and the better number.
+ * §28 A published displacement beats a worked-out one.
+ *
+ * Not to be confused with Vd, which is Sd × Xmax — the air the cone sweeps at
+ * full excursion. What a cabinet's net capacity needs is the volume the
+ * driver's body occupies standing still, and the two are unrelated numbers.
  *
  * The arithmetic of §27 draws a basket solid where a real one is half air, so
  * it over-states what a driver takes out of a box. That matters for the figure
@@ -447,17 +451,17 @@ describe("§27 how much a fitting displaces", () => {
  * what the readout shows is a floor rather than an estimate scattered either
  * side of the truth. Which of the two it got has to be answerable.
  */
-describe("§28 a given Vd against a worked-out one", () => {
+describe("§28 a given displacement against a worked-out one", () => {
   const PLUVIA_FULL = { ...PLUVIA, depth: 71.5, magnet: 75.8, magnetDepth: 37, coneDepth: 21 };
 
   it("knows whether it was given one", () => {
-    expect(hasVd(PLUVIA_FULL)).toBe(false);
-    expect(hasVd({ ...PLUVIA_FULL, displaces: 180000 })).toBe(true);
+    expect(hasDisplacement(PLUVIA_FULL)).toBe(false);
+    expect(hasDisplacement({ ...PLUVIA_FULL, displaces: 180000 })).toBe(true);
     // Zero is a given figure, not a missing one: a driver can displace nothing
     // worth counting and saying so is different from saying nothing.
-    expect(hasVd({ ...PLUVIA_FULL, displaces: 0 })).toBe(true);
-    expect(hasVd({ ...PLUVIA_FULL, displaces: -1 })).toBe(false);
-    expect(hasVd({ ...PLUVIA_FULL, displaces: null })).toBe(false);
+    expect(hasDisplacement({ ...PLUVIA_FULL, displaces: 0 })).toBe(true);
+    expect(hasDisplacement({ ...PLUVIA_FULL, displaces: -1 })).toBe(false);
+    expect(hasDisplacement({ ...PLUVIA_FULL, displaces: null })).toBe(false);
   });
 
   it("uses the given one over its own", () => {

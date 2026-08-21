@@ -371,6 +371,65 @@ describe("the app", () => {
     expect(screen.getByLabelText("Fitting 1 length").disabled).toBe(true);
   });
 
+  it("§28 names the driver's displacement for what it is, not Vd", () => {
+    // Vd is Sd × Xmax — the air the cone sweeps while it works. What comes out
+    // of the box's capacity is the driver's body standing still in it. The
+    // field carried the wrong name briefly; this is here so it cannot again.
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByLabelText("Add a fitting"), { target: { value: "driver" } });
+
+    const field = screen.getByLabelText("Fitting 1 displaces").closest(".field");
+    expect(field.textContent).toContain("Displaces");
+    expect(field.textContent).not.toMatch(/\bVd\b/);
+    // Estimated until a figure is given, and said so.
+    expect(field.textContent).toContain("est.");
+
+    fireEvent.change(screen.getByLabelText("Fitting 1 displaces"), { target: { value: "0.18" } });
+    expect(field.textContent).not.toContain("est.");
+    expect(readout(container, "Net")).not.toContain("≥");
+  });
+
+  it("§29 flares the back of a cutout from the fitting's own controls", () => {
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByLabelText("Add a fitting"), { target: { value: "driver" } });
+
+    // Square to begin with, and the radius has nothing to act on.
+    const radius = screen.getByLabelText("Fitting 1 flare");
+    expect(radius.disabled).toBe(true);
+    expect(container.querySelector(".fitting .note").textContent).not.toContain("inside");
+
+    fireEvent.click(within(container.querySelector(".fitting-flare")).getByRole("button", { name: "Fillet" }));
+    expect(screen.getByLabelText("Fitting 1 flare").disabled).toBe(false);
+    expect(container.querySelector(".fitting .note").textContent).toContain("fillet inside");
+
+    // §29 The cap is the panel and the bolt circle, and it is enforced rather
+    // than merely declared: a radius typed past it comes back at it.
+    fireEvent.change(screen.getByLabelText("Fitting 1 flare"), { target: { value: "40" } });
+    expect(Number(screen.getByLabelText("Fitting 1 flare").value)).toBe(12.5);
+
+    fireEvent.click(within(container.querySelector(".fitting-flare")).getByRole("button", { name: "Square" }));
+    expect(container.querySelector(".fitting .note").textContent).not.toContain("inside");
+  });
+
+  it("§30 lines a face with lagging from the sidebar, chosen off the linings", () => {
+    const { container } = render(<App />);
+    const before = container.querySelector(".modes .stat").textContent;
+
+    fireEvent.change(screen.getByLabelText("Add lagging"), { target: { value: "back" } });
+    expect(screen.getByLabelText("Lagging Back thickness").value).toBe("10");
+    expect(screen.getByLabelText("Lagging Back material").value).toBe("felt");
+    // The lining list, not the sheet list: no birch ply in it.
+    const options = [...screen.getByLabelText("Lagging Back material").options].map((o) => o.value);
+    expect(options).toContain("wadding");
+    expect(options).not.toContain("birch");
+
+    // Sized to a volume, so lining it grows the box by the lining.
+    expect(container.querySelector(".modes .stat").textContent).not.toBe(before);
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    expect([...container.querySelectorAll("table.cuts tbody tr")]
+      .some((r) => r.textContent.includes("Lagging"))).toBe(true);
+  });
+
   it("§13 keeps the design across a reload, and lets you get rid of it", () => {
     render(<App />);
     fireEvent.change(screen.getByLabelText("Thickness"), { target: { value: "21" } });
