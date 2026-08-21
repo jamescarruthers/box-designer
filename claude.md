@@ -1820,8 +1820,13 @@ averages the normals into one smooth surface. Roughly a quarter of the vertices
 for a curve with no steps in it.
 
 **A cap on the samples.** The render used to run until stopped, which is fine
-watching it and useless leaving it. There is a Samples box; it starts at 300 and
-the render stops itself there and says *done*. Raising it on a stopped render
+watching it and useless leaving it. There is a Samples box; it starts at 30 and
+the render stops itself there and says *done*. Thirty is a tenth of the work 300
+was, and it lands under `DENOISE_UNTIL`, so the picture it stops on is one the
+filter is still smoothing — soft rather than grainy. How long that actually
+takes is the machine's business and not something to put a number on here: on
+the software renderer in a headless container a single sample is about six
+seconds, and on a real GPU thirty of them are gone before you look up. Raising it on a stopped render
 starts it going again from where it got to — the average is still in the buffer
 — and lowering it below the current count stops it where it is. The whole of the
 bug worth guarding is `maxSamples > 0`: a cap of zero means *no cap*, and a cap
@@ -2311,26 +2316,35 @@ summing `r₁² + r₁r₂ + r₂²` gets a cylinder right and a cone wrong by a
 
 The drawn basket is a closed frustum where a real one is half air between the
 spokes, so the figure over-states what a real driver displaces. That is why
-there is a **Displaces** field: a datasheet that publishes Vd publishes the
-better number, and where one is given the arithmetic steps aside.
+there is a **Displaces** field: where a datasheet publishes the driver's
+displacement it publishes the better number, and where one is given the
+arithmetic steps aside.
 
 Which is the honest position rather than a hedge. Modelling the basket as
 spokes would trade a known over-estimate for an unknown one, and the number
 that settles it is on the datasheet either way.
 
-### Vd by its own name
+### It is not Vd, and the field does not say Vd
 
-The field is called what a datasheet calls it. Until one is given it shows
-**Vd (est.)** and the figure worked out from the drawn shape; once a real Vd is
-typed it shows **Vd**, and the arithmetic steps aside for good.
+Briefly it did, and that was wrong. **Vd** is a Thiele-Small parameter,
+Sd × Xmax: the air the *cone* sweeps at full excursion while the driver is
+working. What a cabinet's net capacity needs is the volume the driver's *body*
+occupies standing still — magnet, basket, cone and all — taking air out of the
+box whether it is playing or not. Both are volumes belonging to a driver and
+they are otherwise unrelated, so borrowing the shorter name for the other
+quantity puts a wrong figure in a right-looking box.
+
+The field is **Displaces**, in litres. Until a figure is given it reads
+**Displaces (est.)** and shows what the drawn shape works out to; type the
+datasheet's figure over it and the arithmetic steps aside for good.
 
 The distinction is carried through to the readout, because the two are not
 equally good and the net volume rests on whichever it got. The error has a known
 *direction*: a basket drawn solid over-states what the driver displaces, so the
 air left over reads **low**. What is shown is a floor rather than a figure
 scattered either side of the truth — so where any driver is still on the
-estimate it reads `≥ 11.533 l`, and once every one has its Vd the `≥` goes and
-the number stands on its own.
+estimate it reads `≥ 11.533 l`, and once every one has a real figure the `≥`
+goes and the number stands on its own.
 
 A port needs none of this. It is a tube, its size is its size, and its
 displacement is exact.

@@ -12,7 +12,7 @@
  */
 import { describe, it, expect } from "vitest";
 import * as THREE from "three";
-import { traceSize, tilesFor, TRACE_PIXEL_CAP, SETTLED_SAMPLES, capReached } from "../src/render/pathtrace.js";
+import { traceSize, tilesFor, TRACE_PIXEL_CAP, START_SAMPLES, DENOISE_UNTIL, capReached } from "../src/render/pathtrace.js";
 import { withColour, traceNote } from "../src/ui/RenderView.jsx";
 
 const pixels = ([w, h]) => w * h;
@@ -62,8 +62,11 @@ describe("§19 a frame is split only when it is worth splitting", () => {
     expect(tilesFor([1752, 1256])).toBeGreaterThan(1);
   });
 
-  it("settles at a number of samples worth waiting for", () => {
-    expect(SETTLED_SAMPLES).toBeGreaterThan(50);
+  it("starts at a cap that comes back while somebody is still looking", () => {
+    // Small on purpose: the first picture is meant to arrive in a second or
+    // two. Anyone who wants it properly averaged raises the box.
+    expect(START_SAMPLES).toBeGreaterThan(0);
+    expect(START_SAMPLES).toBeLessThanOrEqual(50);
   });
 });
 
@@ -128,9 +131,15 @@ describe("§19 the sample cap", () => {
     expect(capReached(5000, 0)).toBe(false);
   });
 
-  it("starts at a cap somebody would be happy to wait for", () => {
-    expect(SETTLED_SAMPLES).toBeGreaterThan(50);
-    expect(capReached(SETTLED_SAMPLES, SETTLED_SAMPLES)).toBe(true);
+  it("stops itself at the cap it starts with", () => {
+    expect(capReached(START_SAMPLES, START_SAMPLES)).toBe(true);
+    expect(capReached(START_SAMPLES - 1, START_SAMPLES)).toBe(false);
+  });
+
+  it("finishes the starting render denoised, so a quick one is soft not grainy", () => {
+    // Under DENOISE_UNTIL the accumulated image is filtered on its way to the
+    // screen. A cap above it would end on a frame the filter had let go of.
+    expect(START_SAMPLES).toBeLessThan(DENOISE_UNTIL);
   });
 });
 

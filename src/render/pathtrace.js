@@ -17,8 +17,16 @@
 import * as THREE from "three";
 import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 
-/** What the sample cap starts at. The view offers it; nothing enforces it here. */
-export const SETTLED_SAMPLES = 300;
+/**
+ * What the sample cap starts at. The view offers it; nothing enforces it here.
+ *
+ * Low on purpose: a tenth of the work the old 300 was, and under
+ * `DENOISE_UNTIL`, so the frame it stops on is still being filtered on its way
+ * to the screen and comes out soft rather than grainy. Anyone who wants the
+ * noise properly averaged out types a bigger number into the box and the
+ * render carries on from where it got to rather than starting over.
+ */
+export const START_SAMPLES = 30;
 
 /**
  * Below this many samples the frame is denoised on its way to the screen.
@@ -147,7 +155,6 @@ export async function loadPathTracer({ renderer, scene, camera, environment, siz
   return {
     running: false,
     get samples() { return Math.floor(tracer.samples); },
-    get settled() { return tracer.samples >= SETTLED_SAMPLES; },
 
     /**
      * The cap the view asked for. Zero is no cap: it refines until stopped.

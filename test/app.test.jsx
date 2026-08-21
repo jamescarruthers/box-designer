@@ -371,6 +371,24 @@ describe("the app", () => {
     expect(screen.getByLabelText("Fitting 1 length").disabled).toBe(true);
   });
 
+  it("§28 names the driver's displacement for what it is, not Vd", () => {
+    // Vd is Sd × Xmax — the air the cone sweeps while it works. What comes out
+    // of the box's capacity is the driver's body standing still in it. The
+    // field carried the wrong name briefly; this is here so it cannot again.
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByLabelText("Add a fitting"), { target: { value: "driver" } });
+
+    const field = screen.getByLabelText("Fitting 1 displaces").closest(".field");
+    expect(field.textContent).toContain("Displaces");
+    expect(field.textContent).not.toMatch(/\bVd\b/);
+    // Estimated until a figure is given, and said so.
+    expect(field.textContent).toContain("est.");
+
+    fireEvent.change(screen.getByLabelText("Fitting 1 displaces"), { target: { value: "0.18" } });
+    expect(field.textContent).not.toContain("est.");
+    expect(readout(container, "Net")).not.toContain("≥");
+  });
+
   it("§13 keeps the design across a reload, and lets you get rid of it", () => {
     render(<App />);
     fireEvent.change(screen.getByLabelText("Thickness"), { target: { value: "21" } });

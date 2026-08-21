@@ -364,21 +364,28 @@ export function driverProfile(f, steps = 8) {
  *
  * It is an **upper bound**, and deliberately so. The profile draws a basket as
  * a closed cone frustum where a real one is half air between the spokes, so
- * this over-states a real driver's displacement by a good margin. A datasheet
- * that gives the figure gives it as Vd; where one does, `displaces` takes it
- * and this is not used.
+ * this over-states a real driver's displacement by a good margin. Where a
+ * datasheet publishes the real figure, `displaces` takes it and this is not
+ * used.
+ *
+ * Not **Vd**, whatever a search engine suggests. Vd is a Thiele-Small
+ * parameter, Sd × Xmax: the air the cone sweeps at full excursion while the
+ * driver is working. This is the lump of magnet, basket and cone standing
+ * still in the box, taking volume away from the air inside it. Two different
+ * quantities that happen to both be volumes of a driver, and only this one
+ * belongs in a cabinet's net capacity.
  */
 /**
- * §28 Whether this driver's displacement is the datasheet's or ours.
+ * §28 Whether this driver's displacement was given or worked out.
  *
  * Worth being able to ask, because the two are not equally good and the net
- * volume rests on whichever it got. A published Vd is a measurement; the
- * arithmetic below is an over-estimate with a known reason.
+ * volume rests on whichever it got. A published displacement is a measurement;
+ * the arithmetic below is an over-estimate with a known reason.
  */
-export const hasVd = (f) => Number.isFinite(f?.displaces) && f.displaces >= 0;
+export const hasDisplacement = (f) => Number.isFinite(f?.displaces) && f.displaces >= 0;
 
 export function driverDisplacement(f, steps = 8) {
-  if (hasVd(f)) return f.displaces;
+  if (hasDisplacement(f)) return f.displaces;
   const profile = driverProfile(f, steps);
   // Clipped at the mounting face: everything in front of it is outside the box.
   const clipped = clipBelow(profile, 0);

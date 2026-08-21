@@ -6,7 +6,7 @@ import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, pa
 import { mitreCheck, resolveMitres, applyMitres, mitreIssues, mitreLoss } from "../model/mitre.js";
 import { validate } from "../model/validate.js";
 import { fittingOwners, innermostOn, fittingIssues, fittingNote, hasTube, resolveFittings,
-  driverDisplacement, portDisplacement, hasVd } from "../model/fittings.js";
+  driverDisplacement, portDisplacement, hasDisplacement } from "../model/fittings.js";
 import { buildCutList, cutListTotals } from "../cutlist/cutlist.js";
 import { nest } from "../cutlist/nest.js";
 import { buildSheet } from "../drawing/sheet.js";
@@ -404,7 +404,7 @@ export function derive(design) {
   // be guesses. Where any is, the drawn basket is solid where a real one is
   // half air, the displacement reads high, and the net volume therefore reads
   // *low*: what is shown is a floor, and the readout says so.
-  sol.displacedEstimated = fitted.some((f) => f.type === "driver" && !hasVd(f));
+  sol.displacedEstimated = fitted.some((f) => f.type === "driver" && !hasDisplacement(f));
 
   const sectionAt = design.sectionAt ?? sol.E.x / 2;
 
