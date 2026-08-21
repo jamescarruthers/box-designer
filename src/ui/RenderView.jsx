@@ -39,8 +39,8 @@ function environmentTexture() {
 }
 
 /** The sweep: one profile, extruded sideways, with no seam anywhere in it. */
-function sweepMesh({ radius, floorRun, wallRise, width }) {
-  const profile = sweepProfile(radius, floorRun, wallRise);
+function sweepMesh({ radius, floorRun, wallRise, width, back }) {
+  const profile = sweepProfile(radius, floorRun, wallRise, back);
   const half = width / 2;
   const position = [];
   for (let i = 0; i < profile.length - 1; i++) {
@@ -122,7 +122,15 @@ export default function RenderView({ derived, design, solids, hidden }) {
       state.raf = 0;
       const w = el.clientWidth, h = el.clientHeight;
       if (!w || !h) return;
-      if (renderer.domElement.width !== w || renderer.domElement.height !== h) {
+      // Against the size last set, in CSS pixels. `domElement.width` is in
+      // *device* pixels, so comparing the two was never equal on any display
+      // with a pixel ratio above 1 — every frame resized, every frame reset the
+      // path tracer, and the trace never got past its first sample. On a phone,
+      // where the ratio is 3, that is the picture flashing on and off and only
+      // ever a tile or two of it arriving.
+      if (state.width !== w || state.height !== h) {
+        state.width = w;
+        state.height = h;
         renderer.setSize(w, h, false);
         camera.aspect = w / h;
         state.tracer?.setSize(w, h);
@@ -286,12 +294,13 @@ export default function RenderView({ derived, design, solids, hidden }) {
       const tracer = state.tracer ?? await loadPathTracer({
         renderer: state.renderer, scene: state.scene, camera: state.camera,
         environment: state.equirect,
-        size: [state.renderer.domElement.width, state.renderer.domElement.height],
+        size: [state.width ?? host.current.clientWidth, state.height ?? host.current.clientHeight],
       });
       state.tracer = tracer;
       tracer.running = true;
-      state.onTrace = (samples) => setTrace({ status: "tracing", samples });
-      setTrace({ status: "tracing", samples: 0 });
+      const scale = tracer.scaleOf(state.width, state.height);
+      state.onTrace = (samples) => setTrace({ status: "tracing", samples, scale });
+      setTrace({ status: "tracing", samples: 0, scale });
       state.invalidate();
     } catch (error) {
       console.error("Path tracing is not available:", error);
@@ -327,7 +336,12 @@ export default function RenderView({ derived, design, solids, hidden }) {
 
 function traceNote(trace) {
   if (trace.status === "loading") return "fetching the path tracer…";
-  if (trace.status === "tracing") return `path traced, ${trace.samples} sample${trace.samples === 1 ? "" : "s"}`;
+  if (trace.status === "tracing") {
+    // The scale only when it is not 1: a soft render nobody was told about
+    // reads as a broken one.
+    const at = trace.scale && trace.scale < 0.98 ? ` · ${Math.round(trace.scale * 100)}% scale` : "";
+    return `path traced, ${trace.samples} sample${trace.samples === 1 ? "" : "s"}${at}`;
+  }
   if (trace.status === "paused") return `path traced, ${trace.samples} samples — stopped`;
   if (trace.status === "failed") {
     return `${trace.error?.message ?? "the path tracer would not start"} — showing the studio render`;

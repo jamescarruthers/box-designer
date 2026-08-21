@@ -1699,3 +1699,40 @@ picture converges to the right picture.
 | main bundle | +7.6 kB |
 | render mode chunk | 10 kB, loaded when the mode is opened |
 | path tracer chunk | 186 kB, loaded when Refine is pressed |
+
+### The canvas was resized on every frame
+
+Reported from an iPhone: Refine "only displays part of the screen and it flashes
+on and off".
+
+`renderer.domElement.width` is in **device** pixels and it was being compared
+with `clientWidth`, which is in CSS pixels. On any display with a pixel ratio
+above 1 the two never match, so every frame resized the canvas — and every
+resize reset the path tracer. It never accumulated past its first sample, and
+what showed was whichever tile had just been drawn into a target that was about
+to be thrown away. On a phone, where the ratio is 3, that is a picture flashing
+on and off with a piece of it arriving at a time.
+
+Both views compare against the size they last set now. In the 3D view the same
+mistake was only wasting a resize a frame, which is why nobody noticed it there.
+
+### A phone asks for eleven megapixels
+
+The same pixel ratio of 3 means a full-screen canvas asks for about 2.7 Mpx of
+path tracing on a phone, and a desktop one for more. `traceSize` caps it at 2.2
+Mpx and never traces above twice the CSS size; the result is scaled up to fill
+the canvas. Softer, and the alternative is not a sharper picture but a browser
+that gives up on the tab. The status line says the scale when it is not 1, since
+a soft render nobody was told about reads as a broken one.
+
+`tilesFor` splits a large frame so no single draw call runs long enough to make
+the tab unanswerable, and leaves a small one whole so that a part-drawn frame is
+never on screen.
+
+### The floor curved through the box
+
+Also reported: "the box is slightly cut off by the curve on the floor". The box
+stands centred on the origin and the sweep's curve began there, so it rose
+through the box's back half. The profile takes a `back` now — how far behind the
+origin the floor stays flat — set to three quarters of the box's diagonal, which
+clears its furthest corner whichever way the view is turned.
