@@ -10,6 +10,7 @@ import React from "react";
 import { FACES, FACE_LABEL } from "../model/constants.js";
 import { newFitting, describeFitting, faceAxes, hasTube, convertAt,
   driverOuter, driverDepth, driverMagnet, driverMagnetDepth, driverCone,
+  driverThick, driverBasket, driverVoiceCoil,
   driverDisplacement, hasDisplacement, innermostOn, largestFlare } from "../model/fittings.js";
 import { panelThickness } from "../model/solver.js";
 import { Num, Segmented, round } from "./fields.jsx";
@@ -85,6 +86,10 @@ export function FittingEditor({ fitting: f, index, edit, remove, derived, onFace
                 somebody can correct instead of a gap they have to guess at. */}
             <Num label="Frame ⌀" aria={`Fitting ${n} outer`} suffix="mm" step={0.5}
               value={round(driverOuter(f))} onChange={(v) => edit({ outer: v })} />
+            {/* §31 The frame's own plate, which a datasheet's depth is measured
+                from the front of. */}
+            <Num label="Frame thick" aria={`Fitting ${n} thick`} suffix="mm" step={0.5}
+              value={round(driverThick(f))} onChange={(v) => edit({ thick: v })} />
             <Num label="PCD" aria={`Fitting ${n} pcd`} suffix="mm" step={0.5} value={f.pcd} onChange={(v) => edit({ pcd: v })} />
             <Num label="Bolts" aria={`Fitting ${n} bolts`} value={f.bolts} min={2} onChange={(v) => edit({ bolts: Math.max(2, Math.round(v)) })} />
             <Num label="Bolt ⌀" aria={`Fitting ${n} boltHole`} suffix="mm" step={0.5} value={f.boltHole} onChange={(v) => edit({ boltHole: v })} />
@@ -99,8 +104,17 @@ export function FittingEditor({ fitting: f, index, edit, remove, derived, onFace
             {/* §27 Surround to dust cap. Deep on a pro woofer, shallow on a
                 shielded full-range — a proportion of the cutout is a fair
                 guess and never the number. */}
+            {/* §31 What the hole is cut to clear. Bigger than the cutout is a
+                driver that does not go in, and the messages say so rather than
+                the drawing quietly squeezing it through. */}
+            <Num label="Basket ⌀" aria={`Fitting ${n} basket`} suffix="mm" step={0.5}
+              value={round(driverBasket(f))} onChange={(v) => edit({ basket: v })} />
             <Num label="Cone deep" aria={`Fitting ${n} coneDepth`} suffix="mm" step={0.5}
               value={round(driverCone(f))} onChange={(v) => edit({ coneDepth: v })} />
+            {/* §31 Where the cone ends: it stops at the coil former, and the
+                dust cap covers the junction. */}
+            <Num label="Voice coil ⌀" aria={`Fitting ${n} vc`} suffix="mm" step={0.5}
+              value={round(driverVoiceCoil(f))} onChange={(v) => edit({ vc: v })} />
             {/* §28 The volume this driver takes out of the box by standing
                 in it — the number that makes the net volume real. Deliberately
                 not labelled Vd: that is Sd × Xmax, the air the cone sweeps

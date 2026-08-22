@@ -430,6 +430,25 @@ describe("the app", () => {
       .some((r) => r.textContent.includes("Lagging"))).toBe(true);
   });
 
+  it("§31 offers the whole set of driver dimensions, filled in rather than blank", () => {
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByLabelText("Add a fitting"), { target: { value: "driver" } });
+
+    // Every one shows the figure the app would use, so a datasheet is typed
+    // over a number rather than into a gap.
+    for (const [label, value] of [
+      ["Fitting 1 thick", 6], ["Fitting 1 basket", 115], ["Fitting 1 vc", 34.8],
+    ]) {
+      expect(Number(screen.getByLabelText(label).value)).toBeCloseTo(value, 1);
+    }
+
+    // A basket that will not pass its cutout is said, not silently drawn.
+    fireEvent.change(screen.getByLabelText("Fitting 1 basket"), { target: { value: "130" } });
+    expect(container.textContent).toMatch(/will not pass a ⌀116 cutout/);
+    fireEvent.change(screen.getByLabelText("Fitting 1 basket"), { target: { value: "110" } });
+    expect(container.textContent).not.toMatch(/will not pass/);
+  });
+
   it("§13 keeps the design across a reload, and lets you get rid of it", () => {
     render(<App />);
     fireEvent.change(screen.getByLabelText("Thickness"), { target: { value: "21" } });
