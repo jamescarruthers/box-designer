@@ -2451,3 +2451,52 @@ own material rather than on the birch. Its own hatch in section — widely space
 and opposed, so a felted wall does not read as another board — and the sheet
 note names it. In 3D it explodes the least of any layer, since it is the last
 thing in and the first thing you would take out.
+
+## §31 The rest of the driver's dimensions
+
+A box program asks a driver for eight numbers: frame thickness, depth, magnet
+depth, magnet diameter, basket diameter, outer diameter, voice coil diameter,
+and the volume it displaces. Seven of those the app already had or has since
+been given. The three added here — **Frame thick**, **Basket ⌀** and
+**Voice coil ⌀** — were the last of the proportions the app was making up.
+
+Each is offered filled in rather than blank, showing exactly the figure the app
+would have used, so a datasheet is typed *over* a number rather than into a gap:
+
+| | was, as a proportion | on the default driver |
+| --- | --- | --- |
+| Frame thick | 0.037 × frame ⌀ | 6.0 mm |
+| Basket ⌀ | cutout less 2 × 0.5 mm slop | 115 mm |
+| Voice coil ⌀ | 0.3 × cutout | 34.8 mm |
+
+Left alone, every one of them returns the proportion it replaced, so a driver
+that has never been told any of them draws exactly as it drew before — same
+points, same count, same order, and the frame-to-cone boundary still where
+`driverConeFrom` says it is.
+
+### What each one does to the shape
+
+**Frame thick** is the plate that sits on the baffle, and it is what a
+datasheet's depth is measured from the front of — so a thicker frame on the same
+published depth reaches *less* far into the box. It also sets how far the driver
+stands proud in the views, which reads the same number as the profile: two
+places, one figure, or a thick-framed driver sinks into the panel in one of them
+and not the other.
+
+**Basket ⌀** is the number a cutout is chosen to clear. The app had been
+guessing it as the cutout less half a millimetre a side — right in spirit, since
+that is how a hole gets sized, and never the driver's own figure. Given both, the
+app can check them: a basket within a slop of its cutout is a warning, one wider
+than the cutout is an error naming the diameter to cut instead — *a ⌀360 basket
+will not pass a ⌀350 cutout — cut it at ⌀361 or more*. The drawn profile clamps
+to the hole regardless, because a picture of a basket squeezed through a hole it
+would not go through is a picture of something that cannot happen.
+
+**Voice coil ⌀** ends the cone. A cone is a frustum, not a point: it stops at
+the former the coil is wound on, and the dust cap covers that junction. So the
+coil diameter sets the small end of the cone, and a 100 mm coil in a 15 inch
+woofer draws the wide cap such a driver actually has instead of three tenths of
+the cutout.
+
+All three feed the displacement of §27 the moment they change the shape — and a
+published figure still overrides the lot of it (§28).

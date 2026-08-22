@@ -361,6 +361,52 @@ export function driverCone(f) {
   return (Math.max(0, f.cutout) / 2) * DRIVER_SHAPE.cone;
 }
 
+/**
+ * §31 The rest of the set a datasheet gives, each with the proportion it
+ * replaces as its fallback.
+ *
+ * A box program asks a driver for eight numbers — thickness, depth, magnet
+ * depth, magnet, basket, outer, voice coil, displacement — and until now three
+ * of those were proportions the app made up. Given, they are used; left alone,
+ * nothing that was drawn before changes by a thousandth.
+ *
+ * `thick` is the frame's own thickness, the plate that sits on the baffle. It
+ * is what a depth is measured from — a datasheet's depth runs from the front of
+ * that plate, so the part behind the baffle is the depth less this.
+ */
+export function driverThick(f) {
+  if (Number.isFinite(f?.thick) && f.thick > 0) return f.thick;
+  return driverOuter(f) * DRIVER_SHAPE.flange;
+}
+
+/**
+ * §31 The basket where it goes through the hole.
+ *
+ * This is the number a cutout is chosen to clear, and the app had been guessing
+ * it as the cutout less half a millimetre — right in spirit, since that is how
+ * a hole is sized, and never the driver's own figure. Clamped to the hole when
+ * it is drawn, because a basket wider than the cutout does not go in and a
+ * profile that says otherwise is drawing a lie; `fittingIssues` says so in
+ * words instead.
+ */
+export function driverBasket(f) {
+  if (Number.isFinite(f?.basket) && f.basket > 0) return f.basket;
+  return Math.max(0, f.cutout - 2 * DRIVER_SHAPE.slop);
+}
+
+/**
+ * §31 The voice coil, which is where the cone ends.
+ *
+ * The cone is a frustum, not a point: it stops at the former the coil is wound
+ * on, and the dust cap covers that junction. So the coil diameter is what sets
+ * the small end of the cone, and where a datasheet gives it the drawn cone
+ * narrows to the real thing rather than to three tenths of the cutout.
+ */
+export function driverVoiceCoil(f) {
+  if (Number.isFinite(f?.vc) && f.vc > 0) return f.vc;
+  return Math.max(0, f.cutout) * DRIVER_SHAPE.cap;
+}
+
 export function driverProfile(f, steps = 8) {
   const Rc = Math.max(0, f.cutout) / 2;
   // A frame is never narrower than the hole it sits over — but a number being
@@ -369,10 +415,13 @@ export function driverProfile(f, steps = 8) {
   // itself and the body came out as a knot. Clamped, so what is drawn is always
   // a driver; `fittingIssues` says the number is wrong.
   const Ro = Math.max(driverOuter(f) / 2, Rc);
-  const flange = driverOuter(f) * DRIVER_SHAPE.flange;
+  const flange = driverThick(f);
   const roll = Rc * DRIVER_SHAPE.surround;
   const cone = driverCone(f);
-  const Rd = Rc * DRIVER_SHAPE.cap;
+  // §31 The cone stops at the coil former, and the cap covers that. Clamped
+  // inside the cutout for the same reason the frame is clamped outside it: a
+  // number on its way to another number must not turn the profile inside out.
+  const Rd = Math.min(Math.max(0.1, driverVoiceCoil(f) / 2), Math.max(0.2, Rc * 0.9));
   const dome = Rd * DRIVER_SHAPE.dome;
   // Clear of the deepest thing in front of it, so the flat back never cuts
   // through the cone it is supposed to be behind.
@@ -383,7 +432,9 @@ export function driverProfile(f, steps = 8) {
   // side, out along the basket to the wall of the hole, and along the face to
   // the rim of the frame. That is the silhouette of a motor and a cast basket,
   // which is all of the driver anybody sees from behind.
-  const Rb = Math.max(0.1, Rc - DRIVER_SHAPE.slop);
+  // §31 What goes through the hole: the basket's own diameter where a datasheet
+  // gives it, and never wider than the hole it has to pass.
+  const Rb = Math.min(Math.max(0.1, driverBasket(f) / 2), Math.max(0.1, Rc - DRIVER_SHAPE.slop));
   const Rm = Math.min(Math.max(0.1, driverMagnet(f) / 2), Rb);
   // Everything behind the mounting face. A datasheet measures depth from the
   // front of the frame, and the baffle is a frame's thickness behind that.
@@ -490,8 +541,9 @@ export function portDisplacement(f) {
 
 /** How far a driver stands proud of the panel it is bolted to. */
 export function driverStandoff(f) {
-  const flange = driverOuter(f) * DRIVER_SHAPE.flange;
-  return flange + (f.cutout / 2) * DRIVER_SHAPE.surround / 2;
+  // §31 The same thickness the profile uses, so a frame given a real thickness
+  // stands proud by it in the views as well as in the shape.
+  return driverThick(f) + (f.cutout / 2) * DRIVER_SHAPE.surround / 2;
 }
 
 /** A fitting's position in model space, on the outer surface of its panel. */
@@ -508,7 +560,7 @@ export function fittingOrigin(f, panel) {
 const round1 = (v) => Math.round(v * 10) / 10;
 
 /** How a layer reads in a message about a hole going through it. */
-const LAYER_WORD = { cladding: "cladding", shell: "carcass panel", doubler: "doubler" };
+const LAYER_WORD = { cladding: "cladding", shell: "carcass panel", doubler: "doubler", lagging: "lagging" };
 
 /** §8 Fittings that will not cut cleanly. */
 export function fittingIssues(fittings, panels, owners, cavity) {
@@ -528,6 +580,15 @@ export function fittingIssues(fittings, panels, owners, cavity) {
     if (![f.at?.a, f.at?.b].every(Number.isFinite)) {
       msgs.push({ level: "error", text: `${label} has no position on the panel.` });
       continue;
+    }
+    // §31 A cutout is sized to pass the basket. Given both, the app can say
+    // when they do not agree — and it says it rather than drawing a basket
+    // squeezed through a hole it would not go through.
+    if (f.type === "driver" && Number.isFinite(f.basket) && f.basket > 0
+        && f.basket > f.cutout - 2 * DRIVER_SHAPE.slop) {
+      msgs.push({ level: f.basket > f.cutout ? "error" : "warning",
+        text: `${label}: a ⌀${round1(f.basket)} basket will not pass a ⌀${round1(f.cutout)} cutout — `
+          + `cut it at ⌀${round1(f.basket + 2 * DRIVER_SHAPE.slop)} or more.` });
     }
     // Every layer, not only the one it is set out from. A doubler is inset from
     // the carcass panel it backs, so a bore can sit comfortably in the carcass

@@ -12,8 +12,10 @@ import * as THREE from "three";
 import {
   DEFAULT_DRIVER, DRIVER_SHAPE, driverOuter, driverProfile, driverConeFrom,
   driverStandoff, fittingOrigin, fittingIssues, driverCone,
+  driverThick, driverBasket, driverVoiceCoil, fittingOwners,
   driverDisplacement, portDisplacement, revolvedVolume, clipBelow, hasDisplacement,
 } from "../src/model/fittings.js";
+import { solve } from "../src/model/solver.js";
 import { driverBody, aimAt, faceNormal, placeDriver, driversOn, SEAT } from "../src/three/driver.js";
 import { toThree } from "../src/three/panelGeometry.js";
 import { AXIS, FACES } from "../src/model/constants.js";
@@ -477,5 +479,100 @@ describe("§28 a given displacement against a worked-out one", () => {
     const worked = driverDisplacement(PLUVIA_FULL);
     expect(worked).toBeGreaterThan(200000);
     expect(worked).toBeLessThan(500000);
+  });
+});
+
+
+/**
+ * §31 The rest of the dimensions a datasheet gives.
+ *
+ * Frame thickness, basket diameter and voice coil were proportions the app
+ * invented. They are fields now, and the invented figures live on as their
+ * fallbacks — so a driver that has never been told any of them is drawn exactly
+ * as it was drawn before, to the last decimal place.
+ */
+describe("§31 frame thickness, basket and voice coil", () => {
+  const PLUVIA_FULL = { ...PLUVIA, depth: 71.5, magnet: 75.8, magnetDepth: 37, coneDepth: 21 };
+
+  it("falls back to the proportions it replaced", () => {
+    expect(driverThick(PLUVIA_FULL)).toBeCloseTo(driverOuter(PLUVIA_FULL) * DRIVER_SHAPE.flange, 9);
+    expect(driverBasket(PLUVIA_FULL)).toBeCloseTo(PLUVIA_FULL.cutout - 2 * DRIVER_SHAPE.slop, 9);
+    expect(driverVoiceCoil(PLUVIA_FULL)).toBeCloseTo(PLUVIA_FULL.cutout * DRIVER_SHAPE.cap, 9);
+  });
+
+  it("draws an untold driver exactly as it drew it before", () => {
+    // The guarantee that matters for every design already saved: same points,
+    // same count, same order — so the boundary between frame and cone (§24) is
+    // still where `driverConeFrom` says it is.
+    const profile = driverProfile(PLUVIA_FULL);
+    expect(profile).toHaveLength(driverConeFrom(8) + 9);
+    const flange = driverOuter(PLUVIA_FULL) * DRIVER_SHAPE.flange;
+    expect(profile[5][1]).toBeCloseTo(flange, 9);
+    expect(profile[3][0]).toBeCloseTo(PLUVIA_FULL.cutout / 2 - DRIVER_SHAPE.slop, 9);
+  });
+
+  it("uses the given thickness for the plate the depth is measured from", () => {
+    const thick = driverProfile({ ...PLUVIA_FULL, thick: 9 });
+    // The face of the frame stands its own thickness proud of the baffle...
+    expect(thick[5][1]).toBeCloseTo(9, 9);
+    // ...and what is behind the baffle is the depth less that, so a thicker
+    // frame on the same datasheet depth reaches less far into the box.
+    const thin = driverProfile({ ...PLUVIA_FULL, thick: 3 });
+    expect(Math.min(...thick.map(([, h]) => h))).toBeGreaterThan(Math.min(...thin.map(([, h]) => h)));
+  });
+
+  it("takes the basket through the hole, and never wider than the hole", () => {
+    const given = driverProfile({ ...PLUVIA_FULL, basket: 80 });
+    expect(given[3][0]).toBeCloseTo(40, 9);
+    // A basket wider than the cutout does not go in. Drawn, it is clamped;
+    // said, it is an error — see below.
+    const silly = driverProfile({ ...PLUVIA_FULL, basket: 400 });
+    expect(silly[3][0]).toBeCloseTo(PLUVIA_FULL.cutout / 2 - DRIVER_SHAPE.slop, 9);
+  });
+
+  it("says when a basket will not pass its cutout", () => {
+    const sol = solve({ envelope: { x: 236, y: 286, z: 356 }, thickness: 18,
+      order: ["front", "back", "left", "right", "top", "bottom"] });
+    const owners = fittingOwners(sol.panels, ["front"]);
+    const on = (basket) => fittingIssues(
+      [{ ...PLUVIA_FULL, id: "d", face: "front", at: { a: 118, b: 240 }, basket }],
+      sol.panels, owners, sol.cavity);
+
+    expect(on(90).filter((m) => /basket/.test(m.text))).toHaveLength(0);
+    // Tight against the hole is a warning: it may go in, it will not go in easily.
+    const tight = on(99.5).find((m) => /basket/.test(m.text));
+    expect(tight.level).toBe("warning");
+    // Wider than the hole is not a fit at all, and the message says what to cut.
+    const wide = on(104).find((m) => /basket/.test(m.text));
+    expect(wide.level).toBe("error");
+    expect(wide.text).toMatch(/⌀105 or more/);
+  });
+
+  it("ends the cone at the voice coil former", () => {
+    const cone = driverConeFrom(8);
+    expect(driverProfile({ ...PLUVIA_FULL, vc: 25 })[cone][0]).toBeCloseTo(12.5, 9);
+    expect(driverProfile({ ...PLUVIA_FULL, vc: 51 })[cone][0]).toBeCloseTo(25.5, 9);
+    // And a coil wider than the cone it sits in is clamped, like the frame.
+    expect(driverProfile({ ...PLUVIA_FULL, vc: 400 })[cone][0])
+      .toBeCloseTo((PLUVIA_FULL.cutout / 2) * 0.9, 9);
+  });
+
+  it("stands the driver proud by the thickness it was given", () => {
+    // The views measure the standoff separately from the profile; both read the
+    // same thickness, or a thick-framed driver sinks into the panel in one of
+    // them and not the other.
+    const roll = (PLUVIA_FULL.cutout / 2) * DRIVER_SHAPE.surround / 2;
+    expect(driverStandoff({ ...PLUVIA_FULL, thick: 9 })).toBeCloseTo(9 + roll, 9);
+    expect(driverStandoff(PLUVIA_FULL)).toBeCloseTo(driverThick(PLUVIA_FULL) + roll, 9);
+  });
+
+  it("changes what the driver displaces, since it changes its shape", () => {
+    const plain = driverDisplacement(PLUVIA_FULL);
+    // A narrower basket takes less out of the box; a wider one takes more.
+    expect(driverDisplacement({ ...PLUVIA_FULL, basket: 70 })).toBeLessThan(plain);
+    expect(driverDisplacement({ ...PLUVIA_FULL, basket: 99 })).toBeGreaterThan(
+      driverDisplacement({ ...PLUVIA_FULL, basket: 70 }));
+    // And a given Vd still wins over every one of them (§28).
+    expect(driverDisplacement({ ...PLUVIA_FULL, basket: 70, displaces: 180000 })).toBe(180000);
   });
 });
