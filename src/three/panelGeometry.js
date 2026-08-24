@@ -3,6 +3,7 @@
 
 import { AXIS, PAIR, AXES } from "../model/constants.js";
 import { insetAt, bevelDepths } from "../model/bevel.js";
+import { EXPLODE_SCALE, explodeShift } from "../model/explode.js";
 
 const EPS = 1e-9;
 
@@ -162,14 +163,12 @@ export function panelEdgeLoops(panel, bevels = {}, E) {
   return positions;
 }
 
-// §4 Explode offsets, per layer, along the face normal.
-export const EXPLODE_SCALE = { cladding: 1.5, shell: 1.0, doubler: 0.45, lagging: 0.2 };
+// §4 Explode offsets, per layer, along the face normal. §38 The rule itself
+// lives with the model, because the drawing's isometric explodes by it too.
+export { EXPLODE_SCALE };
 
 /** In three coordinates the normal is (x → s, z → s, y → −s). */
 export function explodeOffset(panel, amount) {
-  const [a, s] = AXIS[panel.face];
-  const d = s * amount * (EXPLODE_SCALE[panel.layer] ?? 1);
-  if (a === "x") return [d, 0, 0];
-  if (a === "z") return [0, d, 0];
-  return [0, 0, -d];
+  const d = explodeShift(panel, amount);
+  return [d.x, d.z, d.y ? -d.y : 0];
 }

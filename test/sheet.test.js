@@ -112,8 +112,17 @@ describe("§6 the drawing as a whole", () => {
   });
 
   it("labels the isometric only when its scale differs from the sheet's", () => {
-    expect(built.isoScale).not.toBe(built.scale);
-    expect(built.svg).toContain(`SCALE ${scaleLabel(built.isoScale)}`);
+    // §38 With a column of its own the isometric usually draws at the sheet's
+    // own scale, and then it carries no scale note — one is only there to
+    // stop a reader measuring the isometric with the sheet's scale rule.
+    const labelled = built.svg.includes(`SCALE ${scaleLabel(built.isoScale)}`);
+    expect(labelled).toBe(built.isoScale !== built.scale);
+    // A box whose isometric will not fit at the sheet scale gets the note.
+    const long = solve({ envelope: { x: 1600, y: 300, z: 260 }, thickness: 18,
+      order: PROMINENCE_PRESETS[0].order });
+    const wide = buildSheet(long, noEdges(), {});
+    expect(wide.isoScale).not.toBe(wide.scale);
+    expect(wide.svg).toContain(`SCALE ${scaleLabel(wide.isoScale)}`);
   });
 
   it("hatches the section and defines the three patterns", () => {
@@ -126,7 +135,7 @@ describe("§6 the drawing as a whole", () => {
     const plan = built.svg.slice(built.svg.indexOf('data-view="plan"'));
     expect(built.svg).toContain(`stroke-dasharray="12 2 2 2"`);
     // The chain line sits at the plan's horizontal centre.
-    const L = layout(sol.E);
+    const L = layout(sol.E, { dimRungs: dimensionRungs(sol) });
     const x = L.cells.plan.x + (sol.E.x / 2) * L.scale;
     expect(built.svg).toContain(`M${Math.round(x * 1000) / 1000} `);
     expect(plan.length).toBeGreaterThan(0);
@@ -396,19 +405,21 @@ describe("§32 hiding the section", () => {
     expect(dims.some((d) => d.kind === "v" && d.text === String(Math.round(lined.internal.z)))).toBe(true);
   });
 
-  it("gives the isometric the right of the sheet, and more of it", () => {
+  it("leaves the isometric the right of the sheet, and gives back the room", () => {
+    // §38 The isometric has that column whether or not there is a section, so
+    // hiding the section no longer hands it over — what it hands back is
+    // height: the bottom row shrinks from a section's worth to a plan's, and
+    // no view on the sheet is ever drawn smaller for it.
     const ext = buildIsometric(lined).ext;
-    const withIt = layout(lined.E).cells.iso;
-    const without = layout(lined.E, { section: false, isoExt: ext }).cells.iso;
-    // Further right, taller, and drawn at a larger scale for it.
-    expect(without.x).toBeGreaterThan(withIt.x);
-    expect(without.h).toBeGreaterThan(withIt.h);
-    expect(isoFit(without, ext)).toBeGreaterThan(isoFit(withIt, ext));
-    expect(buildSheet(lined, noEdges(), { section: false }).isoScale)
-      .toBeGreaterThan(buildSheet(lined, noEdges(), {}).isoScale);
-    // Out to the frame rather than stopping at the column the section had.
-    expect(without.x + without.w).toBeGreaterThan(withIt.x + layout(lined.E).cols[2]);
-    expect(without.x + without.w).toBeLessThanOrEqual(frameRect().x + frameRect().w);
+    const withIt = layout(lined.E, { section: true, isoExt: ext });
+    const without = layout(lined.E, { section: false, isoExt: ext });
+    expect(without.scale).toBeGreaterThanOrEqual(withIt.scale);
+    expect(isoFit(without.cells.iso, ext)).toBeGreaterThanOrEqual(isoFit(withIt.cells.iso, ext));
+    // Out to the frame in both cases, not stopping at a column's width.
+    for (const L of [withIt, without]) {
+      expect(L.cells.iso.x + L.cells.iso.w).toBeGreaterThan(L.cells.front.x + L.cols[0] + L.cols[1]);
+      expect(L.cells.iso.x + L.cells.iso.w).toBeLessThanOrEqual(frameRect().x + frameRect().w);
+    }
   });
 
   it("never draws the isometric smaller than it was", () => {
@@ -428,9 +439,9 @@ describe("§32 hiding the section", () => {
 
 describe("§32 the options in the design", () => {
   it("starts with both on and carries them into the sheet", () => {
-    expect(DEFAULT_DESIGN.drawing).toEqual({ section: true, insulation: true });
+    expect(DEFAULT_DESIGN.drawing).toEqual({ section: true, insulation: true, explode: 0 });
     const d = derive(DEFAULT_DESIGN);
-    expect(d.drawing).toEqual({ section: true, insulation: true });
+    expect(d.drawing).toEqual({ section: true, insulation: true, explode: 0 });
     expect(d.sheet.section).toBe(true);
     expect(d.sheet.insulation).toBe(true);
   });
@@ -439,9 +450,9 @@ describe("§32 the options in the design", () => {
     // A design saved before these existed has no `drawing` at all, and an
     // undefined flag must not read as "off".
     const old = { ...DEFAULT_DESIGN, drawing: undefined };
-    expect(derive(old).drawing).toEqual({ section: true, insulation: true });
+    expect(derive(old).drawing).toEqual({ section: true, insulation: true, explode: 0 });
     expect(derive({ ...DEFAULT_DESIGN, drawing: { section: false } }).drawing)
-      .toEqual({ section: false, insulation: true });
+      .toEqual({ section: false, insulation: true, explode: 0 });
   });
 
   it("turns them off through the design", () => {
@@ -538,5 +549,89 @@ describe("§37 every interior is dimensioned, not just the innermost", () => {
     const svg = derive(lined()).sheet.svg;
     for (const r of rungs) expect(svg).toContain(`>(${r.size})<`);
     expect(svg).toContain(`>${sol.E.x}<`);
+  });
+});
+
+describe("§38 the section under the end view, and the sheet pushed left", () => {
+  const sol = solve({ envelope: { x: 236, y: 286, z: 356 }, thickness: 18,
+    order: PROMINENCE_PRESETS[0].order });
+  const L = layout(sol.E, { dimRungs: dimensionRungs(sol) });
+
+  it("stacks the section under the end view, in the same column", () => {
+    expect(L.cells.section.x).toBe(L.cells.end.x);
+    expect(L.cells.section.y).toBeGreaterThan(L.cells.end.y + L.cells.end.h);
+    // Two columns of views, not three: the plan is under the front elevation.
+    expect(L.cells.plan.x).toBe(L.cells.front.x);
+    expect(L.cells.section.y).toBe(L.cells.plan.y);
+  });
+
+  it("gives the section the height it needs, which the plan never did", () => {
+    // The section is a cut through the box seen from the left: as tall as the
+    // end view above it, where the plan is only as deep as the box.
+    expect(L.cells.section.h).toBeCloseTo(sol.E.z * L.scale, 9);
+    expect(L.cells.plan.h).toBeCloseTo(sol.E.y * L.scale, 9);
+  });
+
+  it("pushes the block left, leaving exactly the dimension margin", () => {
+    const margin = L.cells.front.x - L.frame.x;
+    expect(margin).toBe(DIM_NEAR + dimensionRungs(sol) * DIM_STEP + 4);
+    // And the ladder fits in it: every dimension line is inside the frame.
+    for (const d of planDimensions(sol, L)) {
+      const at = d.kind === "v" ? d.from[0] + d.off : d.from[1] + d.off;
+      expect(at).toBeGreaterThan(d.kind === "v" ? L.frame.x : L.frame.y);
+    }
+  });
+
+  it("hands everything the block does not use to the isometric", () => {
+    // Right of both columns of views, and out to the frame.
+    expect(L.cells.iso.x).toBeGreaterThan(L.cells.end.x + L.cells.end.w);
+    expect(L.cells.iso.x + L.cells.iso.w).toBeGreaterThan(L.frame.x + L.frame.w - 10);
+    // The whole height of the drawing area, not just the rows beside it.
+    expect(L.cells.iso.y).toBe(L.cells.front.y);
+    expect(L.cells.iso.y + L.cells.iso.h)
+      .toBeCloseTo(L.frame.y + L.frame.h - TITLE_BLOCK.h, 9);
+  });
+
+  it("a taller box asks for more sheet, and the section switch buys it back", () => {
+    // Two full heights stacked is what the section costs. On a tall box that
+    // can be a scale step, and hiding the section is how it is got back.
+    const tall = { x: 200, y: 250, z: 900 };
+    const withIt = layout(tall);
+    const without = layout(tall, { section: false });
+    expect(withIt.rows[1]).toBeCloseTo(tall.z * withIt.scale, 9);
+    expect(without.rows[1]).toBeCloseTo(tall.y * without.scale, 9);
+    expect(without.scale).toBeGreaterThanOrEqual(withIt.scale);
+    // Somewhere in the range it is a whole scale step, and never the other way.
+    const steps = [{ x: 200, y: 250, z: 700 }, { x: 200, y: 250, z: 900 },
+      { x: 300, y: 300, z: 600 }, { x: 236, y: 286, z: 356 }];
+    expect(steps.some((E) => layout(E, { section: false }).scale > layout(E).scale)).toBe(true);
+    for (const E of steps)
+      expect(layout(E, { section: false }).scale).toBeGreaterThanOrEqual(layout(E).scale);
+  });
+});
+
+describe("§38 the isometric on the sheet", () => {
+  it("draws the fittings the design puts on the box", () => {
+    const d = { ...DEFAULT_DESIGN, fittings: [newFitting("driver", "front")] };
+    const svg = derive(d).sheet.svg;
+    const iso = svg.slice(svg.indexOf('<g data-view="iso">'));
+    // The panel fills are the isometric's and nothing else on the sheet has
+    // them; the holes are drawn on top of the panel that carries them.
+    expect(iso).toContain(`fill="var(--paper)"`);
+    expect(derive(DEFAULT_DESIGN).sheet.svg.match(/fill="var\(--paper\)"/g).length)
+      .toBeLessThan(svg.match(/fill="var\(--paper\)"/g).length + 1);
+  });
+
+  it("comes apart when the slider is moved, and nothing else moves", () => {
+    const still = derive(DEFAULT_DESIGN);
+    const apart = derive({ ...DEFAULT_DESIGN, drawing: { ...DEFAULT_DESIGN.drawing, explode: 80 } });
+    expect(apart.sheet.svg).not.toBe(still.sheet.svg);
+    // The elevations are where they were: exploding is the isometric's alone.
+    const front = (b) => {
+      const at = b.svg.indexOf('<g data-view="front">');
+      return b.svg.slice(at, b.svg.indexOf("</g>", at));
+    };
+    expect(front(apart.sheet)).toBe(front(still.sheet));
+    expect(apart.sheet.isoScale).toBeLessThanOrEqual(still.sheet.isoScale);
   });
 });

@@ -66,64 +66,68 @@ export function scaleLabel(s) {
 }
 
 /**
- * §6.2 Columns W, D, D; rows H, D. Centre the block in the frame.
+ * §6.2 Two columns of views on the left, the isometric down the right.
  *
- * §32 Without the section the third column is free, and the isometric takes
- * it — the whole of it, both rows, on the right of the sheet. That is not
- * merely tidier: the isometric of a box is taller than it is wide, and its old
- * cell was wide and short, so its scale was pinned by the height. On the
- * default box it goes from 1:10 to 1:2 for the same sheet.
+ * §38 Column one is the front elevation over the plan; column two is the end
+ * view over the section, which is where the section reads best: the end view
+ * and the section look the same way at the same box, one showing the outside
+ * and one the wall build-up, and stacked they can be read against each other
+ * without crossing the sheet. The block is pushed to the left rather than
+ * centred, which puts every millimetre it does not use into one place — the
+ * right-hand column, where the isometric is.
+ *
+ * §32 Without the section the bottom of that second column is free as well,
+ * and the isometric takes whichever of the two rectangles draws it larger:
+ * the tall column suits the isometric of a tall box, which is most of them,
+ * and the wide strip along the bottom suits a long low one.
  */
 export function layout(E, { section = true, isoExt = null, dimRungs = 1 } = {}) {
   const frame = frameRect();
   const avail = { w: frame.w, h: frame.h - TITLE_BLOCK.h };
-  const need = { w: E.x + 2 * E.y, h: E.z + E.y };
+  // The third column is the isometric's. It is reserved at the width the
+  // section used to have, so a box that fitted the sheet before fits it now.
+  // §38 The bottom row has to hold the section, which is as tall as the
+  // elevations — the plan alone asked for less.
+  const lower = section ? Math.max(E.y, E.z) : E.y;
+  const need = { w: E.x + 2 * E.y, h: E.z + lower };
   const chosen = pickScale(need, avail);
 
   const cols = [E.x, E.y, E.y].map((d) => d * chosen);
-  const rows = [E.z, E.y].map((d) => d * chosen);
+  const rows = [E.z, lower].map((d) => d * chosen);
   const gapH = clamp((avail.w - cols.reduce((a, b) => a + b, 0)) / 3, GAP_H);
   const gapV = clamp((avail.h - rows.reduce((a, b) => a + b, 0)) / 2, GAP_V);
 
-  const blockW = cols.reduce((a, b) => a + b, 0) + 2 * gapH;
   const blockH = rows.reduce((a, b) => a + b, 0) + gapV;
-  const x0 = frame.x + (avail.w - blockW) / 2;
-  // §37 Headroom for the dimension ladder above the elevations. Centred, the
-  // block leaves whatever the arithmetic leaves; a clad, doubled and lined box
-  // wants five dimension lines up there and used to run them off the sheet.
-  // Nothing sits under the bottom row, so the slack it does not need is the
-  // slack this takes — and a box with one interior asks for less than the
-  // centred position gives, so nothing already drawn moves.
-  const headroom = DIM_NEAR + dimRungs * DIM_STEP + DIM_TEXT;
+  // §37 Room for the dimension ladders, which are drawn above the elevations
+  // and to the left of the front one. A clad, doubled and lined box wants five
+  // lines in each margin and used to run them off the sheet.
+  // §38 Left-aligned, the side margin is this and nothing more, where before it
+  // was whatever centring happened to leave.
+  const margin = DIM_NEAR + dimRungs * DIM_STEP + DIM_TEXT;
+  const x0 = frame.x + margin;
   const y0 = frame.y + Math.min(
-    Math.max((avail.h - blockH) / 2, headroom),
+    Math.max((avail.h - blockH) / 2, margin),
     Math.max(0, avail.h - blockH),
   );
 
   const cx = [x0, x0 + cols[0] + gapH, x0 + cols[0] + gapH + cols[1] + gapH];
   const cy = [y0, y0 + rows[0] + gapV];
+  const right = frame.x + frame.w - ISO_MARGIN;
 
   const cells = {
     front:   { x: cx[0], y: cy[0], w: cols[0], h: rows[0] },
     end:     { x: cx[1], y: cy[0], w: cols[1], h: rows[0] },
-    section: { x: cx[2], y: cy[0], w: cols[2], h: rows[0] },
-    plan:    { x: cx[0], y: cy[1], w: cols[0], h: rows[1] },
-    iso:     { x: cx[1], y: cy[1], w: cols[1] + gapH + cols[2], h: rows[1] },
+    plan:    { x: cx[0], y: cy[1], w: cols[0], h: E.y * chosen },
+    section: { x: cx[1], y: cy[1], w: cols[1], h: E.z * chosen },
+    // §38 Out to the frame on both sides: the isometric's column runs the whole
+    // height of the drawing area rather than stopping level with the bottom
+    // row, because nothing else is ever put beside it.
+    iso:     { x: cx[2], y: cy[0], w: right - cx[2], h: frame.y + avail.h - cy[0] },
   };
   if (!section) {
     delete cells.section;
-    // Out to the frame, not just to the width of the column the section had.
-    // The block is centred for three columns, so with the third one empty
-    // there is a margin's worth of sheet doing nothing on the right.
-    const right = frame.x + frame.w - ISO_MARGIN;
-    const column = { x: cx[2], y: cy[0], w: right - cx[2], h: rows[0] + gapV + rows[1] };
-    // A tall column suits the isometric of a tall box, which is most of them —
-    // on the default box it doubles the drawn size. A long low box projects
-    // *wide*, though, and for that one the bottom row run out to the frame is
-    // the bigger picture. Both are on the right of the sheet; whichever draws
-    // it larger wins, and the column wins a tie.
     const strip = { x: cx[1], y: cy[1], w: right - cx[1], h: rows[1] };
-    cells.iso = isoExt && isoFit(strip, isoExt) > isoFit(column, isoExt) ? strip : column;
+    if (isoExt && isoFit(strip, isoExt) > isoFit(cells.iso, isoExt)) cells.iso = strip;
   }
 
   return {
@@ -224,8 +228,23 @@ function drawFittingDimensions(dims, place) {
     : leaderDimension(d.at, d.r, d.angle, d.text, place)));
 }
 
+const polyPath = (pts, place, closed) =>
+  pts.map((p, i) => {
+    const [x, y] = place(p);
+    return `${i ? "L" : "M"}${n2(x)} ${n2(y)}`;
+  }).join("") + (closed ? "Z" : "");
+
 function drawGeometry(g, place) {
   const out = [];
+  // §38 The isometric arrives as groups — one panel at a time, its faces
+  // filled with the paper and then its own lines over them — and the order is
+  // the drawing: a panel painted later stands in front of one painted earlier.
+  for (const grp of g.groups ?? []) {
+    for (const f of grp.fills)
+      out.push(path(polyPath(f.pts, place, true), `fill="var(--paper)" stroke="none"`));
+    for (const l of grp.lines)
+      out.push(path(polyPath(l.pts, place, l.closed), strokeAttrs(true)));
+  }
   for (const l of g.lines) {
     const a = place(l.a), b = place(l.b);
     out.push(path(`M${n2(a[0])} ${n2(a[1])}L${n2(b[0])} ${n2(b[1])}`, strokeAttrs(l.visible)));
@@ -309,13 +328,23 @@ export function buildSheet(sol, edges, opts = {}) {
   // the views. The analytic engine does by default; the OCCT path passes its
   // own, and the frame, title block, scale, dimensions and hatching are the
   // same either way.
-  const geo = opts.geometry ?? {
+  const explode = opts.explode ?? 0;
+  const geo = opts.geometry ? { ...opts.geometry } : {
     front: buildOrthoView("front", drawn, edges),
     end: buildOrthoView("end", drawn, edges),
     plan: buildOrthoView("plan", drawn, edges),
     section: buildSection(drawn, cx),
-    iso: buildIsometric(drawn),
+    // §38 The isometric is the one view of the whole box, so it is the one
+    // that shows the fittings in place — and the one that comes apart.
+    iso: buildIsometric(drawn, { explode, fittingsOn: opts.fittingsOn }),
   };
+  // §38 The kernel's isometric is a hidden-line view of the box as assembled,
+  // and there is no exploded shape to ask it for — the panels are one solid by
+  // then. So an exploded isometric is drawn from the panel boxes either way,
+  // and the slider works with the kernel on.
+  if (opts.geometry && explode > 0) {
+    geo.iso = buildIsometric(drawn, { explode, fittingsOn: opts.fittingsOn });
+  }
 
   // §32 The layout is settled after the views, not before: without a section
   // the isometric picks which free rectangle it goes in, and it can only pick
@@ -522,14 +551,17 @@ export function dimensionLadder(interiors, overall, project) {
 
 /**
  * §37 How many interior dimensions the elevations will carry, which is what
- * the layout has to leave room for. The horizontal ladders are the ones that
- * run into the top of the frame: width above the front, depth above the end.
+ * the layout has to leave room for: width above the front, depth above the
+ * end, and — §38, now that the block is pushed left rather than centred —
+ * height down the left of the front elevation, which has the same margin to
+ * run out of.
  */
 export function dimensionRungs(sol) {
   const interiors = sol.interiors ?? [{ layer: "shell", box: sol.cavity }];
-  const count = (view, overall) =>
-    dimensionLadder(interiors, overall, (box) => PROJECTIONS[view](box, sol.E).h).length;
-  return Math.max(1, count("front", sol.E.x), count("end", sol.E.y));
+  const count = (view, axis, overall) =>
+    dimensionLadder(interiors, overall, (box) => PROJECTIONS[view](box, sol.E)[axis]).length;
+  return Math.max(1,
+    count("front", "h", sol.E.x), count("end", "h", sol.E.y), count("front", "v", sol.E.z));
 }
 
 export function planDimensions(sol, L) {

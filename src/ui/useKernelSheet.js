@@ -52,9 +52,11 @@ export function useKernelSheet(derived, design, enabled, attempt = 0) {
           // circle is added on top, being an annotation rather than geometry.
           fittings: derived.fittings,
           fittingPanels: derived.fittingPanels,
+          fittingsOn: derived.fittingsOn,
           holesInGeometry: true,
           section: derived.drawing.section,
           insulation: derived.drawing.insulation,
+          explode: derived.drawing.explode,
         });
         setState({ status: "ready", sheet, ms: Math.round(performance.now() - t0), isolated: isolated() });
       })

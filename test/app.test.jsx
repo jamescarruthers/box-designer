@@ -582,6 +582,30 @@ describe("the app", () => {
     for (const d of depths) expect(d).toBeLessThan(overall);
   });
 
+  it("§38 explodes the drawing's isometric from a slider", () => {
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Drawing" }));
+    const sheet = () => container.querySelector(".sheet-holder").innerHTML;
+    const iso = () => {
+      const svg = sheet();
+      const at = svg.indexOf('<g data-view="iso">');
+      return svg.slice(at, svg.indexOf("</g>", at));
+    };
+    const before = iso();
+    const slider = screen.getByLabelText("Explode isometric");
+    expect(slider.value).toBe("0");
+
+    fireEvent.change(slider, { target: { value: "60" } });
+    expect(screen.getByLabelText("Explode isometric").value).toBe("60");
+    expect(iso()).not.toBe(before);
+    // Same panels, further apart: one filled face per visible side of each.
+    const fills = (svg) => svg.match(/fill="var\(--paper\)"/g)?.length ?? 0;
+    expect(fills(iso())).toBe(fills(before));
+
+    fireEvent.change(slider, { target: { value: "0" } });
+    expect(iso()).toBe(before);
+  });
+
   it("§14 offers a DXF of the sheet layouts", () => {
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
