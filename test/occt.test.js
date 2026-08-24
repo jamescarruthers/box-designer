@@ -346,13 +346,32 @@ describe("§29 flaring the inside of a cutout", () => {
     }
   }, 180000);
 
+  /**
+   * §34 A full fillet — the whole thickness of the panel rolled away — is what
+   * somebody flaring a doubler actually wants, and the old cap was half a
+   * millimetre of §26's rule borrowed from a different shape. Swept finely the
+   * refusal sits on the thickness itself and nowhere before it.
+   */
+  it("takes a flare of all but a hundredth of the panel, and refuses the panel", () => {
+    const t = 18;
+    for (const type of ["fillet", "chamfer"]) {
+      const full = solid([bare({ flare: { type, radius: t - 0.01 } })]);
+      expect(vol(full)).toBeGreaterThan(0);
+      expect(vol(full)).toBeLessThan(vol(solid([bare()])));
+      // And the thickness itself is the one the kernel will not run.
+      expect(() => vol(solid([bare({ flare: { type, radius: t } })]))).toThrow();
+    }
+  }, 180000);
+
   it("stops the bolted driver short of its bolt circle, and the bare one at the wall", () => {
     const f = newFitting("driver", "front", at);
     // The rim may not land among the holes: they start at pcd/2 - boltHole/2.
     expect(f.cutout / 2 + largestFlare(f, 18)).toBeLessThan(f.pcd / 2 - f.boltHole / 2);
-    // With no bolts to reach, the wall is the only limit, and it is §26's.
-    expect(largestFlare(bare(), 18)).toBe(17.5);
-    expect(largestFlare(bare(), 12)).toBe(11.5);
+    // §34 With no bolts to reach, the wall is the only limit — and it is the
+    // whole wall bar a hundredth, which the sweep above proves the kernel will
+    // actually cut. A full fillet, in other words.
+    expect(largestFlare(bare(), 18)).toBe(17.99);
+    expect(largestFlare(bare(), 12)).toBe(11.99);
     // Nothing to cut into is nothing to cut.
     expect(largestFlare(bare(), 0)).toBe(0);
   });

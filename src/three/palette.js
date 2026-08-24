@@ -8,6 +8,24 @@ export const FACE_COLOUR = {
 
 export const LAYER_LIGHTNESS = { cladding: [0.02, 0.09], shell: [0, 0], doubler: [-0.05, -0.13], lagging: [-0.1, -0.2] };
 
+/**
+ * §35 The lining is not a shade of the face it lines.
+ *
+ * Every other layer is the face's own hue moved up or down in lightness, which
+ * is right for boards: a clad front and the carcass behind it are the same
+ * face at two depths, and reading them as one thing is the point. A lining is
+ * not that. It is a different material doing a different job, and drawn as
+ * "the front, darker" it was told from the front carcass only by how much
+ * light happened to be falling on each.
+ *
+ * So it leaves the hue axis altogether: a warm grey, which is what felt and
+ * wadding actually look like and which nothing else on the box is near — the
+ * six face colours are all green, blue or violet at a fair saturation. The
+ * face still shifts its lightness a little, so a lined left and a lined right
+ * are not identical either.
+ */
+export const LAGGING_COLOUR = "#8d8377";
+
 export const SELECT_EMISSIVE = 0x5f2110;
 export const ACCENT = "#e8703a";
 
@@ -53,10 +71,14 @@ export function hslToHex(h, s, l) {
  * behind it read as the same face at different depths.
  */
 export function panelColour(panel) {
-  const [h, s, l] = hexToHsl(FACE_COLOUR[panel.face]);
-  const shifts = LAYER_LIGHTNESS[panel.layer] ?? [0, 0];
   // The lighter end of each axis takes the smaller shift.
   const lighter = ["left", "front", "top"].includes(panel.face);
+  if (panel.layer === "lagging") {
+    const [h, s, l] = hexToHsl(LAGGING_COLOUR);
+    return hslToHex(h, s, l + (lighter ? 0.05 : -0.05));
+  }
+  const [h, s, l] = hexToHsl(FACE_COLOUR[panel.face]);
+  const shifts = LAYER_LIGHTNESS[panel.layer] ?? [0, 0];
   return hslToHex(h, s, l + (lighter ? shifts[0] : shifts[1]));
 }
 

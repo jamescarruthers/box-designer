@@ -495,6 +495,27 @@ describe("the app", () => {
     expect(screen.queryByLabelText("Fitting 1 boltsThrough")).toBe(null);
   });
 
+  it("§34 offers the whole panel to a flare once the bolts stop short of it", () => {
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByLabelText("Add doublers"), { target: { value: "front" } });
+    fireEvent.change(screen.getByLabelText("Add a fitting"), { target: { value: "driver" } });
+    fireEvent.click(within(container.querySelector(".fitting-flare")).getByRole("button", { name: "Fillet" }));
+
+    // Bolts through everything: the doubler being flared has the ring in it,
+    // and the flare has to stop clear of the holes.
+    const note = () => container.querySelector(".flare-note").textContent;
+    fireEvent.change(screen.getByLabelText("Fitting 1 flare"), { target: { value: "18" } });
+    expect(Number(screen.getByLabelText("Fitting 1 flare").value)).toBe(12.5);
+    expect(note()).toMatch(/bolt holes in the doubler are in the way/);
+
+    // Stop the bolts at the panel in front and the whole thickness is there.
+    fireEvent.change(screen.getByLabelText("Fitting 1 boltsThrough"), { target: { value: "1" } });
+    expect(note()).toMatch(/full thickness of the doubler/);
+    fireEvent.change(screen.getByLabelText("Fitting 1 flare"), { target: { value: "18" } });
+    expect(Number(screen.getByLabelText("Fitting 1 flare").value)).toBe(18);
+    expect(container.querySelector(".fitting .note").textContent).toMatch(/R18 fillet inside/);
+  });
+
   it("§13 keeps the design across a reload, and lets you get rid of it", () => {
     render(<App />);
     fireEvent.change(screen.getByLabelText("Thickness"), { target: { value: "21" } });

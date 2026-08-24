@@ -3,7 +3,7 @@ import { solve } from "../src/model/solver.js";
 import { noEdges, uniformEdges, edgeOwners } from "../src/model/bevel.js";
 import { buildCutList, cutListCsv, cutListTotals } from "../src/cutlist/cutlist.js";
 import { nest, sheetYield } from "../src/cutlist/nest.js";
-import { panelColour, FACE_COLOUR } from "../src/three/palette.js";
+import { panelColour, hexToHsl, FACE_COLOUR, LAGGING_COLOUR } from "../src/three/palette.js";
 
 const sol = solve({ envelope: { x: 300, y: 240, z: 420 }, thickness: 18, cladding: { front: 6 },
   order: ["front", "back", "left", "right", "top", "bottom"] });
@@ -107,5 +107,30 @@ describe("§4 colour modes", () => {
       expect(panelColour({ face, layer: "cladding" })).not.toBe(shell);
       expect(panelColour({ face, layer: "doubler" })).not.toBe(shell);
     }
+  });
+
+  /**
+   * §35 A board is its face at a depth; a lining is not. Drawn as "the front,
+   * darker", the felt inside a front panel was told from the front panel by
+   * how much light happened to be falling on each.
+   */
+  it("takes the lining off the face hue altogether", () => {
+    const grey = hexToHsl(LAGGING_COLOUR);
+    for (const face of Object.keys(FACE_COLOUR)) {
+      const lining = panelColour({ face, layer: "lagging" });
+      const board = panelColour({ face, layer: "shell" });
+      const [lh, ls] = hexToHsl(lining);
+      const [bh, bs] = hexToHsl(board);
+      // Its own hue, and far less of it than any board carries.
+      expect(lh).toBeCloseTo(grey[0], 2);
+      expect(ls).toBeLessThan(bs / 2);
+      // Which is a real difference rather than a shade: hue apart from the
+      // face, saturation apart from every board on the box.
+      expect(Math.abs(lh - bh)).toBeGreaterThan(0.05);
+      expect(lining).not.toBe(board);
+    }
+    // Opposite faces still differ, so a lined left is not a lined right.
+    expect(panelColour({ face: "left", layer: "lagging" }))
+      .not.toBe(panelColour({ face: "right", layer: "lagging" }));
   });
 });

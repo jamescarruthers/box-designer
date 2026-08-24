@@ -12,7 +12,7 @@ import { newFitting, describeFitting, faceAxes, hasTube, convertAt,
   driverOuter, driverDepth, driverMagnet, driverMagnetDepth, driverCone,
   driverThick, driverBasket, driverVoiceCoil,
   driverDisplacement, hasDisplacement, innermostOn, largestFlare,
-  fittingStack, boltDepth } from "../model/fittings.js";
+  fittingStack, boltDepth, fittingAt } from "../model/fittings.js";
 import { panelThickness } from "../model/solver.js";
 import { Num, Segmented, round } from "./fields.jsx";
 
@@ -26,6 +26,24 @@ export function centredFitting(derived, type, face) {
     a: (panel.box[p][0] + panel.box[p][1]) / 2,
     b: (panel.box[q][0] + panel.box[q][1]) / 2,
   });
+}
+
+/**
+ * §34 What the flare's limit is, and which of the two set it.
+ *
+ * The thickness where nothing else is in the way — the whole panel rolled
+ * away, if that is what somebody wants — and the bolt circle where the bolts
+ * reach that far, since a flare cannot open out through the holes that hold
+ * the driver on.
+ */
+export function flareNote(f, panel, most) {
+  const t = panelThickness(panel);
+  const layer = (LAYER_LABEL[panel.layer] ?? panel.layer).toLowerCase();
+  if (f?.bolts > 0 && most < t - 0.02) {
+    return `Up to ${round(most)} mm: the bolt holes in the ${layer} are in the way. `
+      + `Send the bolts no further than the panel in front and the whole ${round(t)} mm is available.`;
+  }
+  return `Up to ${round(most)} mm, the full thickness of the ${layer} it is cut in.`;
 }
 
 /**
@@ -79,7 +97,13 @@ export function FittingEditor({ fitting: f, index, edit, remove, derived, onFace
   // choose: a hole through the only panel there is goes through all of them.
   const stack = derived.sol?.panels ? fittingStack(derived.sol.panels, f.face) : [];
   const flare = f.flare?.type && f.flare.type !== "none" ? f.flare : { type: "none", radius: 0 };
-  const mostFlare = inner ? largestFlare(f, panelThickness(inner)) : 0;
+  // §34 The limit belongs to the panel the flare is cut in, as that panel is
+  // actually cut. Where the bolts stop short of it (§33) there is no bolt
+  // circle for the flare to graze, and the only limit left is the thickness —
+  // so a full fillet, the whole panel rolled away, becomes available exactly
+  // where somebody would want one.
+  const flaredAs = inner ? fittingAt(f, Math.max(0, stack.indexOf(inner))) : null;
+  const mostFlare = flaredAs ? largestFlare(flaredAs, panelThickness(inner)) : 0;
   // §20 Switching units moves the number, not the fitting.
   const setUnits = (units) => edit({ units, at: convertAt(f, panel, units) });
   return (
@@ -207,6 +231,12 @@ export function FittingEditor({ fitting: f, index, edit, remove, derived, onFace
             } })}
             options={[{ id: "none", name: "Square" }, { id: "chamfer", name: "Chamfer" }, { id: "fillet", name: "Fillet" }]} />
         </div>
+      ) : null}
+      {/* §34 Which of the two limits applies is worth saying, because it is
+          the difference between a 12 mm flare and rolling the whole panel
+          away — and the way to lift it is a control three rows up. */}
+      {f.type === "driver" && flare.type !== "none" && inner ? (
+        <p className="flare-note">{flareNote(flaredAs, inner, mostFlare)}</p>
       ) : null}
       {f.type === "port" ? (
         <label className="check">
