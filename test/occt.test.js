@@ -15,7 +15,7 @@ import {
 import { PROMINENCE_PRESETS } from "../src/model/constants.js";
 import { assembly, volumeOf, panelSolid, edgesOf, edgeMidpoint, cutFittings, portTube, cutoutRim } from "../src/occt/solids.js";
 import { applyMitres, mitreBevels, mitreLoss } from "../src/model/mitre.js";
-import { newFitting, fittingOwners, portOuterRadius, largestFlare, cutoutFlare } from "../src/model/fittings.js";
+import { newFitting, fittingOwners, portOuterRadius, largestFlare, cutoutFlare, flareHitsBolts, fittingCircles } from "../src/model/fittings.js";
 import { viewGeometry, hiddenLineRemoval, isoGeometry, VIEW_AXES, ISO_VIEW } from "../src/occt/hlr.js";
 import { kernelViews } from "../src/occt/drawing.js";
 import { OPS } from "../src/occt/worker.js";
@@ -363,13 +363,42 @@ describe("§29 flaring the inside of a cutout", () => {
     }
   }, 180000);
 
-  it("stops the bolted driver short of its bolt circle, and the bare one at the wall", () => {
+  /**
+   * §36 The bolt circle was never a limit on the shape, only on the order the
+   * cuts were made in. Flare while the face is still solid and drill the bolts
+   * through the flared surface, and the whole band §29 forbade builds.
+   */
+  it("cuts a flare that opens out through the bolt holes", () => {
+    const f = newFitting("driver", "front", at);        // five bolts at 147 PCD
+    const wide = { ...f, flare: { type: "fillet", radius: 16 } };
+    // A rim well past where the holes begin — the case §29 capped away.
+    expect(flareHitsBolts(wide)).toBe(true);
+    expect(largestFlare(wide, 18)).toBe(17.99);
+
+    const shape = solid([wide]);
+    expect(vol(shape)).toBeGreaterThan(0);
+    expect(vol(shape)).toBeLessThan(vol(solid([f])));
+    // Still five bolt holes and a cutout: the flare took none of them away.
+    expect(fittingCircles(wide).filter((c) => c.role === "bolt")).toHaveLength(5);
+  }, 180000);
+
+  /** §36 A bolt hole with a depth is drilled from the mounting face and stops. */
+  it("drills a blind bolt hole to the depth it was given", () => {
+    const p = panel();
+    const t = p.box.y[1] - p.box.y[0];
+    const f = { ...newFitting("driver", "front", at), bolts: 3 };
+    const through = vol(solid([f])), blind = vol(solid([{ ...f, boltDeep: 6 }]));
+    // Three holes a third of the way in rather than all the way: a third of
+    // the material a through hole would have taken.
+    expect(through).toBeLessThan(blind);
+    expect(blind - through).toBeCloseTo(3 * Math.PI * (f.boltHole / 2) ** 2 * (t - 6), 3);
+    // And a depth past the panel is simply a through hole again.
+    expect(vol(solid([{ ...f, boltDeep: t + 5 }]))).toBeCloseTo(through, 6);
+  }, 180000);
+
+  it("takes the whole thickness whether there are bolt holes or not", () => {
     const f = newFitting("driver", "front", at);
-    // The rim may not land among the holes: they start at pcd/2 - boltHole/2.
-    expect(f.cutout / 2 + largestFlare(f, 18)).toBeLessThan(f.pcd / 2 - f.boltHole / 2);
-    // §34 With no bolts to reach, the wall is the only limit — and it is the
-    // whole wall bar a hundredth, which the sweep above proves the kernel will
-    // actually cut. A full fillet, in other words.
+    expect(largestFlare(f, 18)).toBe(largestFlare(bare(), 18));
     expect(largestFlare(bare(), 18)).toBe(17.99);
     expect(largestFlare(bare(), 12)).toBe(11.99);
     // Nothing to cut into is nothing to cut.

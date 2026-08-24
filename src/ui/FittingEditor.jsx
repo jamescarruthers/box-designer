@@ -12,7 +12,7 @@ import { newFitting, describeFitting, faceAxes, hasTube, convertAt,
   driverOuter, driverDepth, driverMagnet, driverMagnetDepth, driverCone,
   driverThick, driverBasket, driverVoiceCoil,
   driverDisplacement, hasDisplacement, innermostOn, largestFlare,
-  fittingStack, boltDepth, fittingAt } from "../model/fittings.js";
+  fittingStack, boltDepth, fittingAt, flareHitsBolts, reaches } from "../model/fittings.js";
 import { panelThickness } from "../model/solver.js";
 import { Num, Segmented, round } from "./fields.jsx";
 
@@ -37,13 +37,12 @@ export function centredFitting(derived, type, face) {
  * the driver on.
  */
 export function flareNote(f, panel, most) {
-  const t = panelThickness(panel);
   const layer = (LAYER_LABEL[panel.layer] ?? panel.layer).toLowerCase();
-  if (f?.bolts > 0 && most < t - 0.02) {
-    return `Up to ${round(most)} mm: the bolt holes in the ${layer} are in the way. `
-      + `Send the bolts no further than the panel in front and the whole ${round(t)} mm is available.`;
-  }
-  return `Up to ${round(most)} mm, the full thickness of the ${layer} it is cut in.`;
+  const limit = `Up to ${round(most)} mm, the full thickness of the ${layer} it is cut in.`;
+  // §36 The bolt circle is no longer a limit — the flare is cut before the
+  // bolts are drilled, so it builds — but a flare that opens out past them is
+  // worth saying out loud at the control that did it.
+  return flareHitsBolts(f) ? `${limit} This one opens out into the bolt holes.` : limit;
 }
 
 /**
@@ -103,6 +102,10 @@ export function FittingEditor({ fitting: f, index, edit, remove, derived, onFace
   // so a full fillet, the whole panel rolled away, becomes available exactly
   // where somebody would want one.
   const flaredAs = inner ? fittingAt(f, Math.max(0, stack.indexOf(inner))) : null;
+  // §36 How deep a bolt hole runs when it runs right through: the panels the
+  // bolts are allowed through (§33), added up.
+  const boltThrough = stack.reduce((a, p, i) =>
+    a + (reaches(i, boltDepth(f)) ? panelThickness(p) : 0), 0);
   const mostFlare = flaredAs ? largestFlare(flaredAs, panelThickness(inner)) : 0;
   // §20 Switching units moves the number, not the fitting.
   const setUnits = (units) => edit({ units, at: convertAt(f, panel, units) });
@@ -147,6 +150,17 @@ export function FittingEditor({ fitting: f, index, edit, remove, derived, onFace
             <Num label="PCD" aria={`Fitting ${n} pcd`} suffix="mm" step={0.5} value={f.pcd} onChange={(v) => edit({ pcd: v })} />
             <Num label="Bolts" aria={`Fitting ${n} bolts`} value={f.bolts} min={2} onChange={(v) => edit({ bolts: Math.max(2, Math.round(v)) })} />
             <Num label="Bolt ⌀" aria={`Fitting ${n} boltHole`} suffix="mm" step={0.5} value={f.boltHole} onChange={(v) => edit({ boltHole: v })} />
+            {/* §36 How deep the mounting holes are drilled, from the mounting
+                face. Offered filled in with the depth of a hole that goes
+                right through what §33 lets it through, so a datasheet's screw
+                length is typed over a number; anything shorter is a blind hole
+                for a screw or an insert, and typing the through depth back
+                stores "through" rather than that number, so it stays a through
+                hole if the panel is made thicker. */}
+            <Num label="Bolt deep" aria={`Fitting ${n} boltDeep`} suffix="mm" step={0.5}
+              value={round(boltThrough > 0 ? Math.min(f.boltDeep ?? boltThrough, boltThrough) : (f.boltDeep ?? 0))}
+              max={boltThrough || undefined}
+              onChange={(v) => edit({ boltDeep: v >= boltThrough - 1e-9 ? null : v })} />
             {/* §24 Behind the baffle. Depth is overall and measured from the
                 mounting face, which is how a datasheet gives it. */}
             <Num label="Depth" aria={`Fitting ${n} depth`} suffix="mm" step={0.5}
