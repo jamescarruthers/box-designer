@@ -7,6 +7,7 @@ import {
   fittingIssues, describeFitting, fittingNote, faceAxes, toBlank, blankCircles,
   portOuterRadius, DEFAULT_DRIVER, cutoutFlare, largestFlare,
   fittingAt, boltDepth, reaches, stackDepth, fittingExtent, fittingCircles as circlesOf,
+  flareHitsBolts, flareReaches, boltRingInner,
 } from "../src/model/fittings.js";
 import { fittingGeometry, fittingDimensions, FACE_ON, toView } from "../src/drawing/fittings.js";
 import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
@@ -573,5 +574,73 @@ describe("§33 how deep a hole goes", () => {
     });
     const cut = d.sol.panels.filter((p) => p.face === "back").map((p) => [p.layer, d.fittingsOn(p).length]);
     expect(cut).toEqual([["shell", 1], ["doubler", 0]]);
+  });
+});
+
+
+/**
+ * §36 A depth for the bolt holes, and a flare allowed to run into them.
+ */
+describe("§36 how deep the bolt holes are drilled", () => {
+  const doubled = (extra = {}) => derive({
+    ...DEFAULT_DESIGN,
+    doubler: { front: { material: "birch", thickness: 12 } },
+    fittings: [{ ...centred("driver"), ...extra }],
+  });
+  const boltsOn = (d) => d.sol.panels.filter((p) => p.face === "front")
+    .map((p) => { const on = d.fittingsOn(p)[0]; return [p.layer, on?.bolts, on?.boltDeep]; });
+
+  it("goes right through when no depth is given", () => {
+    expect(boltsOn(doubled())).toEqual([["shell", 5, undefined], ["doubler", 5, undefined]]);
+    expect(circlesOf(centred("driver")).find((c) => c.role === "bolt").deep).toBe(undefined);
+  });
+
+  it("spends the depth through the stack, panel by panel", () => {
+    // 18 mm of carcass in front of the doubler, so a 25 mm hole has 7 left.
+    expect(boltsOn(doubled({ boltDeep: 25 }))).toEqual([["shell", 5, 25], ["doubler", 5, 7]]);
+    // And one that runs out in the baffle never reaches the doubler, which is
+    // then a panel with no bolts and no depth for them either.
+    expect(boltsOn(doubled({ boltDeep: 12 }))).toEqual([["shell", 5, 12], ["doubler", 0, null]]);
+  });
+
+  it("carries the depth on the circle, for the kernel to bore", () => {
+    const blind = circlesOf({ ...centred("driver"), boltDeep: 14 });
+    expect(blind.filter((c) => c.role === "bolt").every((c) => c.deep === 14)).toBe(true);
+    // The cutout is not a bolt hole and is never blind.
+    expect(blind.find((c) => c.role === "cutout").deep).toBe(undefined);
+    // Nought or negative is not a depth, it is no answer, so it goes through.
+    expect(circlesOf({ ...centred("driver"), boltDeep: 0 })[1].deep).toBe(undefined);
+  });
+});
+
+describe("§36 a flare that runs into the bolt holes", () => {
+  const flared = (radius) => ({ ...centred("driver"), flare: { type: "fillet", radius } });
+
+  it("is measured against where the holes begin", () => {
+    const f = flared(16);
+    expect(flareReaches(f)).toBe(f.cutout / 2 + 16);
+    expect(boltRingInner(f)).toBe(f.pcd / 2 - f.boltHole / 2);
+    expect(flareHitsBolts(f)).toBe(true);
+    expect(flareHitsBolts(flared(12))).toBe(false);
+    // No flare, no bolts, no question.
+    expect(flareHitsBolts(centred("driver"))).toBe(false);
+    expect(flareHitsBolts({ ...flared(16), bolts: 0 })).toBe(false);
+  });
+
+  it("is allowed, and warned about rather than prevented", () => {
+    const sol = solve({ envelope: E, thickness: 18,
+      order: ["front", "back", "left", "right", "top", "bottom"] });
+    const owners = fittingOwners(sol.panels, ["front"]);
+    const said = (radius) => fittingIssues([flared(radius)], sol.panels, owners, sol.cavity)
+      .find((m) => /bolt holes at/.test(m.text));
+
+    expect(said(12)).toBe(undefined);
+    const warned = said(16);
+    expect(warned.level).toBe("warning");
+    expect(warned.text).toMatch(/opens the cutout to ⌀148/);
+    expect(warned.text).toMatch(/open onto the flare rather than onto a flat face/);
+    // A warning, not an error: it is a shape somebody may want.
+    expect(fittingIssues([flared(16)], sol.panels, owners, sol.cavity)
+      .some((m) => m.level === "error")).toBe(false);
   });
 });

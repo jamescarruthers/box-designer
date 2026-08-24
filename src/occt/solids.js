@@ -180,7 +180,12 @@ function bore(oc, panel, face, at, radius, { from = "outer", length, overshoot =
   start[p] = at.a;
   start[q] = at.b;
   start[a] = from === "outer" ? outer + s * overshoot : inner;
-  const height = from === "outer" ? thickness + 2 * overshoot : length;
+  // §36 A bore from the outer face runs right through unless it is given a
+  // depth: a blind hole is drilled from the face somebody drills from, so the
+  // overshoot at the entry is added to the depth rather than to both ends.
+  const height = from === "inner" ? length
+    : Number.isFinite(length) ? length + overshoot
+      : thickness + 2 * overshoot;
 
   const axis = new oc.gp_Ax2_3(
     new oc.gp_Pnt_3(start.x, start.y, start.z),
@@ -199,15 +204,28 @@ function bore(oc, panel, face, at, radius, { from = "outer", length, overshoot =
  */
 export function cutFittings(oc, shape, panel, fittings) {
   let result = shape;
+  const cut = (shape_, tool) =>
+    new oc.BRepAlgoAPI_Cut_3(shape_, tool, new oc.Message_ProgressRange_1()).Shape();
   for (const f of fittings) {
-    for (const c of fittingCircles(f)) {
-      if (!(c.d > 0)) continue;
-      result = new oc.BRepAlgoAPI_Cut_3(result, bore(oc, panel, f.face, c.at, c.d / 2), new oc.Message_ProgressRange_1()).Shape();
+    const circles = fittingCircles(f).filter((c) => c.d > 0);
+    // §36 The order is the whole reason a flare may now run into the bolt
+    // holes. §29 cut every hole and then filleted, and OCCT refuses to run a
+    // fillet whose sweep crosses holes that are already there — which is what
+    // capped the radius short of the bolt circle. Cut the cutout, flare it
+    // while the face around it is still solid, and drill the bolts through the
+    // flared surface afterwards: every radius up to the thickness builds, and
+    // the bolt holes come out as ovals on the slope, which is what a drill
+    // through a routed flare actually leaves.
+    for (const c of circles.filter((x) => x.role !== "bolt")) {
+      result = cut(result, bore(oc, panel, f.face, c.at, c.d / 2));
     }
-    // §29 After the hole is through, not before: the edge to be flared does not
-    // exist until the bore has made it.
     const flare = cutoutFlare(f);
     if (flare) result = flareCutout(oc, result, panel, f, flare);
+    for (const c of circles.filter((x) => x.role === "bolt")) {
+      // §36 A depth makes it a blind hole — for a screw or an insert, drilled
+      // from the mounting face and stopping in the material.
+      result = cut(result, bore(oc, panel, f.face, c.at, c.d / 2, { length: c.deep }));
+    }
   }
   return result;
 }

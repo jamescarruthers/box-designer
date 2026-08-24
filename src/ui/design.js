@@ -407,9 +407,19 @@ export function derive(design) {
   // what it cuts *there*: the whole thing on the baffle, a bare cutout on the
   // doubler behind it, nothing at all on a layer no hole reaches.
   const depthOf = new Map();
-  for (const face of faces) fittingStack(sol.panels, face).forEach((p, i) => depthOf.set(p, i));
+  // §36 And how much material is in front of it, which is what a bolt hole
+  // given a depth in millimetres has already spent by the time it arrives.
+  const aheadOf = new Map();
+  for (const face of faces) {
+    let ahead = 0;
+    fittingStack(sol.panels, face).forEach((p, i) => {
+      depthOf.set(p, i);
+      aheadOf.set(p, ahead);
+      ahead += panelThickness(p);
+    });
+  }
   const fittingsOn = (panel) => fittings.filter((f) => f.face === panel.face)
-    .map((f) => fittingAt(f, depthOf.get(panel) ?? 0))
+    .map((f) => fittingAt(f, depthOf.get(panel) ?? 0, { ahead: aheadOf.get(panel) ?? 0 }))
     .filter(Boolean)
     .map((f) => flareOn(f, panel));
   const tubesOn = (panel) =>

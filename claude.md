@@ -2649,6 +2649,9 @@ rows up:
 Both halves are checked against the kernel rather than argued: the sweep builds
 every radius the rule allows across seven drivers and four thicknesses, and a
 test asserts both that `t - 0.01` cuts and that `t` throws.
+
+**§36 lifted the bolt-circle half of this entirely.** It was never a limit on
+the shape — only on the order the cuts were made in. See below.
 ## §35 The lining is not a shade of its face
 
 By-face colour is a hue per axis and a lightness per layer: a clad front and the
@@ -2673,3 +2676,60 @@ The test asks for the difference rather than for the value: the lining's hue is
 the grey's, its saturation is less than half any board's, and its hue is a
 distance from the face it lines — so a change to the face colours cannot quietly
 bring the two back together.
+
+## §36 A depth for the bolt holes, and a flare that may run into them
+
+### The bolt circle was never the limit
+
+§29 measured OCCT refusing a flare whose rim landed among the bolt holes, and
+capped the radius short of them. That was the right reading of the measurement
+and the wrong conclusion from it: the refusal is not about the shape, it is
+about the *order*. Filleting an edge whose sweep crosses holes that are already
+drilled is what OCCT will not do.
+
+So the cuts are made in the order a workshop makes them. The cutout is bored,
+the flare is run while the face around it is still solid, and the bolt holes are
+drilled through the flared surface afterwards. Measured across the whole band
+the old cap forbade:
+
+| flare R | rim reaches | bolts, then flare | flare, then bolts |
+| --- | --- | --- | --- |
+| 15 mm | 73 mm | ok | ok |
+| 16 mm | 74 mm | **refused** | ok |
+| 17 mm | 75 mm | **refused** | ok |
+| 17.99 mm | 75.99 mm | **refused** | ok |
+
+(⌀116 cutout, ⌀5 bolts on 147 PCD, so the holes span 71 to 76 mm from centre.)
+
+The thickness is now the only limit, and a flare that opens out into the bolt
+holes is **allowed and warned about** rather than prevented:
+
+> the R18 fillet opens the cutout to ⌀152, which breaks into the ⌀5 bolt holes
+> at 147 PCD — they will open onto the flare rather than onto a flat face.
+
+A warning and not an error, because it is a real thing to want. What it costs is
+that the bolts land on a slope, which is a decision for whoever is holding the
+driver. The flare control repeats it in one line, since that is the control that
+did it.
+
+### Bolt deep
+
+The mounting holes went right through whatever §33 let them through. **Bolt
+deep** is millimetres from the mounting face, so they can be blind: a pilot hole
+for a screw, or a hole for a threaded insert.
+
+Offered filled in with the depth of a hole that goes right through — 36 mm on a
+doubled 18 mm front — so a datasheet's screw length is typed over a number
+rather than into a gap. Typing the through depth back stores *through* rather
+than that number, so it stays a through hole if the panel is later made thicker.
+
+The depth is spent through the stack: 25 mm into a doubled front leaves 7 mm for
+the doubler, and 12 mm never reaches it at all — that panel then has the cutout
+and no bolt holes, which is the §33 case arrived at by a different road. A
+fitting handed on with no bolts carries no bolt depth either, since those are
+two facts that disagree.
+
+The bore reads the depth as a length and the overshoot at the entry makes a
+clean through-hole of anything longer than the panel, so "deeper than the
+material" needs no special case. The flat views ignore it: a blind hole is still
+a hole to mark out and drill.

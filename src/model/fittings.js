@@ -98,10 +98,15 @@ export function fittingCircles(f) {
   if (![f.at?.a, f.at?.b].every(Number.isFinite)) return [];
   if (f.type === "port") return [{ role: "bore", d: f.diameter, at: f.at }];
   const out = [{ role: "cutout", d: f.cutout, at: f.at }];
+  // §36 A bolt hole may be blind: drilled a given depth from the mounting face
+  // for a screw or an insert rather than run right through. Carried on the
+  // circle so the kernel can bore it and the flat views can ignore it — a
+  // blind hole is still a hole to mark out and drill.
+  const deep = Number.isFinite(f.boltDeep) && f.boltDeep > 0 ? f.boltDeep : undefined;
   for (let i = 0; i < f.bolts; i++) {
     const theta = Math.PI / 2 - (i / f.bolts) * 2 * Math.PI;
     out.push({
-      role: "bolt", d: f.boltHole, index: i,
+      role: "bolt", d: f.boltHole, index: i, deep,
       at: { a: f.at.a + (f.pcd / 2) * Math.cos(theta), b: f.at.b + (f.pcd / 2) * Math.sin(theta) },
     });
   }
@@ -133,7 +138,7 @@ export const reaches = (depth, through) => through == null || depth < through;
  * handed back with no bolts has no bolt holes anywhere, in every one of them
  * at once.
  */
-export function fittingAt(f, depth) {
+export function fittingAt(f, depth, { ahead = 0 } = {}) {
   const cutout = reaches(depth, f.through);
   // Bolts never go deeper than the hole they surround: a panel with the
   // clearance holes but no cutout is a panel the cone cannot get through, and
@@ -141,7 +146,18 @@ export function fittingAt(f, depth) {
   const bolts = f.type === "driver" && f.bolts > 0
     && cutout && reaches(depth, boltDepth(f));
   if (!cutout) return null;
-  return bolts ? f : { ...f, bolts: 0 };
+  // No bolts here, and so no depth for them either: a fitting handed on with
+  // nought bolts and a bolt depth is two facts that disagree.
+  if (!bolts) return f.bolts > 0 || f.boltDeep != null ? { ...f, bolts: 0, boltDeep: null } : f;
+  // §36 A given depth is measured from the mounting face, so what is left for
+  // this panel is that depth less the material in front of it. Run out, and
+  // the panel has no bolt holes at all; still going, and it carries what
+  // remains — which the bore reads as a length and the overshoot makes a
+  // clean through-hole of when it is more than the panel is thick.
+  if (!Number.isFinite(f.boltDeep) || !(f.boltDeep > 0)) return f;
+  const left = Number((f.boltDeep - ahead).toFixed(4));
+  if (left <= 0) return { ...f, bolts: 0, boltDeep: null };
+  return { ...f, boltDeep: left };
 }
 
 /** §33 How deep the mounting holes go: their own figure, capped by the cutout's. */
@@ -205,28 +221,34 @@ export function fittingExtent(f, { mounted = true } = {}) {
 export const FLARE_MARGIN = 0.01;
 
 /**
- * §29 The bolt circle is the other limit, and where there are bolt holes it is
- * the one that bites first. A flare opens the rim outward as it goes back, and
- * where its outer circle lands *within* the holes OCCT refuses it — an 18 mm
- * baffle took 13 mm and not 13.5, the rim reaching 71.5 mm against holes
- * starting at 71. Past them it builds again, and a flare that swallows the bolt
- * holes is not a flare, it is a bigger hole with no bolts left.
+ * §36 The bolt circle used to be the other limit, and it is not a limit at all.
  *
- * §34 Kept at half a millimetre rather than the hundredth above, because this
- * one is a workshop clearance to a hole rather than a kernel limit — and §33
- * makes it conditional in the way it always should have been: a panel whose
- * bolts stop short of it has no bolt circle to graze, so the thickness is the
- * only limit there.
+ * §29 measured OCCT refusing a flare whose rim landed among the bolt holes and
+ * capped the radius short of them. That refusal was never about the shape: it
+ * was about *order*. Filleting an edge whose sweep crosses holes already
+ * drilled is what OCCT will not do. Cut the cutout, flare it while the face
+ * around it is still solid, and drill the bolts through the flared surface
+ * afterwards, and every radius up to the thickness builds — measured across the
+ * whole band the old cap forbade.
+ *
+ * So the thickness is the only limit, and a flare that runs into the bolt holes
+ * is allowed and warned about (`fittingIssues`) rather than prevented. It is a
+ * real thing to want: the bolts then land on the slope, which is a decision for
+ * whoever is holding the driver, not for this.
  */
-const BOLT_CLEARANCE = 0.5;
-
 export function largestFlare(f, thickness) {
   if (!(thickness > 0)) return 0;
-  let most = thickness - FLARE_MARGIN;
-  if (f?.bolts > 0 && f.pcd > 0 && f.boltHole > 0) {
-    most = Math.min(most, (f.pcd / 2 - f.boltHole / 2) - f.cutout / 2 - BOLT_CLEARANCE);
-  }
-  return Math.max(0, Number(most.toFixed(4)));
+  return Math.max(0, Number((thickness - FLARE_MARGIN).toFixed(4)));
+}
+
+/** §36 How far out the flare opens the rim, and where the bolt holes start. */
+export const flareReaches = (f) => f.cutout / 2 + (cutoutFlare(f)?.radius ?? 0);
+export const boltRingInner = (f) => f.pcd / 2 - f.boltHole / 2;
+
+/** §36 Whether a flare opens out far enough to break into the bolt holes. */
+export function flareHitsBolts(f) {
+  if (!cutoutFlare(f) || !(f?.bolts > 0) || !(f.pcd > 0) || !(f.boltHole > 0)) return false;
+  return flareReaches(f) > boltRingInner(f);
 }
 
 export const cutoutFlare = (f) => {
@@ -684,6 +706,18 @@ export function fittingIssues(fittings, panels, owners, cavity) {
         }
       }
     });
+
+    // §36 A flare wide enough to break into the bolt holes is allowed — the
+    // kernel builds it once the flare is cut before the bolts are drilled — but
+    // it is worth knowing, because the bolts then land on a slope rather than
+    // on a flat, and a washer will not sit square on it.
+    if (flareHitsBolts(f)) {
+      const flare = cutoutFlare(f);
+      msgs.push({ level: "warning",
+        text: `${label}: the R${round1(flare.radius)} ${flare.type} opens the cutout to `
+          + `⌀${round1(flareReaches(f) * 2)}, which breaks into the ⌀${f.boltHole} bolt holes at `
+          + `${f.pcd} PCD — they will open onto the flare rather than onto a flat face.` });
+    }
 
     // §22 A frame narrower than the hole it covers is not a driver.
     if (f.type === "driver" && driverOuter(f) < f.cutout) {

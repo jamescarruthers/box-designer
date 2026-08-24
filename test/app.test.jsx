@@ -402,10 +402,10 @@ describe("the app", () => {
     expect(screen.getByLabelText("Fitting 1 flare").disabled).toBe(false);
     expect(container.querySelector(".fitting .note").textContent).toContain("fillet inside");
 
-    // §29 The cap is the panel and the bolt circle, and it is enforced rather
-    // than merely declared: a radius typed past it comes back at it.
+    // §36 The cap is the panel's thickness, and it is enforced rather than
+    // merely declared: a radius typed past it comes back at it.
     fireEvent.change(screen.getByLabelText("Fitting 1 flare"), { target: { value: "40" } });
-    expect(Number(screen.getByLabelText("Fitting 1 flare").value)).toBe(12.5);
+    expect(Number(screen.getByLabelText("Fitting 1 flare").value)).toBe(18);
 
     fireEvent.click(within(container.querySelector(".fitting-flare")).getByRole("button", { name: "Square" }));
     expect(container.querySelector(".fitting .note").textContent).not.toContain("inside");
@@ -495,25 +495,45 @@ describe("the app", () => {
     expect(screen.queryByLabelText("Fitting 1 boltsThrough")).toBe(null);
   });
 
-  it("§34 offers the whole panel to a flare once the bolts stop short of it", () => {
+  it("§36 gives the whole panel to a flare, and says when it opens into the bolts", () => {
     const { container } = render(<App />);
     fireEvent.change(screen.getByLabelText("Add doublers"), { target: { value: "front" } });
     fireEvent.change(screen.getByLabelText("Add a fitting"), { target: { value: "driver" } });
     fireEvent.click(within(container.querySelector(".fitting-flare")).getByRole("button", { name: "Fillet" }));
 
-    // Bolts through everything: the doubler being flared has the ring in it,
-    // and the flare has to stop clear of the holes.
+    // The thickness is the only limit now, bolt holes or no bolt holes.
     const note = () => container.querySelector(".flare-note").textContent;
     fireEvent.change(screen.getByLabelText("Fitting 1 flare"), { target: { value: "18" } });
-    expect(Number(screen.getByLabelText("Fitting 1 flare").value)).toBe(12.5);
-    expect(note()).toMatch(/bolt holes in the doubler are in the way/);
-
-    // Stop the bolts at the panel in front and the whole thickness is there.
-    fireEvent.change(screen.getByLabelText("Fitting 1 boltsThrough"), { target: { value: "1" } });
-    expect(note()).toMatch(/full thickness of the doubler/);
-    fireEvent.change(screen.getByLabelText("Fitting 1 flare"), { target: { value: "18" } });
     expect(Number(screen.getByLabelText("Fitting 1 flare").value)).toBe(18);
+    expect(note()).toMatch(/full thickness of the doubler/);
     expect(container.querySelector(".fitting .note").textContent).toMatch(/R18 fillet inside/);
+
+    // It opens well past the bolt circle at that size, and both the control
+    // and the messages say so rather than the app quietly preventing it.
+    expect(note()).toMatch(/opens out into the bolt holes/);
+    expect(container.textContent).toMatch(/breaks into the ⌀5 bolt holes at 147 PCD/);
+
+    // Back inside the bolt circle and neither says anything.
+    fireEvent.change(screen.getByLabelText("Fitting 1 flare"), { target: { value: "10" } });
+    expect(note()).not.toMatch(/opens out/);
+    expect(container.textContent).not.toMatch(/breaks into/);
+  });
+
+  it("§36 drills the bolt holes to a depth, and stops them where it runs out", () => {
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByLabelText("Add doublers"), { target: { value: "front" } });
+    fireEvent.change(screen.getByLabelText("Add a fitting"), { target: { value: "driver" } });
+
+    // Offered filled in with a hole that goes right through both panels.
+    expect(Number(screen.getByLabelText("Fitting 1 boltDeep").value)).toBe(36);
+
+    // Shallower than the baffle: the doubler behind it gets no bolt holes.
+    fireEvent.change(screen.getByLabelText("Fitting 1 boltDeep"), { target: { value: "12" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    const notes = [...container.querySelectorAll("figcaption")]
+      .map((el) => el.textContent).filter((t) => /Driver/.test(t));
+    expect(notes.filter((t) => /5 × ⌀5 on 147 PCD/.test(t))).toHaveLength(1);
+    expect(notes.filter((t) => /cutout only/.test(t))).toHaveLength(1);
   });
 
   it("§13 keeps the design across a reload, and lets you get rid of it", () => {
