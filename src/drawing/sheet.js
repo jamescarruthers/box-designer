@@ -43,13 +43,29 @@ export function pickScale(need, avail, scales = PREFERRED_SCALES) {
   return scales.find(fits) ?? scales[scales.length - 1];
 }
 
+/** §32 How close the isometric may come to the frame when it has the right of the sheet. */
+const ISO_MARGIN = 6;
+
+/** §6.6 The largest preferred scale an isometric of this size fits a cell at. */
+export function isoFit(cell, ext, fallback = 0) {
+  return PREFERRED_SCALES.find((k) => ext.h * k <= cell.w - 6 && ext.v * k <= cell.h - 6) ?? fallback;
+}
+
 export function scaleLabel(s) {
   if (s === 1) return "1:1";
   return s > 1 ? `${fmt(s)}:1` : `1:${fmt(1 / s)}`;
 }
 
-/** §6.2 Columns W, D, D; rows H, D. Centre the block in the frame. */
-export function layout(E) {
+/**
+ * §6.2 Columns W, D, D; rows H, D. Centre the block in the frame.
+ *
+ * §32 Without the section the third column is free, and the isometric takes
+ * it — the whole of it, both rows, on the right of the sheet. That is not
+ * merely tidier: the isometric of a box is taller than it is wide, and its old
+ * cell was wide and short, so its scale was pinned by the height. On the
+ * default box it goes from 1:10 to 1:2 for the same sheet.
+ */
+export function layout(E, { section = true, isoExt = null } = {}) {
   const frame = frameRect();
   const avail = { w: frame.w, h: frame.h - TITLE_BLOCK.h };
   const need = { w: E.x + 2 * E.y, h: E.z + E.y };
@@ -68,15 +84,31 @@ export function layout(E) {
   const cx = [x0, x0 + cols[0] + gapH, x0 + cols[0] + gapH + cols[1] + gapH];
   const cy = [y0, y0 + rows[0] + gapV];
 
+  const cells = {
+    front:   { x: cx[0], y: cy[0], w: cols[0], h: rows[0] },
+    end:     { x: cx[1], y: cy[0], w: cols[1], h: rows[0] },
+    section: { x: cx[2], y: cy[0], w: cols[2], h: rows[0] },
+    plan:    { x: cx[0], y: cy[1], w: cols[0], h: rows[1] },
+    iso:     { x: cx[1], y: cy[1], w: cols[1] + gapH + cols[2], h: rows[1] },
+  };
+  if (!section) {
+    delete cells.section;
+    // Out to the frame, not just to the width of the column the section had.
+    // The block is centred for three columns, so with the third one empty
+    // there is a margin's worth of sheet doing nothing on the right.
+    const right = frame.x + frame.w - ISO_MARGIN;
+    const column = { x: cx[2], y: cy[0], w: right - cx[2], h: rows[0] + gapV + rows[1] };
+    // A tall column suits the isometric of a tall box, which is most of them —
+    // on the default box it doubles the drawn size. A long low box projects
+    // *wide*, though, and for that one the bottom row run out to the frame is
+    // the bigger picture. Both are on the right of the sheet; whichever draws
+    // it larger wins, and the column wins a tie.
+    const strip = { x: cx[1], y: cy[1], w: right - cx[1], h: rows[1] };
+    cells.iso = isoExt && isoFit(strip, isoExt) > isoFit(column, isoExt) ? strip : column;
+  }
+
   return {
-    frame, scale: chosen, gapH, gapV, cols, rows,
-    cells: {
-      front:   { x: cx[0], y: cy[0], w: cols[0], h: rows[0] },
-      end:     { x: cx[1], y: cy[0], w: cols[1], h: rows[0] },
-      section: { x: cx[2], y: cy[0], w: cols[2], h: rows[0] },
-      plan:    { x: cx[0], y: cy[1], w: cols[0], h: rows[1] },
-      iso:     { x: cx[1], y: cy[1], w: cols[1] + gapH + cols[2], h: rows[1] },
-    },
+    frame, scale: chosen, gapH, gapV, cols, rows, cells,
     tooLargeForSheet: chosen === PREFERRED_SCALES[PREFERRED_SCALES.length - 1] &&
       (chosen * need.w + 2 * GAP_H[0] > avail.w || chosen * need.h + GAP_V[0] > avail.h),
   };
@@ -245,20 +277,32 @@ function dimension(p1, p2, off, text, { horizontal = true, reference = false } =
 export function buildSheet(sol, edges, opts = {}) {
   const { title = "SHEET BOX", material = "MDF 18 mm", rev = "A", sheetNo = "1 OF 1" } = opts;
   const cx = opts.sectionAt ?? sol.E.x / 2;
-  const L = layout(sol.E);
-  const s = L.scale;
+  // §32 Two things the reader of a drawing gets to decide.
+  const showSection = opts.section !== false;
+  const showInsulation = opts.insulation !== false;
+  // The lining is drawn or it is not, and "not" means the views are built
+  // without it rather than built with it and painted over. It is always the
+  // last group of panels (§30 adds it last), so dropping it leaves every other
+  // panel at the index the bevels and fittings were resolved against.
+  const drawn = showInsulation ? sol : withoutLagging(sol);
 
   // §11 The seam: anything that produces { view, ext, lines, arcs } can supply
   // the views. The analytic engine does by default; the OCCT path passes its
   // own, and the frame, title block, scale, dimensions and hatching are the
   // same either way.
   const geo = opts.geometry ?? {
-    front: buildOrthoView("front", sol, edges),
-    end: buildOrthoView("end", sol, edges),
-    plan: buildOrthoView("plan", sol, edges),
-    section: buildSection(sol, cx),
-    iso: buildIsometric(sol),
+    front: buildOrthoView("front", drawn, edges),
+    end: buildOrthoView("end", drawn, edges),
+    plan: buildOrthoView("plan", drawn, edges),
+    section: buildSection(drawn, cx),
+    iso: buildIsometric(drawn),
   };
+
+  // §32 The layout is settled after the views, not before: without a section
+  // the isometric picks which free rectangle it goes in, and it can only pick
+  // once its own extent is known.
+  const L = layout(sol.E, { section: showSection, isoExt: geo.iso?.ext ?? null });
+  const s = L.scale;
 
   // §10 Fittings. The bolt circle is an annotation either way — it is a
   // setting-out circle, not something the router follows. The cut circles are
@@ -282,7 +326,7 @@ export function buildSheet(sol, edges, opts = {}) {
   body.push(`<rect x="${f.x}" y="${f.y}" width="${f.w}" height="${f.h}" fill="none" stroke="var(--ink)" stroke-width="${LW.frame}"/>`);
 
   // Views.
-  for (const key of ["front", "end", "plan", "section"]) {
+  for (const key of showSection ? ["front", "end", "plan", "section"] : ["front", "end", "plan"]) {
     const cell = L.cells[key];
     const place = placer(cell, s);
     body.push(`<g data-view="${key}">`);
@@ -295,25 +339,36 @@ export function buildSheet(sol, edges, opts = {}) {
     body.push(`</g>`);
   }
 
-  // §6.5 The cutting-plane symbol goes on the plan.
-  body.push(cuttingPlane(L.cells.plan, s, cuttingPlaneOnPlan(sol, cx)));
+  // §6.5 The cutting-plane symbol goes on the plan — and only where there is
+  // a section for it to point at. A plane marked A–A with no A–A on the sheet
+  // is a reader looking for a view that was never drawn.
+  if (showSection) body.push(cuttingPlane(L.cells.plan, s, cuttingPlaneOnPlan(sol, cx)));
 
   // §6.6 The isometric usually needs its own preferred scale.
   const isoCell = L.cells.iso;
-  const isoScale = PREFERRED_SCALES.find((k) =>
-    geo.iso.ext.h * k <= isoCell.w - 6 && geo.iso.ext.v * k <= isoCell.h - 6) ?? s;
+  const isoScale = isoFit(isoCell, geo.iso.ext, s);
   const isoOx = isoCell.x + (isoCell.w - geo.iso.ext.h * isoScale) / 2;
   const isoOy = isoCell.y + (isoCell.h - geo.iso.ext.v * isoScale) / 2;
   const isoPlace = ([h, v]) => [isoOx + h * isoScale, isoOy + v * isoScale];
   isoPlace.scale = isoScale;
+  // §32 Captioned under the picture rather than at the foot of the cell. With
+  // the section's column to itself the cell is far taller than the drawing in
+  // it, and a title floating half a hand below the box belongs to nothing.
+  const isoLabelCell = { x: isoOx, y: isoOy, w: geo.iso.ext.h * isoScale, h: geo.iso.ext.v * isoScale };
   body.push(`<g data-view="iso">`, ...drawGeometry(geo.iso, isoPlace),
-    label(isoCell, VIEW_TITLE.iso, isoScale === s ? null : `SCALE ${scaleLabel(isoScale)}`), `</g>`);
+    label(isoLabelCell, VIEW_TITLE.iso, isoScale === s ? null : `SCALE ${scaleLabel(isoScale)}`), `</g>`);
 
   // §6.7 Dimensions.
   body.push(`<g data-dims="1">`, ...dimensions(sol, L), `</g>`);
 
   // Notes and keys.
-  body.push(notes(L, edges, sol.panels));
+  // The lining is named in the key when one is actually drawn — switched off,
+  // or never fitted, and the key would be pointing at a hatch that is not on
+  // the sheet. (The other three predate the option and are listed as before.)
+  body.push(notes(L, edges, drawn.panels, {
+    section: showSection,
+    insulation: showInsulation && drawn.panels.some((p) => p.layer === "lagging"),
+  }));
 
   // Title block.
   body.push(titleBlock(L, { title, material, rev, sheetNo, scale: s }));
@@ -328,7 +383,20 @@ export function buildSheet(sol, edges, opts = {}) {
     `</svg>`,
   ].join("");
 
-  return { svg, scale: s, isoScale, layout: L, geometry: geo, sectionAt: cx };
+  return { svg, scale: s, isoScale, layout: L, geometry: geo, sectionAt: cx,
+    section: showSection, insulation: showInsulation };
+}
+
+/**
+ * §32 The same solve without its lining, for drawing only.
+ *
+ * The box is the size it is: hiding the felt does not resize anything, so the
+ * envelope, the cavity and every dimension are untouched. All that goes is a
+ * set of panels nobody wanted to look at.
+ */
+export function withoutLagging(sol) {
+  const panels = sol.panels.filter((p) => p.layer !== "lagging");
+  return panels.length === sol.panels.length ? sol : { ...sol, panels };
 }
 
 /** Fold the fitting geometry into a view, so the sheet renders one thing. */
@@ -340,6 +408,15 @@ function withFittings(view, f, holesInGeometry) {
 function defs() {
   const pats = Object.entries(HATCH).map(([, h]) => {
     const p = h.pitch;
+    // §32 Stipple for a loose fill, lines for a board. Two dots offset by half
+    // a pitch, so the tile repeats as a staggered field rather than as rows
+    // and columns — a grid of dots reads as a grid, which is a texture no
+    // material has.
+    if (h.kind === "dots") {
+      return `<pattern id="${h.id}" patternUnits="userSpaceOnUse" width="${p}" height="${p}">` +
+        `<circle cx="${n2(p / 4)}" cy="${n2(p / 4)}" r="${h.r}" fill="var(--ink-2)"/>` +
+        `<circle cx="${n2((3 * p) / 4)}" cy="${n2((3 * p) / 4)}" r="${h.r}" fill="var(--ink-2)"/></pattern>`;
+    }
     return `<pattern id="${h.id}" patternUnits="userSpaceOnUse" width="${p}" height="${p}" patternTransform="rotate(${h.angle})">` +
       `<line x1="0" y1="0" x2="0" y2="${p}" stroke="var(--ink-2)" stroke-width="${LW.hatch}"/></pattern>`;
   }).join("");
@@ -406,8 +483,10 @@ export function planDimensions(sol, L) {
     hDim(c.end, cavEnd.h, -NEAR, fmt(internal.y), true),
     hDim(c.end, [0, E.y], -FAR, fmt(E.y), false),
     // Section: internal height on the right, where the wall build-up is shown.
-    vDim(c.section, cavEnd.v, NEAR, fmt(internal.z), true, true),
-  ].filter((d) => d.span[1] - d.span[0] > 1e-9);
+    // §32 It is a repeat of the front elevation's, put beside the view that
+    // explains it — so with no section on the sheet it simply goes.
+    c.section ? vDim(c.section, cavEnd.v, NEAR, fmt(internal.z), true, true) : null,
+  ].filter(Boolean).filter((d) => d.span[1] - d.span[0] > 1e-9);
 }
 
 function dimensions(sol, L) {
@@ -415,9 +494,20 @@ function dimensions(sol, L) {
     dimension(d.from, d.to, d.off, d.text, { horizontal: d.kind === "h", reference: d.reference }));
 }
 
-const NOTE = "ALL DIMENSIONS IN MILLIMETRES. BRACKETED DIMENSIONS ARE FOR REFERENCE. " +
-  "HIDDEN DETAIL DASHED. HATCHING IN SECTION: COARSE = CARCASS, OPPOSED = DOUBLER, FINE = CLADDING, " +
-  "WIDE = LAGGING.";
+/**
+ * §32 The note says what is on the sheet, and nothing else.
+ *
+ * A hatching key is worth reading where there is a section to read it against;
+ * on a sheet without one it is instructions for a view that is not there. Same
+ * for the lining, which is named only when it is drawn.
+ */
+export function noteText({ section = true, insulation = true } = {}) {
+  const base = "ALL DIMENSIONS IN MILLIMETRES. BRACKETED DIMENSIONS ARE FOR REFERENCE. HIDDEN DETAIL DASHED.";
+  if (!section) return base;
+  const key = ["COARSE = CARCASS", "OPPOSED = DOUBLER", "FINE = CLADDING"];
+  if (insulation) key.push("STIPPLE = LAGGING");
+  return `${base} HATCHING IN SECTION: ${key.join(", ")}.`;
+}
 
 /** §6.4 One note when every edge shares a treatment, leadered labels otherwise. */
 export function edgeNote(edges) {
@@ -448,10 +538,10 @@ export function mitreDrawingNote(panels = []) {
   return `MITRED 45°: ${keys.map((k) => k.replace("|", "/").toUpperCase()).join(", ")}.`;
 }
 
-function notes(L, edges, panels) {
+function notes(L, edges, panels, shown) {
   const f = L.frame;
   const x = f.x + 2, y = f.y + f.h - 3;
-  const wrapped = wrap(NOTE, 78);
+  const wrapped = wrap(noteText(shown), 78);
   const lines = [...wrapped, edgeNote(edges), mitreDrawingNote(panels)].filter(Boolean);
   return lines.map((t, i) =>
     `<text x="${n2(x)}" y="${n2(y - (lines.length - 1 - i) * 3.2)}" font-size="${TS.note}" fill="var(--ink-2)">${esc(t)}</text>`

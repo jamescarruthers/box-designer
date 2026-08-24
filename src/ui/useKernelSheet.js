@@ -8,7 +8,7 @@
 import { useEffect, useState } from "react";
 import { callKernel } from "../occt/client.js";
 import { isolated } from "../occt/kernel.js";
-import { buildSheet } from "../drawing/sheet.js";
+import { buildSheet, withoutLagging } from "../drawing/sheet.js";
 
 export function useKernelSheet(derived, design, enabled, attempt = 0) {
   const [state, setState] = useState({ status: "idle" });
@@ -24,13 +24,19 @@ export function useKernelSheet(derived, design, enabled, attempt = 0) {
       progress: { phase: "queued" } }));
 
     const t0 = performance.now();
+    // §32 A lining left off the drawing is left out of the shape the kernel is
+    // given, rather than drawn and covered up. The panels it drops are the last
+    // group in the list (§30 builds them last), so every other panel keeps the
+    // index its bevels and fittings were resolved against — which these two
+    // arrays and `owners` are all keyed by.
+    const drawSol = derived.drawing.insulation ? derived.sol : withoutLagging(derived.sol);
     callKernel("views", {
-      sol: derived.sol,
+      sol: drawSol,
       edges: derived.edges,
       owners: derived.owners,
       sectionAt: derived.sectionAt,
-      fittings: derived.sol.panels.map((p) => derived.fittingsOn?.(p) ?? []),
-      tubes: derived.sol.panels.map((p) => derived.tubesOn?.(p) ?? []),
+      fittings: drawSol.panels.map((p) => derived.fittingsOn?.(p) ?? []),
+      tubes: drawSol.panels.map((p) => derived.tubesOn?.(p) ?? []),
     }, {
       signal: cancel.signal,
       onProgress: (progress) => { if (live) setState((s) => ({ ...s, progress })); },
@@ -47,6 +53,8 @@ export function useKernelSheet(derived, design, enabled, attempt = 0) {
           fittings: derived.fittings,
           fittingPanels: derived.fittingPanels,
           holesInGeometry: true,
+          section: derived.drawing.section,
+          insulation: derived.drawing.insulation,
         });
         setState({ status: "ready", sheet, ms: Math.round(performance.now() - t0), isolated: isolated() });
       })
