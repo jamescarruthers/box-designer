@@ -2956,3 +2956,60 @@ top of that is decoration on a diagram.
 Close to, the fibre reads as a fibre. At arm's length the mip chain averages it
 into an even matte board, which is exactly what a sheet of Valchromat does from
 across a room.
+
+## §40 The isometric draws the edge treatments
+
+§38 rebuilt the isometric from solid panels, and built each panel as a box. A
+panel stops being a box the moment an edge is filleted or chamfered, so the
+isometric was the last view on the sheet still showing square corners on a box
+whose other four views showed round ones.
+
+It is built from the same loft the 3D view and the kernel are: the rings
+`panelSolid` stacks, each one the panel's cross-section at a depth from the
+outer face inward, narrowing as each bevel eats into it. Every quad between two
+rings is turned to face outward against the panel's centre — exact, because a
+bevelled box is still convex — and the ones whose normal points at the eye are
+the ones drawn.
+
+### Which lines a round has
+
+An edge is drawn when it is the silhouette, or when both faces either side of it
+are visible and the edge between them is a real edge. The second half is the
+part worth stating, because a fillet is lofted from eight facets and seven of
+the boundaries between them are not edges of anything:
+
+- the outer face and the inner face, always
+- the depth at which a bevel runs out into the side of the panel
+- nothing else
+
+The depths are shared by all four sides of a panel, so most ring boundaries are
+boundaries only because some *other* side is rounded at that depth. A line
+across the middle of a flat face because the edge beside it was filleted is the
+same mistake as a line across the round, and the rule catches both.
+
+What remains is what a filleted edge looks like on a drawing: two lines along
+its length with nothing between them, a quarter circle at each end where the
+round runs out into the square end of the panel, and — where the round turns
+away from the eye part-way along — one silhouette on the round itself. That last
+one is a real line and there is at most one per rounded edge; the test pins the
+count between "as many as a chamfer" and "one per rounded edge", which is the
+band the drawing is allowed to be in and excludes one line per facet.
+
+## §41 Hiding the insulation hides its dimension
+
+§32 gave the drawing a switch for the lining, and it drew the box without it
+rather than drawing it and painting over. §37 then put a dimension on the sheet
+for every interior — and nothing connected the two. The result was a sheet with
+the lining switched off that still carried a bracketed dimension to the face of
+a lining that was not drawn: a pair of extension lines reaching to nothing, and
+a section whose bracketed internal height was the cavity behind felt the reader
+could not see.
+
+`withoutLagging` now drops the inside of the lining along with the lining. The
+innermost thing on a drawing without the lining is the board, so `cavity` and
+`internal` become the board's, the ladder is one rung shorter, and the section's
+repeat of the internal height measures what the section shows.
+
+The layout follows: one interior fewer is one rung fewer to reserve room for, so
+the block sits a rung closer to the frame. Every view stays exactly the size it
+was — the box has not changed, only what is drawn of it.

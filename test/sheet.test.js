@@ -372,7 +372,13 @@ describe("§32 hiding the insulation", () => {
     // Six panels fewer in every view, and the box the same size in all of them.
     expect(withoutLagging(lined).panels).toHaveLength(lined.panels.length - 6);
     expect(off.scale).toBe(on.scale);
-    expect(off.layout.cells).toEqual(on.layout.cells);
+    for (const key of ["front", "end", "plan", "section"]) {
+      expect(off.layout.cells[key].w).toBe(on.layout.cells[key].w);
+      expect(off.layout.cells[key].h).toBe(on.layout.cells[key].h);
+    }
+    // §41 They do move: with one interior fewer to dimension there is one rung
+    // fewer to leave room for, so the block sits closer to the frame.
+    expect(off.layout.cells.front.x).toBeLessThan(on.layout.cells.front.x);
   });
 
   it("leaves a box with no lining exactly as it was", () => {
@@ -633,5 +639,45 @@ describe("§38 the isometric on the sheet", () => {
     };
     expect(front(apart.sheet)).toBe(front(still.sheet));
     expect(apart.sheet.isoScale).toBeLessThanOrEqual(still.sheet.isoScale);
+  });
+});
+
+describe("§41 hiding the insulation hides its dimension too", () => {
+  const lined = solve({ envelope: { x: 300, y: 360, z: 420 }, thickness: 18,
+    doubler: { front: 18 }, lagging: { front: 10, back: 10, left: 10, right: 10, top: 10, bottom: 10 },
+    order: PROMINENCE_PRESETS[0].order });
+
+  it("drops the inside of the lining along with the lining", () => {
+    const drawn = withoutLagging(lined);
+    expect(lined.interiors.map((i) => i.layer)).toContain("lagging");
+    expect(drawn.interiors.map((i) => i.layer)).not.toContain("lagging");
+    // What is innermost on the sheet is now the board, and that is what the
+    // section's bracketed internal height measures.
+    expect(drawn.cavity).toEqual(lined.boardInner);
+    expect(drawn.internal.z).toBe(lined.boardInner.z[1] - lined.boardInner.z[0]);
+    expect(drawn.internal.z).toBeGreaterThan(lined.internal.z);
+  });
+
+  it("takes the rung off the sheet, not just the hatching", () => {
+    const on = buildSheet(lined, noEdges(), {});
+    const off = buildSheet(lined, noEdges(), { insulation: false });
+    const cavityWidth = String(Math.round(lined.internal.x));
+    const boardWidth = String(Math.round(lined.boardInner.x[1] - lined.boardInner.x[0]));
+    expect(cavityWidth).not.toBe(boardWidth);
+    expect(on.svg).toContain(`>(${cavityWidth})<`);
+    // The dimension to a lining that is not drawn is a pair of extension lines
+    // reaching to nothing.
+    expect(off.svg).not.toContain(`>(${cavityWidth})<`);
+    expect(off.svg).toContain(`>(${boardWidth})<`);
+    // One rung fewer on every ladder, and the overall sizes untouched.
+    const rungs = (b) => (b.svg.match(/>\(\d+\)</g) ?? []).length;
+    expect(rungs(off)).toBeLessThan(rungs(on));
+    expect(off.svg).toContain(`>${lined.E.x}<`);
+  });
+
+  it("leaves a box with no lining alone", () => {
+    const plain = solve({ envelope: { x: 300, y: 360, z: 420 }, thickness: 18,
+      order: PROMINENCE_PRESETS[0].order });
+    expect(withoutLagging(plain)).toBe(plain);
   });
 });

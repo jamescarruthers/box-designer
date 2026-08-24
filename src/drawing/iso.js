@@ -8,9 +8,10 @@
 // is what lets a cutout be drawn where it is, on the face that carries it,
 // instead of being left off the one view where the box is shown whole.
 
-import { AXIS } from "../model/constants.js";
+import { AXIS, AXES, PAIR } from "../model/constants.js";
 import { faceAxes, fittingCircles } from "../model/fittings.js";
 import { explodedBox } from "../model/explode.js";
+import { ringAt, ringDepths, mitresOnly } from "../three/panelGeometry.js";
 
 export const ISO_X = Math.SQRT1_2, ISO_Y = Math.sqrt(1 / 6), ISO_Z = Math.sqrt(2 / 3);
 
@@ -80,34 +81,157 @@ export function paintOrder(items) {
   return out;
 }
 
-/** The three faces the eye sees, as [fixed axis, which end of it]. */
-const VISIBLE = [["x", 1], ["y", 0], ["z", 1]];
+/**
+ * §40 One panel's surface: the loft the 3D view is built from, as quads.
+ *
+ * A panel is not a box the moment an edge is filleted or chamfered, and §38
+ * drew it as one — the isometric was the last view on the sheet still showing
+ * square corners on a box with round ones. The rings are the same rings
+ * `panelSolid` lofts: the cross-section at each depth from the outer face
+ * inward, narrowing as each bevel eats into it.
+ *
+ * Every quad is turned to face outward against the panel's centre, which a
+ * bevelled box lets you do exactly because it is still convex. Then the ones
+ * the eye can see are the ones whose normal points at it.
+ */
+function panelQuads(panel, box, bevels) {
+  const moved = box === panel.box ? panel : { ...panel, box };
+  const [a, s] = AXIS[panel.face];
+  const [p, q] = AXES.filter((b) => b !== a);
+  const depths = ringDepths(moved, bevels);
+  const T = box[a][1] - box[a][0];
 
-const OTHER = { x: ["y", "z"], y: ["x", "z"], z: ["x", "y"] };
+  // Which face each side of the rectangle belongs to, so a side can be asked
+  // what it was bevelled with.
+  const sideFace = [PAIR[q][0], PAIR[p][1], PAIR[q][1], PAIR[p][0]];
+
+  const rings = depths.map((d) => {
+    const rect = d >= T - EPS
+      ? ringAt(moved, mitresOnly(bevels), T)       // §12 the final ring is mitres alone
+      : ringAt(moved, bevels, d);
+    const coord = s < 0 ? box[a][0] + d : box[a][1] - d;
+    return [[0, 0], [1, 0], [1, 1], [0, 1]].map(([ip, iq]) => {
+      const v = { [a]: coord, [p]: rect[p][ip], [q]: rect[q][iq] };
+      return { x: v.x, y: v.y, z: v.z };
+    });
+  });
+
+  /**
+   * Is the boundary at this depth, on this side, one the drawing shows?
+   *
+   * The outer and inner faces always, and the depth at which a bevel runs out
+   * into the side of the panel. Nothing else: a fillet is tangent to the face
+   * it starts from, so the eight facets it is lofted from meet at angles no
+   * line belongs at, and a filleted edge is a pair of lines with nothing
+   * between them — which is what it looks like.
+   *
+   * The depths are shared by all four sides, so most of them are boundaries
+   * only because some *other* side is rounded there. A line across the middle
+   * of a flat face because the edge beside it was filleted is the same mistake
+   * as a line across the round.
+   */
+  const sharpAt = (side, d) => {
+    if (d <= EPS || d >= T - EPS) return true;
+    const t = bevels[side];
+    return !!(t && t.radius > 0 && Math.abs(d - t.radius) < EPS);
+  };
+
+  const quads = [];
+  const add = (pts, edges) => {
+    // A ring can collapse — opposite insets meeting, or a mitre at full
+    // thickness — and a quad with no area is not a face.
+    const uniq = pts.filter((pt, i) => !pts.some((o, j) =>
+      j < i && Math.abs(o.x - pt.x) < EPS && Math.abs(o.y - pt.y) < EPS && Math.abs(o.z - pt.z) < EPS));
+    if (uniq.length < 3) return;
+    quads.push({ pts, edges });
+  };
+
+  // The outer cap first: it is the panel's own face, and the one anything
+  // asking "which way is this panel looking" wants to find.
+  add(rings[0], [true, true, true, true]);
+  for (let r = 0; r + 1 < rings.length; r++) {
+    const A = rings[r], B = rings[r + 1];
+    for (let c = 0; c < 4; c++) {
+      const d = (c + 1) % 4;
+      const side = sideFace[c];
+      add([A[c], A[d], B[d], B[c]], [
+        sharpAt(side, depths[r]),        // the boundary this band starts at
+        true,                            // the corner it shares with the next side
+        sharpAt(side, depths[r + 1]),    // the boundary it ends at
+        true,                            // and the corner on the other hand
+      ]);
+    }
+  }
+  add(rings[rings.length - 1], [true, true, true, true]);
+
+  // Outward, against the centre of the panel.
+  const c = { x: 0, y: 0, z: 0 };
+  let n = 0;
+  for (const ring of rings) for (const v of ring) { c.x += v.x; c.y += v.y; c.z += v.z; n++; }
+  c.x /= n; c.y /= n; c.z /= n;
+  for (const quad of quads) {
+    const nrm = quadNormal(quad.pts);
+    const mid = quad.pts.reduce((acc, v) => ({ x: acc.x + v.x / 4, y: acc.y + v.y / 4, z: acc.z + v.z / 4 }),
+      { x: 0, y: 0, z: 0 });
+    const out = (mid.x - c.x) * nrm.x + (mid.y - c.y) * nrm.y + (mid.z - c.z) * nrm.z;
+    if (out < 0) { nrm.x *= -1; nrm.y *= -1; nrm.z *= -1; }
+    quad.normal = nrm;
+    quad.visible = nrm.x * ISO_EYE.x + nrm.y * ISO_EYE.y + nrm.z * ISO_EYE.z > EPS;
+    quad.axis = ["x", "y", "z"]
+      .reduce((best, k) => (Math.abs(nrm[k]) > Math.abs(nrm[best]) ? k : best), "x");
+  }
+  return quads;
+}
+
+function quadNormal(pts) {
+  const u = { x: pts[1].x - pts[0].x, y: pts[1].y - pts[0].y, z: pts[1].z - pts[0].z };
+  const v = { x: pts[2].x - pts[0].x, y: pts[2].y - pts[0].y, z: pts[2].z - pts[0].z };
+  const n = {
+    x: u.y * v.z - u.z * v.y,
+    y: u.z * v.x - u.x * v.z,
+    z: u.x * v.y - u.y * v.x,
+  };
+  const len = Math.hypot(n.x, n.y, n.z) || 1;
+  return { x: n.x / len, y: n.y / len, z: n.z / len };
+}
+
+/**
+ * §40 The lines of one panel.
+ *
+ * An edge is drawn when it is the silhouette — one face either side of it and
+ * only one of them turned towards the eye — or when both faces are visible and
+ * the edge between them is a real edge rather than one step of a round.
+ * Everything else is inside a surface, and a line there is a line the box
+ * does not have.
+ */
+function panelLines(quads) {
+  const seen = new Map();
+  for (const quad of quads) {
+    for (let i = 0; i < 4; i++) {
+      const u = quad.pts[i], v = quad.pts[(i + 1) % 4];
+      const ku = key3(u), kv = key3(v);
+      if (ku === kv) continue;
+      const k = ku < kv ? `${ku}|${kv}` : `${kv}|${ku}`;
+      const found = seen.get(k) ?? { u, v, faces: 0, visible: 0, feature: false };
+      found.faces += 1;
+      if (quad.visible) found.visible += 1;
+      if (quad.edges[i]) found.feature = true;
+      seen.set(k, found);
+    }
+  }
+  const out = [];
+  for (const e of seen.values()) {
+    if (e.visible === 0) continue;
+    if (e.visible === 1 || e.feature) out.push([e.u, e.v]);
+  }
+  return out;
+}
+
+const r6 = (n) => Math.round(n * 1e6) / 1e6;
+const key3 = (v) => `${r6(v.x)},${r6(v.y)},${r6(v.z)}`;
 
 /** How finely a circle is sampled. 48 keeps a ⌀160 hole smooth at 1:2. */
 const CIRCLE_STEPS = 48;
-
-const r6 = (n) => Math.round(n * 1e6) / 1e6;
-
-/**
- * §38 One panel's visible faces, as projected rings.
- *
- * A face is a rectangle in two of the axes at a fixed value of the third, and
- * its four corners in order give a polygon that is convex in projection — so
- * it fills and outlines without any further thought.
- */
-function panelFaces(box) {
-  return VISIBLE.map(([fixed, end]) => {
-    const [p, q] = OTHER[fixed];
-    const at = box[fixed][end];
-    const pts = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([ip, iq]) => {
-      const v = { [fixed]: at, [p]: box[p][ip], [q]: box[q][iq] };
-      return isoProject(v);
-    });
-    return { fixed, at, pts };
-  });
-}
 
 /**
  * Which side of a panel the eye is on: the outer face of a front, left or
@@ -206,27 +330,35 @@ function runsInside(pts, within) {
  * `fittingsOn` is the same function the cut list and the kernel use, so a hole
  * that §33 stopped at the baffle is drawn in the baffle and not in the doubler
  * behind it — and when the box is exploded, that reads.
+ *
+ * §40 `bevelsOf` is the panel's edge treatments, from the same `panelBevels`
+ * the 3D view and the kernel are built from. Without it a panel is a box,
+ * which is what the isometric drew before and what a filleted box is not.
  */
-export function buildIsometric(sol, { explode = 0, fittingsOn = null } = {}) {
+export function buildIsometric(sol, { explode = 0, fittingsOn = null, bevelsOf = null } = {}) {
   const { panels } = sol;
   const groups = [];
 
-  const ordered = paintOrder(panels.map((panel) => ({ panel, box: explodedBox(panel, explode) })));
+  const ordered = paintOrder(panels.map((panel, index) =>
+    ({ panel, index, box: explodedBox(panel, explode) })));
 
-  for (const { panel, box } of ordered) {
-    const faces = panelFaces(box);
+  for (const { panel, index, box } of ordered) {
+    const quads = panelQuads(panel, box, bevelsOf?.(panel, index) ?? {});
+    const visible = quads.filter((q) => q.visible);
     const holes = fittingsOn ? panelHoles(panel, box, fittingsOn(panel)) : [];
-    groups.push({ panel, faces, holes, edges: outline(faces) });
+    groups.push({ panel, visible, holes, edges: panelLines(quads) });
   }
 
   const all = groups.flatMap((g) => [
-    ...g.faces.flatMap((f) => f.pts),
+    ...g.visible.flatMap((q) => q.pts.map(isoProject)),
+    ...g.edges.flatMap(([u, v]) => [isoProject(u), isoProject(v)]),
     ...g.holes.flatMap((h) => h.pts),
   ]);
   const xs = all.map((p) => p.x), ys = all.map((p) => p.y);
   const min = { x: Math.min(...xs), y: Math.min(...ys) };
   const ext = { h: Math.max(...xs) - min.x, v: Math.max(...ys) - min.y };
   const to = (p) => [p.x - min.x, p.y - min.y];
+  const flat = (v) => to(isoProject(v));
 
   return {
     view: "iso", ext, arcs: [], hatches: [], lines: [],
@@ -237,30 +369,11 @@ export function buildIsometric(sol, { explode = 0, fittingsOn = null } = {}) {
       // runs to the corner where the butted one stops a thickness short of it,
       // and that is a difference in one face of one panel.
       face: g.panel.face, layer: g.panel.layer,
-      fills: g.faces.map((f) => ({ axis: f.fixed, pts: f.pts.map(to) })),
+      fills: g.visible.map((q) => ({ axis: q.axis, pts: q.pts.map(flat) })),
       lines: [
-        ...g.edges.map((e) => ({ pts: e.map(to), closed: false })),
+        ...g.edges.map(([u, v]) => ({ pts: [flat(u), flat(v)], closed: false })),
         ...g.holes.map((h) => ({ pts: h.pts.map(to), closed: h.closed })),
       ],
     })),
   };
-}
-
-/**
- * The lines of one panel: the outline of each visible face. Shared edges are
- * drawn once — three quadrilaterals meeting at a corner share three of their
- * twelve sides, and a line drawn twice is a line drawn heavier.
- */
-function outline(faces) {
-  const seen = new Map();
-  for (const f of faces) {
-    for (let i = 0; i < f.pts.length; i++) {
-      const a = f.pts[i], b = f.pts[(i + 1) % f.pts.length];
-      const ka = `${r6(a.x)},${r6(a.y)}`, kb = `${r6(b.x)},${r6(b.y)}`;
-      if (ka === kb) continue;
-      const key = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
-      if (!seen.has(key)) seen.set(key, [a, b]);
-    }
-  }
-  return [...seen.values()];
 }
