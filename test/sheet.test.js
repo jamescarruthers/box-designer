@@ -6,7 +6,7 @@ import { applyMitres } from "../src/model/mitre.js";
 import { fittingDimensions, DIM_ANGLE } from "../src/drawing/fittings.js";
 import { newFitting } from "../src/model/fittings.js";
 import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
-import { buildSheet, layout, planDimensions, pickScale, scaleLabel, edgeNote, mitreDrawingNote, noteText, isoFit, withoutLagging, SHEET, TITLE_BLOCK, LW, TS, PREFERRED_SCALES, GAP_H, GAP_V, frameRect } from "../src/drawing/sheet.js";
+import { buildSheet, layout, planDimensions, dimensionLadder, dimensionStep, dimensionRungs, DIM_NEAR, DIM_STEP, DIM_STEP_MIN, pickScale, scaleLabel, edgeNote, mitreDrawingNote, noteText, isoFit, withoutLagging, SHEET, TITLE_BLOCK, LW, TS, PREFERRED_SCALES, GAP_H, GAP_V, frameRect } from "../src/drawing/sheet.js";
 import { HATCH } from "../src/drawing/section.js";
 import { buildIsometric } from "../src/drawing/iso.js";
 import { addPanel, editPanel } from "../src/ui/design.js";
@@ -156,10 +156,28 @@ describe("§6.7 dimensions measure what they say", () => {
     ["thin walls", { envelope: { x: 180, y: 220, z: 260 }, thickness: 6 }],
   ];
 
+  /**
+   * §37 Split a plan into its ladders: each run of dimensions ends at the one
+   * unbracketed overall size for that axis. The section's internal height sits
+   * on the far side of its view, so its offset is positive and it is not part
+   * of a ladder.
+   */
+  const ladders = (plan) => {
+    const runs = [];
+    let run = [];
+    for (const d of plan.filter((d) => d.off < 0)) {
+      run.push(d);
+      if (!d.reference) { runs.push(run); run = []; }
+    }
+    return runs;
+  };
+
   it.each(cases)("%s: every dimension spans the length it prints", (_name, input) => {
     const s = solve({ ...input, order: ["front", "back", "left", "right", "top", "bottom"] });
     const plan = planDimensions(s, layout(s.E));
-    expect(plan.length).toBe(7);
+    // Three overall sizes — width, height, depth — however many interiors the
+    // box has between them.
+    expect(plan.filter((d) => !d.reference)).toHaveLength(3);
     for (const d of plan) {
       // This is the bug the drawing had: an internal dimension anchored to the
       // envelope drew the overall width and printed the internal number on it.
@@ -170,13 +188,24 @@ describe("§6.7 dimensions measure what they say", () => {
   it.each(cases)("%s: internal dimensions are bracketed and sit inside the overall ones", (_name, input) => {
     const s = solve({ ...input, order: ["front", "back", "left", "right", "top", "bottom"] });
     const plan = planDimensions(s, layout(s.E));
-    const internal = plan.filter((d) => d.reference);
-    const overall = plan.filter((d) => !d.reference);
-    expect(internal).toHaveLength(4);
-    expect(overall).toHaveLength(3);
-    for (const d of internal) expect(Math.abs(d.off)).toBeLessThan(Math.abs(overall[0].off));
-    // Every internal span is strictly inside the envelope it is drawn against.
-    for (const d of internal) expect(d.span[0]).toBeGreaterThan(0);
+    for (const d of plan.filter((d) => d.reference)) {
+      // Every internal span lies within the envelope it is drawn against. It
+      // can start flush with it: cladding on the top face and not the bottom
+      // leaves the inside of the cladding sitting on the bottom of the box.
+      expect(d.span[0]).toBeGreaterThanOrEqual(0);
+    }
+    // §37 Each axis is a ladder: its interiors nearest the view, innermost
+    // first, and the overall outside them all.
+    for (const rungs of ladders(plan)) {
+      const overall = rungs.at(-1);
+      expect(overall.reference).toBe(false);
+      expect(rungs.slice(0, -1).every((d) => d.reference)).toBe(true);
+      for (let i = 1; i < rungs.length; i += 1) {
+        expect(Math.abs(rungs[i].off)).toBeGreaterThan(Math.abs(rungs[i - 1].off));
+        expect(rungs[i].span[1] - rungs[i].span[0])
+          .toBeGreaterThan(rungs[i - 1].span[1] - rungs[i - 1].span[0]);
+      }
+    }
   });
 
   it("prints the internal sizes the solver reports, not the envelope", () => {
@@ -421,5 +450,93 @@ describe("§32 the options in the design", () => {
     expect(both.sheet.svg).not.toMatch(/SECTION A–A/);
     expect(both.sheet.svg).not.toMatch(/url\(#hatch-lagging\)/);
     expect(derive(felt).sheet.svg).toMatch(/url\(#hatch-lagging\)/);
+  });
+});
+
+describe("§37 every interior is dimensioned, not just the innermost", () => {
+  const lined = () => {
+    let d = DEFAULT_DESIGN;
+    for (const f of FACES) d = editPanel(addPanel(d, "cladding", f), "cladding", f, { thickness: 6 });
+    for (const f of ["front", "back", "left", "right"])
+      d = editPanel(addPanel(d, "doubler", f), "doubler", f, { thickness: 18 });
+    for (const f of FACES) d = editPanel(addPanel(d, "lagging", f), "lagging", f, { thickness: 10 });
+    return d;
+  };
+
+  it("solves the box with one interior per layer", () => {
+    const sol = derive(lined()).sol;
+    expect(sol.interiors.map((i) => i.layer))
+      .toEqual(["cladding", "shell", "doubler", "lagging"]);
+    // They nest: each is inside the one before it.
+    for (let i = 1; i < sol.interiors.length; i += 1) {
+      const outer = sol.interiors[i - 1].box, inner = sol.interiors[i].box;
+      for (const axis of ["x", "y", "z"]) {
+        expect(inner[axis][0]).toBeGreaterThanOrEqual(outer[axis][0]);
+        expect(inner[axis][1]).toBeLessThanOrEqual(outer[axis][1]);
+      }
+    }
+    // The innermost is still the cavity the rest of the app measures.
+    expect(sol.interiors.at(-1).box).toEqual(sol.cavity);
+  });
+
+  it("draws a rung for every distinct interior width", () => {
+    const sol = derive(lined()).sol;
+    const overall = sol.E.x;
+    const rungs = dimensionLadder(sol.interiors, overall, (b) => b.x);
+    expect(rungs.map((r) => r.layer)).toEqual(["lagging", "doubler", "shell", "cladding"]);
+    // Innermost first, and each one wider than the last.
+    for (let i = 1; i < rungs.length; i += 1)
+      expect(rungs[i].size).toBeGreaterThan(rungs[i - 1].size);
+    expect(rungs.at(-1).size).toBeLessThan(overall);
+  });
+
+  it("counts one rung where two interiors measure the same", () => {
+    // A plain carcass has no cladding and no doubler, so "inside the cladding"
+    // is the envelope and "inside the doubler" is the carcass opening again.
+    // One line on one pair of extension lines, not three.
+    const sol = solve({ envelope: { x: 236, y: 286, z: 356 }, thickness: 18,
+      order: PROMINENCE_PRESETS[0].order });
+    const rungs = dimensionLadder(sol.interiors, sol.E.x, (b) => b.x);
+    expect(rungs).toHaveLength(1);
+    expect(rungs[0].size).toBe(200);
+  });
+
+  it("keeps the two rungs a plain box always had", () => {
+    const sol = solve({ envelope: { x: 236, y: 286, z: 356 }, thickness: 18,
+      order: PROMINENCE_PRESETS[0].order });
+    const plan = planDimensions(sol, layout(sol.E, { dimRungs: dimensionRungs(sol) }));
+    const widths = plan.filter((d) => d.kind === "h" && d.off < 0 && d.span[1] <= 236);
+    expect(widths.map((d) => d.text)).toEqual(["200", "236"]);
+    expect(widths.map((d) => d.off)).toEqual([-DIM_NEAR, -(DIM_NEAR + DIM_STEP)]);
+  });
+
+  it("closes the rungs up rather than running off the sheet", () => {
+    expect(dimensionStep(1, 40)).toBe(DIM_STEP);
+    expect(dimensionStep(2, 200)).toBe(DIM_STEP);       // plenty of room: unchanged
+    expect(dimensionStep(5, 30)).toBeLessThan(DIM_STEP);
+    expect(dimensionStep(5, 30)).toBeGreaterThanOrEqual(DIM_STEP_MIN);
+    expect(dimensionStep(9, 12)).toBe(DIM_STEP_MIN);    // never thinner than legible
+  });
+
+  it("leaves the layout room for however many rungs there are", () => {
+    const sol = derive(lined()).sol;
+    const rungs = dimensionRungs(sol);
+    expect(rungs).toBeGreaterThan(1);
+    const roomy = layout(sol.E, { dimRungs: rungs });
+    const tight = layout(sol.E, { dimRungs: 1 });
+    expect(roomy.cells.front.y).toBeGreaterThan(tight.cells.front.y);
+    // Every rung, and the number that sits above the outermost, is on the sheet.
+    const plan = planDimensions(sol, roomy);
+    for (const d of plan)
+      expect(d.from[1] + d.off).toBeGreaterThan(roomy.frame.y);
+  });
+
+  it("prints all four interior widths on the sheet", () => {
+    const sol = derive(lined()).sol;
+    const rungs = dimensionLadder(sol.interiors, sol.E.x, (b) => b.x);
+    expect(rungs).toHaveLength(4);
+    const svg = derive(lined()).sheet.svg;
+    for (const r of rungs) expect(svg).toContain(`>(${r.size})<`);
+    expect(svg).toContain(`>${sol.E.x}<`);
   });
 });

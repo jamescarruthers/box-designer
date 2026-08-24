@@ -46,6 +46,15 @@ export function pickScale(need, avail, scales = PREFERRED_SCALES) {
 /** §32 How close the isometric may come to the frame when it has the right of the sheet. */
 const ISO_MARGIN = 6;
 
+/** §6.7 The ladder: how far the first dimension line stands off the view, and
+ *  the gap between the rest of them. §37 spaces every interior by these. */
+export const DIM_NEAR = 9;
+export const DIM_STEP = 8;
+/** The closest two dimension lines may sit and still be read apart. */
+export const DIM_STEP_MIN = 5;
+/** Room for the outermost number, which sits proud of its own line. */
+const DIM_TEXT = 4;
+
 /** §6.6 The largest preferred scale an isometric of this size fits a cell at. */
 export function isoFit(cell, ext, fallback = 0) {
   return PREFERRED_SCALES.find((k) => ext.h * k <= cell.w - 6 && ext.v * k <= cell.h - 6) ?? fallback;
@@ -65,7 +74,7 @@ export function scaleLabel(s) {
  * cell was wide and short, so its scale was pinned by the height. On the
  * default box it goes from 1:10 to 1:2 for the same sheet.
  */
-export function layout(E, { section = true, isoExt = null } = {}) {
+export function layout(E, { section = true, isoExt = null, dimRungs = 1 } = {}) {
   const frame = frameRect();
   const avail = { w: frame.w, h: frame.h - TITLE_BLOCK.h };
   const need = { w: E.x + 2 * E.y, h: E.z + E.y };
@@ -79,7 +88,17 @@ export function layout(E, { section = true, isoExt = null } = {}) {
   const blockW = cols.reduce((a, b) => a + b, 0) + 2 * gapH;
   const blockH = rows.reduce((a, b) => a + b, 0) + gapV;
   const x0 = frame.x + (avail.w - blockW) / 2;
-  const y0 = frame.y + (avail.h - blockH) / 2;
+  // §37 Headroom for the dimension ladder above the elevations. Centred, the
+  // block leaves whatever the arithmetic leaves; a clad, doubled and lined box
+  // wants five dimension lines up there and used to run them off the sheet.
+  // Nothing sits under the bottom row, so the slack it does not need is the
+  // slack this takes — and a box with one interior asks for less than the
+  // centred position gives, so nothing already drawn moves.
+  const headroom = DIM_NEAR + dimRungs * DIM_STEP + DIM_TEXT;
+  const y0 = frame.y + Math.min(
+    Math.max((avail.h - blockH) / 2, headroom),
+    Math.max(0, avail.h - blockH),
+  );
 
   const cx = [x0, x0 + cols[0] + gapH, x0 + cols[0] + gapH + cols[1] + gapH];
   const cy = [y0, y0 + rows[0] + gapV];
@@ -301,7 +320,9 @@ export function buildSheet(sol, edges, opts = {}) {
   // §32 The layout is settled after the views, not before: without a section
   // the isometric picks which free rectangle it goes in, and it can only pick
   // once its own extent is known.
-  const L = layout(sol.E, { section: showSection, isoExt: geo.iso?.ext ?? null });
+  const L = layout(sol.E, {
+    section: showSection, isoExt: geo.iso?.ext ?? null, dimRungs: dimensionRungs(sol),
+  });
   const s = L.scale;
 
   // §10 Fittings. The bolt circle is an annotation either way — it is a
@@ -453,13 +474,71 @@ function cuttingPlane(cell, s, cp) {
  *
  * Shorter dimensions sit nearer the object and the overall outside them, so
  * extension lines never cross a dimension line (ISO 129).
+ *
+ * §37 One rung per interior, not one for the innermost. A doubled, lined box
+ * encloses four boxes — inside the cladding, inside the carcass, inside the
+ * doubler, inside the lining — and only the last of them was on the sheet, so
+ * a reader could not get the size of the carcass opening a driver goes through
+ * without doing the arithmetic themselves. The ladder runs innermost first,
+ * outward, with the overall on the outside of the lot.
  */
+/**
+ * §37 The gap between rungs, given how many there are and how much sheet lies
+ * between the view and the frame.
+ *
+ * Two rungs — the common case, and every case before §37 — keep the 8 mm they
+ * had, so nothing already drawn moves. Four interiors and an overall on a box
+ * that is clad, doubled and lined need five lines in the same margin, and they
+ * close up to fit rather than running off the sheet, which is what they did
+ * when this was a constant.
+ */
+export function dimensionStep(rungs, room) {
+  if (rungs <= 1) return DIM_STEP;
+  const fits = (room - DIM_NEAR) / rungs;
+  return Math.max(DIM_STEP_MIN, Math.min(DIM_STEP, Number(fits.toFixed(3))));
+}
+
+/**
+ * §37 The spans to dimension on one axis, innermost first, then the overall.
+ *
+ * Interiors that measure the same are one rung: with no cladding, "inside the
+ * cladding" *is* the envelope, and a box with no doubler has the same opening
+ * inside its carcass as inside its doubler. Drawing those twice would put two
+ * dimension lines on one pair of extension lines, which reads as a mistake
+ * because it is one.
+ */
+export function dimensionLadder(interiors, overall, project) {
+  const rungs = [];
+  for (const inner of [...interiors].reverse()) {
+    const span = project(inner.box);
+    const size = span[1] - span[0];
+    if (!(size > 1e-9)) continue;
+    if (rungs.some((r) => Math.abs(r.span[0] - span[0]) < 1e-9 && Math.abs(r.span[1] - span[1]) < 1e-9)) continue;
+    if (Math.abs(size - overall) < 1e-9) continue;      // the envelope by another name
+    rungs.push({ span, size, layer: inner.layer });
+  }
+  return rungs;
+}
+
+/**
+ * §37 How many interior dimensions the elevations will carry, which is what
+ * the layout has to leave room for. The horizontal ladders are the ones that
+ * run into the top of the frame: width above the front, depth above the end.
+ */
+export function dimensionRungs(sol) {
+  const interiors = sol.interiors ?? [{ layer: "shell", box: sol.cavity }];
+  const count = (view, overall) =>
+    dimensionLadder(interiors, overall, (box) => PROJECTIONS[view](box, sol.E).h).length;
+  return Math.max(1, count("front", sol.E.x), count("end", sol.E.y));
+}
+
 export function planDimensions(sol, L) {
   const { E, cavity, internal } = sol;
   const s = L.scale, c = L.cells;
-  const cavFront = PROJECTIONS.front(cavity, E);
   const cavEnd = PROJECTIONS.end(cavity, E);
-  const NEAR = 9, FAR = 17;
+  const NEAR = DIM_NEAR;
+  // A design solved before §37 has no `interiors`; the cavity is the one it had.
+  const interiors = sol.interiors ?? [{ layer: "shell", box: cavity }];
 
   const hDim = (cell, [a, b], off, text, reference) => ({
     kind: "h", span: [a, b],
@@ -473,15 +552,29 @@ export function planDimensions(sol, L) {
     off, text, reference,
   });
 
+  /**
+   * One axis: every interior in turn, then the overall outside them all.
+   *
+   * The room is the sheet between the view and the frame — above the cell for
+   * a horizontal ladder, left of it for a vertical one — less a couple of
+   * millimetres for the outermost number to sit in.
+   */
+  const ladder = (dim, cell, view, axis, overall) => {
+    const rungs = dimensionLadder(interiors, overall, (box) => PROJECTIONS[view](box, E)[axis]);
+    const room = (axis === "h" ? cell.y - L.frame.y : cell.x - L.frame.x) - DIM_TEXT;
+    const step = dimensionStep(rungs.length, room);
+    const out = rungs.map((r, i) => dim(cell, r.span, -(NEAR + i * step), fmt(r.size), true));
+    out.push(dim(cell, axis === "h" ? [0, view === "front" ? E.x : E.y] : [0, E.z],
+      -(NEAR + rungs.length * step), fmt(overall), false));
+    return out;
+  };
+
   return [
-    // Front elevation: internal width and height against the cavity, overall outside.
-    hDim(c.front, cavFront.h, -NEAR, fmt(internal.x), true),
-    hDim(c.front, [0, E.x], -FAR, fmt(E.x), false),
-    vDim(c.front, cavFront.v, -NEAR, fmt(internal.z), true),
-    vDim(c.front, [0, E.z], -FAR, fmt(E.z), false),
-    // End view: internal and overall depth.
-    hDim(c.end, cavEnd.h, -NEAR, fmt(internal.y), true),
-    hDim(c.end, [0, E.y], -FAR, fmt(E.y), false),
+    // Front elevation: every interior width and height, overall outside them.
+    ...ladder(hDim, c.front, "front", "h", E.x),
+    ...ladder(vDim, c.front, "front", "v", E.z),
+    // End view: the same ladder for depth.
+    ...ladder(hDim, c.end, "end", "h", E.y),
     // Section: internal height on the right, where the wall build-up is shown.
     // §32 It is a repeat of the front elevation's, put beside the view that
     // explains it — so with no section on the sheet it simply goes.
