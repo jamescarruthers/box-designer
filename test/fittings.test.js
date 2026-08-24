@@ -6,6 +6,7 @@ import {
   fittingStack, innermostOn, hasTube, DEFAULT_PORT,
   fittingIssues, describeFitting, fittingNote, faceAxes, toBlank, blankCircles,
   portOuterRadius, DEFAULT_DRIVER, cutoutFlare, largestFlare,
+  fittingAt, boltDepth, reaches, stackDepth, fittingExtent, fittingCircles as circlesOf,
 } from "../src/model/fittings.js";
 import { fittingGeometry, fittingDimensions, FACE_ON, toView } from "../src/drawing/fittings.js";
 import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
@@ -482,5 +483,94 @@ describe("§10 the tube behind a port is optional", () => {
     const fitted = { ...long, tube: true };
     expect(fittingIssues([fitted], sol.panels, fittingOwners(sol.panels, ["back"]), sol.cavity)
       .some((m) => /longer than/.test(m.text))).toBe(true);
+  });
+});
+
+
+/**
+ * §33 Which panels a fitting cuts into.
+ *
+ * A hole went through every panel on its face, because that is what a hole
+ * usually does. But a driver bolts to the baffle and its cutout carries on
+ * through the doubler behind — one hole with two depths — and the app had no
+ * way to say so.
+ */
+describe("§33 how deep a hole goes", () => {
+  const layered = (extra = {}) => derive({
+    ...DEFAULT_DESIGN,
+    cladding: { front: { material: "birch", thickness: 6 } },
+    doubler: { front: { material: "birch", thickness: 12 } },
+    fittings: [{ ...centred("driver"), ...extra }],
+  });
+  const cutInto = (d) => d.sol.panels.filter((p) => p.face === "front")
+    .map((p) => [p.layer, d.fittingsOn(p)[0]]);
+
+  it("goes all the way through when nothing says otherwise", () => {
+    // The behaviour every design saved before this existed relies on.
+    expect(reaches(0, null)).toBe(true);
+    expect(reaches(99, null)).toBe(true);
+    for (const [, on] of cutInto(layered())) {
+      expect(on).toBeTruthy();
+      expect(on.bolts).toBe(DEFAULT_DRIVER.bolts);
+    }
+  });
+
+  it("stops the bolt holes at the baffle while the cutout carries on", () => {
+    const cut = cutInto(layered({ boltsThrough: 1 }));
+    expect(cut.map(([layer, on]) => [layer, on ? on.bolts : null]))
+      .toEqual([["cladding", 5], ["shell", 0], ["doubler", 0]]);
+    // Which is the whole point: the doubler is bored, it just has no ring.
+    const doubler = cut.find(([layer]) => layer === "doubler")[1];
+    expect(circlesOf(doubler).map((c) => c.role)).toEqual(["cutout"]);
+    expect(circlesOf(cut[0][1]).filter((c) => c.role === "bolt")).toHaveLength(5);
+  });
+
+  it("stops the whole fitting where the cutout stops", () => {
+    const cut = cutInto(layered({ through: 2 }));
+    expect(cut.map(([layer, on]) => [layer, Boolean(on)]))
+      .toEqual([["cladding", true], ["shell", true], ["doubler", false]]);
+  });
+
+  it("never sends bolts deeper than the cutout they surround", () => {
+    // A panel with the clearance holes and no cutout is a panel the cone
+    // cannot get through — a mistake, not an option.
+    expect(boltDepth({ through: 1, boltsThrough: 3 })).toBe(1);
+    expect(boltDepth({ through: null, boltsThrough: 2 })).toBe(2);
+    expect(boltDepth({ through: 2, boltsThrough: null })).toBe(2);
+    expect(boltDepth({})).toBe(null);
+    expect(fittingAt({ ...centred("driver"), through: 1, boltsThrough: 3 }, 1)).toBe(null);
+  });
+
+  it("says what a panel actually carries, rather than nought bolts", () => {
+    const doubler = cutInto(layered({ boltsThrough: 1 })).find(([l]) => l === "doubler")[1];
+    expect(describeFitting(doubler)).toMatch(/cutout only$/);
+    expect(describeFitting(doubler)).not.toMatch(/0 ×/);
+    expect(describeFitting(centred("driver"))).toMatch(/5 × ⌀5 on 147 PCD/);
+  });
+
+  it("asks each panel for the clearance that panel needs", () => {
+    // The frame is the driver sitting on the outside of the box, so only the
+    // panel it bolts to has to be big enough for it; a panel with no bolt
+    // holes needs no room for the bolt circle either.
+    const f = centred("driver");
+    expect(fittingExtent(f)).toBe(driverOuter(f) / 2);
+    expect(fittingExtent(f, { mounted: false })).toBe(f.pcd / 2 + f.boltHole / 2);
+    expect(fittingExtent({ ...f, bolts: 0 }, { mounted: false })).toBe(f.cutout / 2);
+  });
+
+  it("counts the layers a face has, which is how deep a hole can go", () => {
+    const d = layered();
+    expect(stackDepth(d.sol.panels, "front")).toBe(3);
+    expect(stackDepth(d.sol.panels, "back")).toBe(1);
+  });
+
+  it("cuts a port to a depth too", () => {
+    const d = derive({
+      ...DEFAULT_DESIGN,
+      doubler: { back: { material: "birch", thickness: 12 } },
+      fittings: [{ ...centred("port", "back"), through: 1 }],
+    });
+    const cut = d.sol.panels.filter((p) => p.face === "back").map((p) => [p.layer, d.fittingsOn(p).length]);
+    expect(cut).toEqual([["shell", 1], ["doubler", 0]]);
   });
 });

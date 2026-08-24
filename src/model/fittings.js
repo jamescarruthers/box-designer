@@ -109,6 +109,53 @@ export function fittingCircles(f) {
 }
 
 /**
+ * §33 How deep a hole goes, in layers from the outside.
+ *
+ * `null` is every layer, which is what a hole did before there was a choice
+ * and what most holes want: a driver's cutout has to reach the cavity or the
+ * cone is firing into a pocket. A number is a count of panels from the
+ * outermost of the face inward — 1 is the panel the driver bolts to and
+ * nothing behind it.
+ *
+ * Counted rather than named because a bore enters at the face and stops: it
+ * cannot skip the carcass and reappear in the doubler, so there is no set of
+ * layers to pick from, only a depth to stop at.
+ */
+export const reaches = (depth, through) => through == null || depth < through;
+
+/**
+ * §33 What a fitting cuts into the panel `depth` layers in, or null for
+ * nothing at all.
+ *
+ * The one place the choice is applied. Everything downstream — the kernel's
+ * booleans, the part templates, the DXF, the cut list note — asks which
+ * fittings are on a panel and then reads the circles off them, so a fitting
+ * handed back with no bolts has no bolt holes anywhere, in every one of them
+ * at once.
+ */
+export function fittingAt(f, depth) {
+  const cutout = reaches(depth, f.through);
+  // Bolts never go deeper than the hole they surround: a panel with the
+  // clearance holes but no cutout is a panel the cone cannot get through, and
+  // that is a mistake rather than an option.
+  const bolts = f.type === "driver" && f.bolts > 0
+    && cutout && reaches(depth, boltDepth(f));
+  if (!cutout) return null;
+  return bolts ? f : { ...f, bolts: 0 };
+}
+
+/** §33 How deep the mounting holes go: their own figure, capped by the cutout's. */
+export function boltDepth(f) {
+  const cut = f?.through ?? null;
+  const bolt = f?.boltsThrough ?? null;
+  if (bolt == null) return cut;
+  return cut == null ? bolt : Math.min(bolt, cut);
+}
+
+/** §33 The layers a face has, which is how many a hole in it can go through. */
+export const stackDepth = (panels, face) => fittingStack(panels, face).length;
+
+/**
  * The radius of the smallest circle containing everything a fitting occupies.
  *
  * §22 For a driver that is the frame, not the holes. It used to be the bolt
@@ -118,9 +165,14 @@ export function fittingCircles(f) {
  * because nothing says a frame has to be the widest of the three, and a rule
  * that quietly stopped checking two of them would be a worse rule.
  */
-export function fittingExtent(f) {
+export function fittingExtent(f, { mounted = true } = {}) {
   if (f.type === "port") return f.diameter / 2;
-  return Math.max(f.cutout / 2, f.pcd / 2 + f.boltHole / 2, driverOuter(f) / 2);
+  // §33 What has to fit on a panel is what that panel carries. The frame is
+  // the driver itself sitting on the outside of the box, so it is asked of the
+  // panel it bolts to and of no other; the bolt circle is asked only where the
+  // bolt holes are actually cut.
+  const bolts = f.bolts > 0 ? f.pcd / 2 + f.boltHole / 2 : 0;
+  return Math.max(f.cutout / 2, bolts, mounted ? driverOuter(f) / 2 : 0);
 }
 
 /**
@@ -576,7 +628,6 @@ export function fittingIssues(fittings, panels, owners, cavity) {
     }
 
     const [p, q] = faceAxes(f.face);
-    const r = fittingExtent(f);
     if (![f.at?.a, f.at?.b].every(Number.isFinite)) {
       msgs.push({ level: "error", text: `${label} has no position on the panel.` });
       continue;
@@ -594,7 +645,15 @@ export function fittingIssues(fittings, panels, owners, cavity) {
     // the carcass panel it backs, so a bore can sit comfortably in the carcass
     // and run off the edge of the doubler behind it — and the bore goes through
     // both, so that is a hole opening into fresh air.
-    for (const through of fittingStack(panels, f.face)) {
+    //
+    // §33 Every layer it *reaches*, that is, and it is asked for the clearance
+    // that layer actually needs: a doubler behind a driver whose bolts stop at
+    // the baffle has a hole in it and no bolt circle, and a panel no hole
+    // reaches at all is none of this fitting's business.
+    fittingStack(panels, f.face).forEach((through, depth) => {
+      const here = fittingAt(f, depth);
+      if (!here) return;
+      const r = fittingExtent(here, { mounted: through === panel });
       const where = through === panel ? "the panel"
         : `the ${LAYER_WORD[through.layer] ?? through.layer} behind it`;
       for (const [axis, at] of [[p, f.at.a], [q, f.at.b]]) {
@@ -607,7 +666,7 @@ export function fittingIssues(fittings, panels, owners, cavity) {
             text: `${label} leaves under 10 mm of material at the edge of ${where}.` });
         }
       }
-    }
+    });
 
     // §22 A frame narrower than the hole it covers is not a driver.
     if (f.type === "driver" && driverOuter(f) < f.cutout) {
@@ -680,8 +739,11 @@ export function describeFitting(f) {
     // §29 In the line because it is a cut somebody has to make, and the only
     // one of a driver's holes that is not simply a diameter.
     const back = flare ? `, ${flare.type === "fillet" ? "R" : ""}${round1(flare.radius)}${flare.type === "fillet" ? "" : " mm"} ${flare.type} inside` : "";
-    return `Driver ⌀${f.cutout} in a ⌀${round1(driverOuter(f))} frame, ${round1(driverDepth(f))} deep, `
-      + `${f.bolts} × ⌀${f.boltHole} on ${f.pcd} PCD${back}`;
+    // §33 A panel the bolts do not reach has a cutout and nothing else, and
+    // reading "0 × ⌀5 on 147 PCD" off a cut list is worse than reading nothing.
+    const ring = f.bolts > 0 ? `, ${f.bolts} × ⌀${f.boltHole} on ${f.pcd} PCD` : ", cutout only";
+    return `Driver ⌀${f.cutout} in a ⌀${round1(driverOuter(f))} frame, ${round1(driverDepth(f))} deep`
+      + `${ring}${back}`;
   }
   return hasTube(f) ? `Port ⌀${f.diameter} × ${f.length}` : `Port ⌀${f.diameter}, no tube`;
 }

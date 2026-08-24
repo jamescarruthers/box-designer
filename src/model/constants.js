@@ -49,6 +49,11 @@ export const otherFace = (key, face) => key.split("|").find((f) => f !== face);
 
 export const LAYERS = ["cladding", "shell", "doubler", "lagging"];
 
+/** What each layer is called where a person reads it. */
+export const LAYER_LABEL = {
+  cladding: "Cladding", shell: "Carcass", doubler: "Doubler", lagging: "Lagging",
+};
+
 // §2.1 Prominence presets. Rank 0 is most prominent.
 export const PROMINENCE_PRESETS = [
   { id: "fb", name: "Front & back wrap", order: ["front", "back", "left", "right", "top", "bottom"] },

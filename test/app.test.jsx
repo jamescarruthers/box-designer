@@ -468,6 +468,33 @@ describe("the app", () => {
     expect(screen.getByLabelText("Section at x").disabled).toBe(true);
   });
 
+  it("§33 puts the bolt holes in the baffle and the cutout through the doubler", () => {
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByLabelText("Add doublers"), { target: { value: "front" } });
+    fireEvent.change(screen.getByLabelText("Add a fitting"), { target: { value: "driver" } });
+
+    // Two layers on the face, so there is a depth to choose. Both start at all.
+    expect(screen.getByLabelText("Fitting 1 through").value).toBe("all");
+    expect(screen.getByLabelText("Fitting 1 boltsThrough").value).toBe("all");
+
+    fireEvent.change(screen.getByLabelText("Fitting 1 boltsThrough"), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    // The part templates carry each panel's own note. The carcass baffle keeps
+    // its ring of holes; the doubler behind it is bored and bare.
+    const notes = [...container.querySelectorAll("figcaption")]
+      .map((el) => el.textContent).filter((t) => /Driver/.test(t));
+    expect(notes).toHaveLength(2);
+    expect(notes.filter((t) => /5 × ⌀5 on 147 PCD/.test(t))).toHaveLength(1);
+    expect(notes.filter((t) => /cutout only/.test(t))).toHaveLength(1);
+  });
+
+  it("§33 offers no depth to choose when the face is one panel thick", () => {
+    render(<App />);
+    fireEvent.change(screen.getByLabelText("Add a fitting"), { target: { value: "driver" } });
+    expect(screen.queryByLabelText("Fitting 1 through")).toBe(null);
+    expect(screen.queryByLabelText("Fitting 1 boltsThrough")).toBe(null);
+  });
+
   it("§13 keeps the design across a reload, and lets you get rid of it", () => {
     render(<App />);
     fireEvent.change(screen.getByLabelText("Thickness"), { target: { value: "21" } });

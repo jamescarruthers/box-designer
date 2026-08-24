@@ -7,11 +7,12 @@
 // wearing one name.
 
 import React from "react";
-import { FACES, FACE_LABEL } from "../model/constants.js";
+import { FACES, FACE_LABEL, LAYER_LABEL } from "../model/constants.js";
 import { newFitting, describeFitting, faceAxes, hasTube, convertAt,
   driverOuter, driverDepth, driverMagnet, driverMagnetDepth, driverCone,
   driverThick, driverBasket, driverVoiceCoil,
-  driverDisplacement, hasDisplacement, innermostOn, largestFlare } from "../model/fittings.js";
+  driverDisplacement, hasDisplacement, innermostOn, largestFlare,
+  fittingStack, boltDepth } from "../model/fittings.js";
 import { panelThickness } from "../model/solver.js";
 import { Num, Segmented, round } from "./fields.jsx";
 
@@ -25,6 +26,32 @@ export function centredFitting(derived, type, face) {
     a: (panel.box[p][0] + panel.box[p][1]) / 2,
     b: (panel.box[q][0] + panel.box[q][1]) / 2,
   });
+}
+
+/**
+ * §33 How far a hole goes into the stack, as a list of the layers it could
+ * stop at.
+ *
+ * Named by the layer the hole ends in — "Carcass" means through the cladding
+ * and the carcass and no further — because that is how somebody at a bench
+ * thinks about it. "All layers" is kept as its own answer rather than being
+ * spelled as the deepest one: a hole meant to go all the way should still go
+ * all the way when a doubler is added behind it.
+ */
+function Depth({ label, aria, stack, value, onChange, cap = null, disabled = false }) {
+  const options = stack.map((p, i) => [String(i + 1), LAYER_LABEL[p.layer] ?? p.layer]);
+  const capped = cap == null ? options : options.slice(0, cap);
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <select aria-label={aria} disabled={disabled}
+        value={value == null ? "all" : String(Math.min(value, capped.length))}
+        onChange={(e) => onChange(e.target.value === "all" ? null : Number(e.target.value))}>
+        {capped.map(([v, name]) => <option key={v} value={v}>{name}</option>)}
+        <option value="all">All layers</option>
+      </select>
+    </label>
+  );
 }
 
 /**
@@ -48,6 +75,9 @@ export function FittingEditor({ fitting: f, index, edit, remove, derived, onFace
   // it is the innermost panel on that face — the doubler if there is one, the
   // carcass if there is not.
   const inner = derived.sol?.panels ? innermostOn(derived.sol.panels, f.face) : null;
+  // §33 The layers this face actually has. One of them and there is nothing to
+  // choose: a hole through the only panel there is goes through all of them.
+  const stack = derived.sol?.panels ? fittingStack(derived.sol.panels, f.face) : [];
   const flare = f.flare?.type && f.flare.type !== "none" ? f.flare : { type: "none", radius: 0 };
   const mostFlare = inner ? largestFlare(f, panelThickness(inner)) : 0;
   // §20 Switching units moves the number, not the fitting.
@@ -148,6 +178,23 @@ export function FittingEditor({ fitting: f, index, edit, remove, derived, onFace
           </>
         )}
       </div>
+      {stack.length > 1 ? (
+        <div className="fitting-grid fitting-depth">
+          {/* §33 A hole enters at the face and stops; it cannot skip a layer
+              and reappear behind it. So this is a depth rather than a set. */}
+          <Depth label="Hole through" aria={`Fitting ${n} through`} stack={stack}
+            value={f.through ?? null} onChange={(v) => edit({ through: v })} />
+          {f.type === "driver" ? (
+            /* The one that wanted its own answer: bolts into the baffle, the
+               cutout on through the doubler behind it. Never deeper than the
+               cutout, since bolt holes in a panel the cone cannot pass is a
+               mistake rather than a choice. */
+            <Depth label="Bolts through" aria={`Fitting ${n} boltsThrough`} stack={stack}
+              cap={f.through ?? stack.length}
+              value={boltDepth(f)} onChange={(v) => edit({ boltsThrough: v })} />
+          ) : null}
+        </div>
+      ) : null}
       {f.type === "driver" ? (
         <div className="fitting-flare">
           <span className="flare-label">Inside the cutout</span>

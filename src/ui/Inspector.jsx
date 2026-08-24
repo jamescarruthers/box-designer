@@ -15,7 +15,7 @@
 
 import React from "react";
 import {
-  FACE_LABEL, MATERIALS, materialById, edgesOfFace, otherFace, edgeAxis,
+  FACE_LABEL, LAYER_LABEL, MATERIALS, materialById, edgesOfFace, otherFace, edgeAxis,
 } from "../model/constants.js";
 import { fmt } from "../cutlist/cutlist.js";
 import { Group, Num, Colour, FaceSwatch } from "./fields.jsx";
@@ -26,7 +26,6 @@ import {
   setEdgeTreatment, authoredEdge,
 } from "./design.js";
 
-const LAYER_LABEL = { cladding: "Cladding", shell: "Carcass", doubler: "Doubler", lagging: "Lagging" };
 
 /** The layers a face could carry, outermost first — which is how they stack. */
 const LAYER_ORDER = ["cladding", "shell", "doubler", "lagging"];
