@@ -2649,3 +2649,27 @@ rows up:
 Both halves are checked against the kernel rather than argued: the sweep builds
 every radius the rule allows across seven drivers and four thicknesses, and a
 test asserts both that `t - 0.01` cuts and that `t` throws.
+## §35 The lining is not a shade of its face
+
+By-face colour is a hue per axis and a lightness per layer: a clad front and the
+carcass behind it are the same blue at two depths, and reading them as one face
+is the point of it. §30 gave the lining the same treatment one step further
+down — the face colour, ten to twenty per cent darker — and the result was a
+felt panel told from the carcass panel it lines only by how much light happened
+to be falling on each.
+
+A lining is not that. It is a different material doing a different job, and it
+is the one layer somebody wants to pick out of an exploded view. So it leaves
+the hue axis altogether: a warm grey, which is what felt and wadding actually
+look like and which nothing else on the box is near, since the six face colours
+are all green, blue or violet at a fair saturation. The face still shifts its
+lightness a little, so a lined left and a lined right are not identical either.
+
+Exploded, a lined box now reads as a grey box inside a coloured one. The
+sidebar's face swatches follow, being the same palette, and Material mode was
+already showing the lining's own colour.
+
+The test asks for the difference rather than for the value: the lining's hue is
+the grey's, its saturation is less than half any board's, and its hue is a
+distance from the face it lines — so a change to the face colours cannot quietly
+bring the two back together.
