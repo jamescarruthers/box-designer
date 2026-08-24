@@ -427,6 +427,9 @@ table.cuts .edgework { color: var(--ink-3); }
 .fitting-flare { display: grid; grid-template-columns: auto 1fr; gap: 6px; align-items: center; margin-top: 5px; }
 .fitting-flare .flare-label { font-size: 10px; color: var(--ink-2); }
 .fitting-flare .segmented button { padding: 2px 4px; font-size: 10px; }
+/* §34 Reads like the fitting's own note, but it is about the control above it
+   rather than about the fitting, so it sits with the flare row. */
+.flare-note { margin: 4px 0 0; font-size: 9.5px; color: var(--ink-3); }
 .inspector .fitting-flare { grid-template-columns: 1fr; gap: 3px; }
 
 /* §19 The rendered view: a canvas, and as little else as the job allows. */

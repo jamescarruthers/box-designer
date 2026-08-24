@@ -18,12 +18,17 @@ function builds({ thickness, driver, type, radius }) {
   } catch { return false; }
 }
 
+// §34 With the bolts stopped short (§33) there is no bolt circle in the panel
+// being flared, and the cap becomes the full thickness — the case this sweep
+// exists to check, since it is the largest flare the app will now offer.
 const DRIVERS = [
   ["Pluvia 7P   ", { cutout: 116, pcd: 147, bolts: 5, boltHole: 5 }],
   ["3 inch      ", { cutout: 58, pcd: 76, bolts: 4, boltHole: 4 }],
   ["8 inch      ", { cutout: 185, pcd: 218, bolts: 8, boltHole: 6 }],
   ["15 inch     ", { cutout: 350, pcd: 370, bolts: 8, boltHole: 8 }],
   ["no bolts    ", { cutout: 116, pcd: 147, bolts: 0, boltHole: 5 }],
+  ["15in, bare  ", { cutout: 350, pcd: 370, bolts: 0, boltHole: 8 }],
+  ["3in, bare   ", { cutout: 58, pcd: 76, bolts: 0, boltHole: 4 }],
 ];
 
 let bad = 0;

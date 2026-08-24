@@ -399,7 +399,8 @@ describe("§10 a fitting punches through every layer of its face", () => {
     const on = d.sol.panels.flatMap((p) => d.fittingsOn(p)).filter((f) => cutoutFlare(f));
     expect(on).toHaveLength(1);
     expect(on[0].flare.radius).toBe(largestFlare(on[0], 9));
-    expect(on[0].flare.radius).toBe(8.5);
+    // §34 All but a hundredth of the panel: the bolts do not reach this one.
+    expect(on[0].flare.radius).toBe(8.99);
   });
 
   it("catches a bore that fits the carcass but runs off the doubler behind it", () => {

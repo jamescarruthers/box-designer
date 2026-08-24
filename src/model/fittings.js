@@ -188,26 +188,43 @@ export function fittingExtent(f, { mounted = true } = {}) {
  * one is a way of losing the bolt.
  */
 /**
- * §29 The largest flare a cutout will take, in a panel of a given thickness.
+ * §34 How much of the thickness a flare may take: all but a hundredth of it.
  *
- * Measured, twice over. Bore a hole in a bare panel and sweep the radius: it
- * builds at every half-millimetre up to `thickness - 0.5` and refuses at the
- * thickness itself — the §26 rule, arrived at again on a different shape, since
- * a flare that reaches the front face has taken the material it was to be cut
- * into.
+ * §29 swept in half-millimetres and stopped at `thickness - 0.5`, which was the
+ * §26 rule borrowed from a different shape. Swept finely, the refusal turns out
+ * to sit exactly on the thickness and nowhere before it: on 9, 12, 18 and 25 mm
+ * panels, fillet and chamfer alike, `t - 0.01` builds and `t` does not. Which
+ * stands to reason — a fillet whose radius is the whole thickness runs its
+ * tangency out at the front face and leaves a knife edge, and a router with a
+ * full-thickness roundover bit would do the same.
  *
- * The bolt circle is the other limit and the one that bites first. A flare
- * opens the rim outward as it goes back, and where its outer circle lands
- * *within* the bolt holes OCCT refuses it — an 18 mm baffle took 13 mm and not
- * 13.5, which is the rim reaching 71.5 mm against holes that start at 71. Past
- * them it builds again, and a flare that swallows the bolt holes is not a
- * flare, it is a bigger hole with no bolts left. So it stops short of them.
+ * So a full fillet is available, to within a hundredth of a millimetre. That is
+ * two orders below anything anybody cuts to, and it means the control's limit
+ * is the sheet thickness as read.
  */
+export const FLARE_MARGIN = 0.01;
+
+/**
+ * §29 The bolt circle is the other limit, and where there are bolt holes it is
+ * the one that bites first. A flare opens the rim outward as it goes back, and
+ * where its outer circle lands *within* the holes OCCT refuses it — an 18 mm
+ * baffle took 13 mm and not 13.5, the rim reaching 71.5 mm against holes
+ * starting at 71. Past them it builds again, and a flare that swallows the bolt
+ * holes is not a flare, it is a bigger hole with no bolts left.
+ *
+ * §34 Kept at half a millimetre rather than the hundredth above, because this
+ * one is a workshop clearance to a hole rather than a kernel limit — and §33
+ * makes it conditional in the way it always should have been: a panel whose
+ * bolts stop short of it has no bolt circle to graze, so the thickness is the
+ * only limit there.
+ */
+const BOLT_CLEARANCE = 0.5;
+
 export function largestFlare(f, thickness) {
   if (!(thickness > 0)) return 0;
-  let most = thickness - BEVEL_MARGIN;
+  let most = thickness - FLARE_MARGIN;
   if (f?.bolts > 0 && f.pcd > 0 && f.boltHole > 0) {
-    most = Math.min(most, (f.pcd / 2 - f.boltHole / 2) - f.cutout / 2 - BEVEL_MARGIN);
+    most = Math.min(most, (f.pcd / 2 - f.boltHole / 2) - f.cutout / 2 - BOLT_CLEARANCE);
   }
   return Math.max(0, Number(most.toFixed(4)));
 }

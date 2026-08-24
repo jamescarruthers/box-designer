@@ -2609,3 +2609,43 @@ Two things follow it rather than being told separately:
 On the default box with a doubled front, sending the bolts to the baffle takes
 the kernel's mesh from 2196 triangles to 1336 — five bores fewer in the panel
 behind.
+
+## §34 A full fillet
+
+The flare's limit was `thickness - 0.5`, which was §26's rule for an edge bevel
+borrowed for a different shape. Swept finely, the borrowed number turns out to
+be far too cautious: on 9, 12, 18 and 25 mm panels, fillet and chamfer alike,
+`t - 0.01` builds and `t` refuses. The refusal sits exactly on the thickness and
+nowhere before it — which stands to reason, since a fillet whose radius is the
+whole thickness runs its tangency out at the front face and leaves a knife edge,
+and a router with a full-thickness roundover bit would do the same.
+
+So the margin is a hundredth of a millimetre, two orders below anything anybody
+cuts to, and the control's limit reads as the sheet thickness: **a full fillet**,
+the whole panel rolled away into a quarter-round throat.
+
+### Two limits, and only one of them is the kernel's
+
+The bolt circle is the other, and where the bolts reach the panel being flared
+it is the one that bites first: on the default driver, 12.5 mm against an 18 mm
+baffle. That margin stays at half a millimetre, because it is a workshop
+clearance to a hole rather than a limit the kernel sets.
+
+But it is now asked of the panel *as that panel is actually cut*. §33 lets the
+bolts stop at the baffle while the cutout carries on, and a doubler behind a
+driver whose bolts stop short of it has no bolt circle for the flare to graze —
+so the only limit left there is the thickness, and the full fillet is available
+exactly where somebody would want one.
+
+The control says which of the two applies, since it is the difference between a
+12 mm flare and rolling the whole panel away, and the way to lift it is three
+rows up:
+
+> Up to 12.5 mm: the bolt holes in the doubler are in the way. Send the bolts no
+> further than the panel in front and the whole 18 mm is available.
+
+> Up to 18 mm, the full thickness of the doubler it is cut in.
+
+Both halves are checked against the kernel rather than argued: the sweep builds
+every radius the rule allows across seven drivers and four thicknesses, and a
+test asserts both that `t - 0.01` cuts and that `t` throws.
