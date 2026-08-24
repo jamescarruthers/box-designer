@@ -15,7 +15,8 @@ const sheetField = page.locator("label.field").filter({ has: page.getByText("She
 await sheetField.locator("select").selectOption("valchromat");
 await page.getByLabel("Sheet colour name").selectOption("#597ba2");   // Blue
 await page.getByLabel("Add a fitting").selectOption("driver");
-await page.getByRole("button", { name: "Fillet", exact: true }).click();
+// §29 added a Fillet to the flare control too, so say which one.
+await page.getByLabel("Treatment").getByRole("button", { name: "Fillet", exact: true }).click();
 await page.getByLabel("Radius").fill("12");
 
 await page.getByRole("button", { name: "Render", exact: true }).click();

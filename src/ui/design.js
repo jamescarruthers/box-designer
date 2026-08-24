@@ -2,7 +2,7 @@
 
 import { EDGES, FACES, MATERIALS, LAGGINGS, PROMINENCE_PRESETS, DEFAULT_KERF, rankFromOrder, materialById, paletteFor } from "../model/constants.js";
 import { solve, wallOf, boardOf, fillFaces, skinOf, boxVolume, panelThickness, DEFAULT_RATIO, DEFAULT_ROUND } from "../model/solver.js";
-import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, partialEdgeIssues } from "../model/bevel.js";
+import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, partialEdgeIssues, panelBevels } from "../model/bevel.js";
 import { mitreCheck, resolveMitres, applyMitres, mitreIssues, mitreLoss } from "../model/mitre.js";
 import { validate } from "../model/validate.js";
 import { fittingOwners, innermostOn, fittingIssues, fittingNote, hasTube, resolveFittings,
@@ -466,9 +466,12 @@ export function derive(design) {
     (others.length ? ` +${others.length}` : "");
 
   const drawing = { ...DEFAULT_DESIGN.drawing, ...design.drawing };
+  // §40 The edge treatments a panel is actually cut with, which the isometric
+  // needs to draw it as anything other than a box.
+  const bevelsOf = (panel, index) => panelBevels(index, panel, edges, owners);
   const sheet = buildSheet(sol, edges, {
     title: design.title, material: materialNote, sectionAt,
-    fittings, fittingPanels, fittingsOn,
+    fittings, fittingPanels, fittingsOn, bevelsOf,
     section: drawing.section, insulation: drawing.insulation, explode: drawing.explode,
   });
 
@@ -478,7 +481,7 @@ export function derive(design) {
     Object.fromEntries(EDGES.filter((k) => mitreCheck(plain, sol.env, k).ok).map((k) => [k, true]))).accepted;
 
   return { sol, edges, requestedEdges, fullLength, mitrable, requestedMitres, mitreRing, owners, material, rows, sheets, totals, messages,
-    sheet, sectionAt, drawing, specFor, fittings, fittingPanels, fittingsOn, tubesOn };
+    sheet, sectionAt, drawing, specFor, fittings, fittingPanels, fittingsOn, bevelsOf, tubesOn };
 }
 
 export const setIn = (obj, path, value) => {

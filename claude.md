@@ -2886,3 +2886,130 @@ With the kernel on, the isometric is normally OCCT's own hidden-line view of
 the cut solid. There is no exploded shape to ask it for — by then the panels
 are one solid — so an exploded isometric is drawn from the panel boxes either
 way, and the slider works with the kernel on or off.
+
+## §39 A texture for Valchromat
+
+Every sheet in the list rendered as a flat colour, and one of them minds. Birch
+ply and MDF are pale and glossless enough that flat colour and a roughness
+number get most of the way there. Valchromat is dyed all the way through — wood
+fibres coloured before the board is pressed — so what the eye reads is not a
+face but the fibres themselves, a few millimetres long, lying every which way.
+Without them it comes out as painted plastic, which is the opposite of why
+anybody specifies it.
+
+### Generated, not photographed
+
+No image is fetched. There is nothing to license, nothing to ship, nothing to go
+missing offline, and the tile is seamless because it is made seamless rather
+than retouched into it. A seeded generator rather than `Math.random`, so a
+render is the same render twice and the tests have something to hold on to.
+
+One field of values per pixel, mean exactly 1, at three scales:
+
+- **the press mottle**, over tens of millimetres — three wrapping cosines at
+  whole numbers of cycles per tile, which cannot help but tile and are already
+  unreadable as a pattern
+- **the fibres**, half a millimetre to two and a half, dark about twice as often
+  as light, tapered at both ends, one per twenty pixels of tile
+- **a fine grain** per pixel, because the flat between fibres is not flat
+
+Everything wraps: a fibre that runs off the right comes back on the left.
+
+The tint, the tooth and the sheen all come from that one field, because on a
+real board they are one thing — a fibre standing proud is lighter, rougher and
+higher at the same time. The tint multiplies the material's colour, the bump
+gives the surface its tooth, and the roughness map takes the material's own
+roughness down to 0.86 of it in the hollows.
+
+### The mean is one, so the colour is the colour
+
+A tint map is a multiplier, so a map that averages anything less than white
+would darken every board by however much the texture happened to average — and
+the Valchromat colours are a named range somebody has picked from a fan deck.
+So the field is normalised to a mean of exactly 1 and encoded with 1.0 at 236,
+leaving the light side of the fleck somewhere to go, and the render divides the
+colour back up by exactly that. In the linear working space the `Color` is
+already in, which is the only place that arithmetic is the arithmetic it looks
+like.
+
+The three maps are read as data rather than as colour: decoding a height or a
+roughness through sRGB would bend all three.
+
+### Box mapping, in millimetres
+
+The panels had no UVs — nothing needed them. Rather than unwrap a prism, each
+vertex takes the two coordinates that are not its normal's largest, divided by
+the tile size in millimetres.
+
+That is a box mapping of the *box*, not of each panel, and the consequence is
+the point of it: the fibre is the same size on the baffle as on the back, and
+it runs continuously across a joint instead of restarting at every panel — the
+way it would if the whole box were cut from one sheet, which it is.
+
+### Where it shows
+
+The rendered view, both ways: the studio rasteriser and the path trace, which
+takes the same materials with the same maps. The 3D view stays flat-shaded on
+purpose — its colours are there to be read as joinery, and a fibre mat over the
+top of that is decoration on a diagram.
+
+Close to, the fibre reads as a fibre. At arm's length the mip chain averages it
+into an even matte board, which is exactly what a sheet of Valchromat does from
+across a room.
+
+## §40 The isometric draws the edge treatments
+
+§38 rebuilt the isometric from solid panels, and built each panel as a box. A
+panel stops being a box the moment an edge is filleted or chamfered, so the
+isometric was the last view on the sheet still showing square corners on a box
+whose other four views showed round ones.
+
+It is built from the same loft the 3D view and the kernel are: the rings
+`panelSolid` stacks, each one the panel's cross-section at a depth from the
+outer face inward, narrowing as each bevel eats into it. Every quad between two
+rings is turned to face outward against the panel's centre — exact, because a
+bevelled box is still convex — and the ones whose normal points at the eye are
+the ones drawn.
+
+### Which lines a round has
+
+An edge is drawn when it is the silhouette, or when both faces either side of it
+are visible and the edge between them is a real edge. The second half is the
+part worth stating, because a fillet is lofted from eight facets and seven of
+the boundaries between them are not edges of anything:
+
+- the outer face and the inner face, always
+- the depth at which a bevel runs out into the side of the panel
+- nothing else
+
+The depths are shared by all four sides of a panel, so most ring boundaries are
+boundaries only because some *other* side is rounded at that depth. A line
+across the middle of a flat face because the edge beside it was filleted is the
+same mistake as a line across the round, and the rule catches both.
+
+What remains is what a filleted edge looks like on a drawing: two lines along
+its length with nothing between them, a quarter circle at each end where the
+round runs out into the square end of the panel, and — where the round turns
+away from the eye part-way along — one silhouette on the round itself. That last
+one is a real line and there is at most one per rounded edge; the test pins the
+count between "as many as a chamfer" and "one per rounded edge", which is the
+band the drawing is allowed to be in and excludes one line per facet.
+
+## §41 Hiding the insulation hides its dimension
+
+§32 gave the drawing a switch for the lining, and it drew the box without it
+rather than drawing it and painting over. §37 then put a dimension on the sheet
+for every interior — and nothing connected the two. The result was a sheet with
+the lining switched off that still carried a bracketed dimension to the face of
+a lining that was not drawn: a pair of extension lines reaching to nothing, and
+a section whose bracketed internal height was the cavity behind felt the reader
+could not see.
+
+`withoutLagging` now drops the inside of the lining along with the lining. The
+innermost thing on a drawing without the lining is the board, so `cavity` and
+`internal` become the board's, the ladder is one rung shorter, and the section's
+repeat of the internal height measures what the section shows.
+
+The layout follows: one interior fewer is one rung fewer to reserve room for, so
+the block sits a rung closer to the frame. Every view stays exactly the size it
+was — the box has not changed, only what is drawn of it.

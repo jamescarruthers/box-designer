@@ -53,6 +53,7 @@ export function useKernelSheet(derived, design, enabled, attempt = 0) {
           fittings: derived.fittings,
           fittingPanels: derived.fittingPanels,
           fittingsOn: derived.fittingsOn,
+          bevelsOf: derived.bevelsOf,
           holesInGeometry: true,
           section: derived.drawing.section,
           insulation: derived.drawing.insulation,

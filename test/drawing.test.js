@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { solve } from "../src/model/solver.js";
-import { uniformEdges, noEdges, edgeOwners, fullLengthEdges, applicableEdges } from "../src/model/bevel.js";
+import { uniformEdges, noEdges, edgeOwners, fullLengthEdges, applicableEdges, panelBevels } from "../src/model/bevel.js";
+import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
 import { buildOrthoView, classifyEdges, FACE_SIDE } from "../src/drawing/views.js";
 import { buildSection, HATCH } from "../src/drawing/section.js";
 import { buildIsometric, isoProject, ISO_Z, inFront, paintOrder } from "../src/drawing/iso.js";
@@ -317,5 +318,83 @@ describe("§38 cutouts and explode in the isometric", () => {
     expect(inFront(boxes.bottom, boxes.front)).toBe(false);
     const order = paintOrder([{ box: boxes.bottom }, { box: boxes.front }]);
     expect(order[1].box).toBe(boxes.front);
+  });
+});
+
+describe("§40 the isometric draws the edge treatments", () => {
+  const sol = solve({ envelope: { x: 236, y: 286, z: 356 }, thickness: 18,
+    order: ["front", "back", "left", "right", "top", "bottom"] });
+  const owners = edgeOwners(sol.env, sol.panels);
+  const cont = fullLengthEdges(sol.env, sol.panels, owners);
+  const bevels = (type, r = 12) => {
+    const edges = applicableEdges(type === "none" ? noEdges() : uniformEdges(type, r), cont);
+    return (panel, index) => panelBevels(index, panel, edges, owners);
+  };
+  const iso = (type, r) => buildIsometric(sol, { bevelsOf: bevels(type, r) });
+  const drawn = (g) => g.groups.reduce((a, x) => a + x.lines.length, 0);
+  const faces = (g) => g.groups.reduce((a, x) => a + x.fills.length, 0);
+
+  it("rounds the box off instead of drawing it square", () => {
+    const square = iso("none"), round = iso("fillet");
+    // A fillet takes the corner off, so the drawing is smaller across.
+    expect(round.ext.h).toBeLessThan(square.ext.h);
+    expect(round.ext.v).toBeLessThan(square.ext.v);
+    // And the panels it is cut into have a surface where the corner was.
+    expect(faces(round)).toBeGreaterThan(faces(square));
+  });
+
+  it("draws a fillet as two lines along its length and nothing between them", () => {
+    const round = iso("fillet"), chamfer = iso("chamfer"), square = iso("none");
+    const perFace = (g) => g.groups.find((x) => x.face === "front" && x.layer === "shell");
+    const span = (l) => Math.hypot(l.pts.at(-1)[0] - l.pts[0][0], l.pts.at(-1)[1] - l.pts[0][1]);
+    // The lines that run the length of the panel: its outline, and the two
+    // where a bevel becomes tangent to the face beside it. A chamfer and a
+    // fillet each add the same two per bevelled side — the round itself is
+    // smooth, and a line across it is a line the box does not have.
+    const runs = (g) => perFace(g).lines.filter((l) => span(l) > 40).length;
+    expect(runs(chamfer)).toBeGreaterThan(runs(square));
+
+    // A round can also carry a silhouette of its own, where it turns away from
+    // the eye part-way along — a real line, and at most one per rounded edge.
+    // What there is never is one line per facet.
+    const index = sol.panels.findIndex((x) => x.face === "front" && x.layer === "shell");
+    const rounded = Object.keys(bevels("fillet")(sol.panels[index], index)).length;
+    expect(rounded).toBeGreaterThan(0);
+    expect(runs(round)).toBeGreaterThanOrEqual(runs(chamfer));
+    expect(runs(round)).toBeLessThanOrEqual(runs(chamfer) + rounded);
+
+    // What the fillet does add is the quarter circle where the round runs out
+    // into the square end of the panel — an arc, so it comes in facets.
+    const facets = (g) => perFace(g).lines.filter((l) => span(l) <= 40).length;
+    expect(facets(round)).toBeGreaterThan(facets(chamfer) * 4);
+    expect(perFace(round).fills.length).toBeGreaterThan(perFace(chamfer).fills.length);
+  });
+
+  it("grows the round with the radius", () => {
+    const small = iso("fillet", 4), large = iso("fillet", 16);
+    expect(large.ext.h).toBeLessThan(small.ext.h);
+    expect(drawn(large)).toBe(drawn(small));   // the same lines, further in
+  });
+
+  it("is the box again when nothing is bevelled", () => {
+    const none = iso("none");
+    const bare = buildIsometric(sol);
+    expect(drawn(none)).toBe(drawn(bare));
+    expect(faces(none)).toBe(faces(bare));
+    expect(none.ext).toEqual(bare.ext);
+  });
+
+  it("reaches the sheet through the design", () => {
+    let d = { ...DEFAULT_DESIGN, edge: { type: "fillet", radius: 12, perEdge: false, by: {} } };
+    const square = derive({ ...d, edge: { ...d.edge, type: "none" } }).sheet;
+    const round = derive(d).sheet;
+    const isoOf = (b) => {
+      const at = b.svg.indexOf('<g data-view="iso">');
+      return b.svg.slice(at, b.svg.indexOf("</g>", at));
+    };
+    expect(isoOf(round)).not.toBe(isoOf(square));
+    // More filled faces on the sheet: the rounds are surfaces of their own.
+    const fills = (svg) => (svg.match(/fill="var\(--paper\)"/g) ?? []).length;
+    expect(fills(isoOf(round))).toBeGreaterThan(fills(isoOf(square)));
   });
 });

@@ -6,6 +6,7 @@ import { fittingGeometry, fittingDimensions } from "./fittings.js";
 import { buildSection, cuttingPlaneOnPlan, HATCH } from "./section.js";
 import { buildIsometric } from "./iso.js";
 import { EDGES, edgeAxis } from "../model/constants.js";
+import { boxSize } from "../model/solver.js";
 import { fmt } from "../cutlist/cutlist.js";
 
 export const SHEET = { w: 420, h: 297, margin: 10, filingMargin: 20 };
@@ -336,21 +337,23 @@ export function buildSheet(sol, edges, opts = {}) {
     section: buildSection(drawn, cx),
     // §38 The isometric is the one view of the whole box, so it is the one
     // that shows the fittings in place — and the one that comes apart.
-    iso: buildIsometric(drawn, { explode, fittingsOn: opts.fittingsOn }),
+    iso: buildIsometric(drawn, { explode, fittingsOn: opts.fittingsOn, bevelsOf: opts.bevelsOf }),
   };
   // §38 The kernel's isometric is a hidden-line view of the box as assembled,
   // and there is no exploded shape to ask it for — the panels are one solid by
   // then. So an exploded isometric is drawn from the panel boxes either way,
   // and the slider works with the kernel on.
   if (opts.geometry && explode > 0) {
-    geo.iso = buildIsometric(drawn, { explode, fittingsOn: opts.fittingsOn });
+    geo.iso = buildIsometric(drawn, { explode, fittingsOn: opts.fittingsOn, bevelsOf: opts.bevelsOf });
   }
 
   // §32 The layout is settled after the views, not before: without a section
   // the isometric picks which free rectangle it goes in, and it can only pick
   // once its own extent is known.
   const L = layout(sol.E, {
-    section: showSection, isoExt: geo.iso?.ext ?? null, dimRungs: dimensionRungs(sol),
+    // §41 The ladder measures what is on the sheet: with the lining hidden
+    // there is one interior fewer to reserve room for.
+    section: showSection, isoExt: geo.iso?.ext ?? null, dimRungs: dimensionRungs(drawn),
   });
   const s = L.scale;
 
@@ -409,7 +412,7 @@ export function buildSheet(sol, edges, opts = {}) {
     label(isoLabelCell, VIEW_TITLE.iso, isoScale === s ? null : `SCALE ${scaleLabel(isoScale)}`), `</g>`);
 
   // §6.7 Dimensions.
-  body.push(`<g data-dims="1">`, ...dimensions(sol, L), `</g>`);
+  body.push(`<g data-dims="1">`, ...dimensions(drawn, L), `</g>`);
 
   // Notes and keys.
   // The lining is named in the key when one is actually drawn — switched off,
@@ -441,12 +444,24 @@ export function buildSheet(sol, edges, opts = {}) {
  * §32 The same solve without its lining, for drawing only.
  *
  * The box is the size it is: hiding the felt does not resize anything, so the
- * envelope, the cavity and every dimension are untouched. All that goes is a
- * set of panels nobody wanted to look at.
+ * envelope and every panel size are untouched. What goes is the lining — and
+ * §41, what goes with it is the inside of the lining.
+ *
+ * That was wrong from §37 until it was noticed: the sheet still carried a
+ * dimension to the face of a lining that was not drawn, a pair of extension
+ * lines reaching to nothing, and the section's bracketed internal height was
+ * the cavity behind felt the reader could not see. The innermost thing on a
+ * drawing without the lining is the board, so that is what is dimensioned.
  */
 export function withoutLagging(sol) {
   const panels = sol.panels.filter((p) => p.layer !== "lagging");
-  return panels.length === sol.panels.length ? sol : { ...sol, panels };
+  if (panels.length === sol.panels.length) return sol;
+  const cavity = sol.boardInner ?? sol.cavity;
+  return {
+    ...sol, panels, cavity,
+    interiors: (sol.interiors ?? []).filter((i) => i.layer !== "lagging"),
+    internal: boxSize(cavity),
+  };
 }
 
 /** Fold the fitting geometry into a view, so the sheet renders one thing. */
