@@ -2799,3 +2799,90 @@ six faces, which reads `(182) (202) (238) 274` across the front, `(291) (311)
 The section keeps its single bracketed internal height. It is a repeat of the
 front elevation's innermost rung put beside the view that explains where it
 comes from, and a ladder of four there would be four repeats.
+
+## §38 The sheet rearranged, and an isometric that comes apart
+
+Four things, all of them about the drawing.
+
+### The section goes under the end view
+
+It was the third view across the top: front elevation, end view, section. That
+is a fine place for it and the wrong one to read it from — the section and the
+end view look the same way at the same box, one showing the outside and the
+other the wall build-up, and with a whole elevation between them the reader
+crosses the sheet to compare them.
+
+So the sheet is two columns of views: the front elevation over the plan, the
+end view over the section. Each column is one direction of sight, top to
+bottom.
+
+That costs something and it is worth saying plainly. Stacked, the end view and
+the section are two full heights of box where the old bottom row was one depth,
+so a tall box asks for more sheet than it used to and can drop a scale step for
+it: 200 × 250 × 900 goes from 1:5 to 1:10. §32's switch buys it straight back —
+with the section off the bottom row is the plan again, and every view on the
+sheet grows. Nothing is drawn smaller with the section on than the section
+itself needs.
+
+### The views are pushed left
+
+The block was centred, which put half of the sheet's slack on the left of the
+front elevation, where nothing uses it, and half on the right, where the
+isometric could have. Now it is left-aligned, with exactly the margin the
+dimension ladder needs beside it — `DIM_NEAR + rungs × DIM_STEP` and room for
+the outermost number, the same quantity §37 reserves above the elevations, so
+the height ladder down the left of the front elevation has precisely its own
+room and no more.
+
+Everything the views do not use is therefore in one place: the right-hand
+column, which is the isometric's, and which now runs the full height of the
+drawing area rather than stopping level with the bottom row.
+
+### The isometric is solid, and shows the cutouts
+
+It was a wireframe of the panel cross-sections on the three visible planes — a
+true drawing of the joint pattern, and one that could not show a hole, because
+a hole is not a panel edge. A driver was on three views out of five and missing
+from the one that shows the whole box.
+
+Now each panel is drawn as a box: its three faces that point at the eye, filled
+with the paper and outlined, painted back to front. The fill is what does the
+work — a panel in front covers what is behind it, so there is no hidden-line
+removal to run and nothing to remove.
+
+Order is a topological sort on *is in front of*, not a sort by centre depth. A
+panel is in front of another when the two are clear of each other along an axis
+and it is on the eye's side of it: further right, further forward, or higher up.
+Every pair in a solved box passes that test — prominence is exactly what makes
+one panel stop where the next begins — and exploding them only pulls them
+further apart. Centres get a long thin panel wrong: the bottom panel's middle
+is well behind the front panel's, and all of it is in front of nothing.
+
+The mitres came out right with no code at all. §12 grows the butting panel's
+box to the corner before cutting it back, so a mitred front runs the full width
+of the box and a butted one stops a thickness short of it — which is exactly
+the difference between the two joints as seen from outside.
+
+A hole is drawn on the face the eye can see, with the far rim of the bore as an
+open arc where it shows through the near one. Drawing the whole of the far rim
+would put a second ellipse outside the first and turn a hole into a bump.
+§36's blind holes are honest here: a hole bored 6 mm into an 18 mm baffle is on
+the front of it and not the back, so a driver on the back face shows its cutout
+through the panel and no bolt holes. §33's depths are honest too — the holes
+come from `fittingsOn`, the same function the cut list and the kernel use, so a
+cutout that stops at the baffle is in the baffle and not in the doubler behind
+it.
+
+### It explodes
+
+A slider in the Drawing group pulls the assembly apart, by the same rule the 3D
+view uses — outward along each panel's face normal, scaled by layer, so the
+cladding leaves first and furthest and the lining barely moves. That rule now
+lives with the model rather than with the 3D code, because two views explode by
+it and a box that comes apart one way on screen and another way on the sheet is
+a drawing of a different box.
+
+With the kernel on, the isometric is normally OCCT's own hidden-line view of
+the cut solid. There is no exploded shape to ask it for — by then the panels
+are one solid — so an exploded isometric is drawn from the panel boxes either
+way, and the slider works with the kernel on or off.

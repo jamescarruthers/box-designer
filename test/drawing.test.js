@@ -3,18 +3,24 @@ import { solve } from "../src/model/solver.js";
 import { uniformEdges, noEdges, edgeOwners, fullLengthEdges, applicableEdges } from "../src/model/bevel.js";
 import { buildOrthoView, classifyEdges, FACE_SIDE } from "../src/drawing/views.js";
 import { buildSection, HATCH } from "../src/drawing/section.js";
-import { buildIsometric, isoProject, ISO_Z } from "../src/drawing/iso.js";
+import { buildIsometric, isoProject, ISO_Z, inFront, paintOrder } from "../src/drawing/iso.js";
+import { explodeShift } from "../src/model/explode.js";
+import { newFitting } from "../src/model/fittings.js";
 import { VIEW_EXTENT } from "../src/drawing/hlr.js";
 import { EDGES } from "../src/model/constants.js";
+import { buildSheet, HIDDEN_DASH } from "../src/drawing/sheet.js";
 
 const box = () => solve({
   envelope: { x: 236, y: 286, z: 356 }, thickness: 18, cladding: 6,
   order: ["front", "left", "right", "bottom", "back", "top"],
 });
 
+// §38 The views a bevel can appear in. The isometric is drawn from panel
+// boxes and carries no bevel geometry at all, so counting its lines here only
+// ever measured how the isometric was built — it has its own block below.
 const allViews = (sol, edges) => [
   ...["front", "end", "plan"].map((v) => buildOrthoView(v, sol, edges)),
-  buildSection(sol), buildIsometric(sol),
+  buildSection(sol),
 ];
 const tally = (vs) => ({
   lines: vs.reduce((a, v) => a + v.lines.length, 0),
@@ -31,14 +37,14 @@ describe("§9.5 bevel line counts", () => {
   it("cuts six of the twelve edges on this box", () => {
     expect(Object.values(cont).filter(Boolean)).toHaveLength(CONTINUOUS);
   });
-  it("no bevel → 74 lines, 0 arcs", () => {
-    expect(tally(allViews(sol, cut("none")))).toEqual({ lines: 74, arcs: 0 });
+  it("no bevel → 48 lines, 0 arcs", () => {
+    expect(tally(allViews(sol, cut("none")))).toEqual({ lines: 48, arcs: 0 });
   });
-  it("fillet → 74 lines, one arc per cut edge: arcs without extra lines", () => {
-    expect(tally(allViews(sol, cut("fillet")))).toEqual({ lines: 74, arcs: CONTINUOUS });
+  it("fillet → 48 lines, one arc per cut edge: arcs without extra lines", () => {
+    expect(tally(allViews(sol, cut("fillet")))).toEqual({ lines: 48, arcs: CONTINUOUS });
   });
-  it("chamfer → 87 lines, 0 arcs", () => {
-    expect(tally(allViews(sol, cut("chamfer")))).toEqual({ lines: 87, arcs: 0 });
+  it("chamfer → 61 lines, 0 arcs", () => {
+    expect(tally(allViews(sol, cut("chamfer")))).toEqual({ lines: 61, arcs: 0 });
   });
   it("a chamfer adds a diagonal per cut edge, plus its tangent lines", () => {
     const plain = tally(allViews(sol, cut("none"))).lines;
@@ -50,7 +56,7 @@ describe("§9.5 bevel line counts", () => {
   });
   it("with every edge forced, still adds no line for a fillet", () => {
     // classifyEdges in isolation: twelve corners, twelve arcs, no extra lines.
-    expect(tally(allViews(sol, uniformEdges("fillet", 12)))).toEqual({ lines: 74, arcs: 12 });
+    expect(tally(allViews(sol, uniformEdges("fillet", 12)))).toEqual({ lines: 48, arcs: 12 });
   });
 });
 
@@ -180,22 +186,136 @@ describe("§6.6 isometric", () => {
     }
   });
 
+  const drawn = (iso) => iso.groups.reduce((a, g) => a + g.lines.length, 0);
+
   it("shows the joint pattern, including cladding lines, not a bare box", () => {
     const iso = buildIsometric(sol);
     const bare = buildIsometric(solve({ envelope: { x: 236, y: 286, z: 356 }, thickness: 18,
       order: ["front", "back", "left", "right", "top", "bottom"] }));
-    // The front cladding wraps to the right-hand plane, so its edge shows there.
-    expect(iso.lines.length).toBeGreaterThan(bare.lines.length);
-    expect(bare.lines.length).toBeGreaterThan(12);
+    // §38 One group per panel, painted back to front, so the front cladding is
+    // a panel of its own and its edges are drawn where it sits.
+    expect(iso.groups).toHaveLength(sol.panels.length);
+    expect(drawn(iso)).toBeGreaterThan(drawn(bare));
+    expect(drawn(bare)).toBeGreaterThan(12);
+  });
+
+  it("paints back to front, so a panel in front covers what is behind it", () => {
+    // Along the line of sight the eye is front-right-above: x − y + z. The back
+    // panel is furthest, the front panel nearest, and they are drawn in that
+    // order — the isometric has no hidden-line removal but does not need one.
+    const order = buildIsometric(sol).groups.map((g) => g.face);
+    expect(order.indexOf("back")).toBeLessThan(order.indexOf("front"));
+    expect(order.indexOf("left")).toBeLessThan(order.indexOf("right"));
+    expect(order.indexOf("bottom")).toBeLessThan(order.indexOf("top"));
   });
 
   it("carries no hidden detail", () => {
-    expect(buildIsometric(sol).lines.every((l) => l.visible)).toBe(true);
+    const built = buildSheet(sol, noEdges(), {});
+    const iso = built.svg.slice(built.svg.indexOf('<g data-view="iso">'));
+    expect(iso.slice(0, iso.indexOf("</g>"))).not.toContain(HIDDEN_DASH);
   });
 
   it("deduplicates shared edges", () => {
-    const iso = buildIsometric(sol);
-    const keys = iso.lines.map((l) => JSON.stringify([l.a, l.b].sort()));
-    expect(new Set(keys).size).toBe(keys.length);
+    // Three quadrilaterals meeting at a corner share three of their sides.
+    for (const g of buildIsometric(sol).groups) {
+      const keys = g.lines.filter((l) => !l.closed)
+        .map((l) => JSON.stringify([l.pts[0], l.pts.at(-1)].sort()));
+      expect(new Set(keys).size).toBe(keys.length);
+      expect(keys).toHaveLength(9);
+    }
+  });
+});
+
+describe("§38 cutouts and explode in the isometric", () => {
+  const driver = { ...newFitting("driver", "front"), at: { a: 118, b: 178 } };
+  const sol = solve({ envelope: { x: 236, y: 286, z: 356 }, thickness: 18, doubler: { front: 18 },
+    order: ["front", "back", "left", "right", "top", "bottom"] });
+  const front = (layer) => sol.panels.find((p) => p.face === "front" && p.layer === layer);
+  const on = (panel) => (panel.face === "front" ? [driver] : []);
+  const holesIn = (iso, layer) => {
+    const g = iso.groups.find((x) => x.face === "front" && x.layer === layer);
+    return g.lines.filter((l) => l.closed);
+  };
+
+  it("cuts the fittings into the panel that carries them", () => {
+    const bare = buildIsometric(sol);
+    const cut = buildIsometric(sol, { fittingsOn: on });
+    expect(holesIn(bare, "shell")).toHaveLength(0);
+    // The cutout and five bolt holes, drawn as closed rings on the face.
+    expect(holesIn(cut, "shell")).toHaveLength(1 + driver.bolts);
+    // And the bore's far rim, an open arc showing the wall through the hole.
+    const arcs = cut.groups.find((g) => g.face === "front" && g.layer === "shell")
+      .lines.filter((l) => !l.closed).length;
+    expect(arcs).toBeGreaterThan(9);          // nine box edges, plus the wall
+  });
+
+  it("draws the hole in every panel the fitting goes through", () => {
+    const cut = buildIsometric(sol, { fittingsOn: on });
+    expect(holesIn(cut, "doubler")).toHaveLength(1 + driver.bolts);
+    // §33 A fitting the depth rule stopped at the baffle is not in the doubler.
+    const baffleOnly = (panel) =>
+      panel.face === "front" && panel.layer === "shell" ? [driver] : [];
+    expect(holesIn(buildIsometric(sol, { fittingsOn: baffleOnly }), "doubler")).toHaveLength(0);
+  });
+
+  it("§36 leaves a blind hole off the face it never reaches", () => {
+    // Bolts 6 mm into an 18 mm baffle: on the front of it, not the back.
+    const blind = { ...driver, boltDeep: 6 };
+    const iso = buildIsometric(sol, { fittingsOn: (p) => (p.face === "front" ? [blind] : []) });
+    expect(holesIn(iso, "shell")).toHaveLength(1 + blind.bolts);
+    // The same driver on the back face is seen from inside the box, where the
+    // bolt holes stop short — only the cutout goes through.
+    const back = { ...blind, face: "back" };
+    const fromInside = buildIsometric(sol, { fittingsOn: (p) => (p.face === "back" ? [back] : []) });
+    const g = fromInside.groups.find((x) => x.face === "back" && x.layer === "shell");
+    expect(g.lines.filter((l) => l.closed)).toHaveLength(1);
+  });
+
+  it("moves every panel out along its own face normal", () => {
+    const still = buildIsometric(sol);
+    const apart = buildIsometric(sol, { explode: 60 });
+    expect(apart.ext.h).toBeGreaterThan(still.ext.h);
+    expect(apart.ext.v).toBeGreaterThan(still.ext.v);
+    // The panels themselves are unchanged: an exploded view is the same box.
+    const size = (iso, face, layer) => {
+      const pts = iso.groups.find((g) => g.face === face && g.layer === layer)
+        .fills.flatMap((f) => f.pts);
+      const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+      return [Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)];
+    };
+    expect(size(apart, "front", "shell")[0]).toBeCloseTo(size(still, "front", "shell")[0], 9);
+    expect(size(apart, "front", "shell")[1]).toBeCloseTo(size(still, "front", "shell")[1], 9);
+  });
+
+  it("explodes the cladding furthest and the lining least", () => {
+    const clad = solve({ envelope: { x: 236, y: 286, z: 356 }, thickness: 18,
+      cladding: { front: 6 }, lagging: { front: 10 },
+      order: ["front", "back", "left", "right", "top", "bottom"] });
+    const moved = (layer) => {
+      const at = (amount) => buildIsometric(clad, { explode: amount })
+        .groups.find((g) => g.face === "front" && g.layer === layer).fills[0].pts[0];
+      // Against the box's own extent, which grows as the panels move.
+      const [a, b] = [at(0), at(100)];
+      return Math.hypot(b[0] - a[0], b[1] - a[1]);
+    };
+    expect(explodeShift({ face: "front", layer: "cladding" }, 100).y)
+      .toBeLessThan(explodeShift({ face: "front", layer: "shell" }, 100).y);
+    expect(explodeShift({ face: "front", layer: "lagging" }, 100).y)
+      .toBeGreaterThan(explodeShift({ face: "front", layer: "doubler" }, 100).y);
+    expect(moved("cladding")).toBeGreaterThan(0);
+  });
+
+  it("orders a long thin panel by where it is, not where its middle is", () => {
+    // The bottom panel runs the whole depth of the box, so its centre is well
+    // behind the front panel's — but every part of it is below, and the front
+    // panel stands in front of it. Comparing centres got that wrong.
+    const boxes = {
+      front:  { x: [0, 236], y: [0, 18], z: [0, 356] },
+      bottom: { x: [18, 218], y: [18, 268], z: [0, 18] },
+    };
+    expect(inFront(boxes.front, boxes.bottom)).toBe(true);
+    expect(inFront(boxes.bottom, boxes.front)).toBe(false);
+    const order = paintOrder([{ box: boxes.bottom }, { box: boxes.front }]);
+    expect(order[1].box).toBe(boxes.front);
   });
 });

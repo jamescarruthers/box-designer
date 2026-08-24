@@ -251,11 +251,25 @@ describe("§12 mitres in the drawing", () => {
     expect(outline(cut)).toEqual(outline(plain));
   });
 
-  it("stops a mitred panel claiming a face it only touches along a line", () => {
+  it("runs a mitred panel out to the corner, where a butted one stops short", () => {
+    // §38 The isometric draws panels as boxes now, and a mitred panel's box was
+    // grown to the corner before it was cut back to it — so the mitre needs no
+    // special case in the drawing: the front runs the full width of the box and
+    // there is no thickness of side panel showing beside it.
     const { sol, panels } = mitred(VERTICALS);
-    const iso = buildIsometric({ ...sol, panels });
-    const plain = buildIsometric({ ...sol, panels: sol.panels.filter((p) => p.layer === "shell") });
-    expect(iso.lines.length).toBeLessThan(plain.lines.length);
+    const spread = (ps) => Object.fromEntries(buildIsometric({ ...sol, panels: ps })
+      .groups.filter((g) => g.layer === "shell").map((g) => {
+        const pts = g.fills.flatMap((f) => f.pts);
+        const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+        return [g.face, (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys))];
+      }));
+    const butt = spread(sol.panels.filter((p) => p.layer === "shell"));
+    const cut = spread(panels);
+    // The panel that was butting grew out to the corner; the one that already
+    // wrapped is where it was. Nothing shrank: a mitre takes material off the
+    // joint face, not off the length of the panel.
+    expect(Object.keys(cut).some((f) => cut[f] > butt[f])).toBe(true);
+    for (const f of Object.keys(cut)) expect(cut[f]).toBeGreaterThanOrEqual(butt[f]);
   });
 });
 

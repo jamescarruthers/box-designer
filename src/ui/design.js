@@ -55,7 +55,7 @@ export const DEFAULT_DESIGN = {
   // §32 What the A3 sheet shows. Both on to begin with: the section is what a
   // laminated wall is drawn for, and a lining that is fitted is a lining that
   // belongs on the drawing.
-  drawing: { section: true, insulation: true },
+  drawing: { section: true, insulation: true, explode: 0 },
 };
 
 export const LAYER_KEY = { cladding: "cladding", doubler: "doubler", lagging: "lagging" };
@@ -468,8 +468,8 @@ export function derive(design) {
   const drawing = { ...DEFAULT_DESIGN.drawing, ...design.drawing };
   const sheet = buildSheet(sol, edges, {
     title: design.title, material: materialNote, sectionAt,
-    fittings, fittingPanels,
-    section: drawing.section, insulation: drawing.insulation,
+    fittings, fittingPanels, fittingsOn,
+    section: drawing.section, insulation: drawing.insulation, explode: drawing.explode,
   });
 
   // The largest consistent set, for the "mitre all" shortcut: asking for every

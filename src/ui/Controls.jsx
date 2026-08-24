@@ -234,8 +234,9 @@ export default function Controls({ design, set, derived, colourByFace }) {
       </Group>
 
       <Group title="Drawing" note="Section A–A is cut on a vertical plane and viewed from the left. Move it for a port or an off-centre brace.">
-        {/* §32 What goes on the sheet. Dropping the section hands its column to
-            the isometric, which is the view that wanted the room. */}
+        {/* §32 What goes on the sheet. §38 The isometric keeps its column
+            either way now; what dropping the section frees is the height its
+            own row was taking, which every view on the sheet shares. */}
         <label className="check">
           <input type="checkbox" checked={derived.drawing.section}
             onChange={(e) => set(setIn(design, ["drawing", "section"], e.target.checked))} />
@@ -246,6 +247,16 @@ export default function Controls({ design, set, derived, colourByFace }) {
             onChange={(e) => set(setIn(design, ["drawing", "insulation"], e.target.checked))} />
           <span>Acoustic insulation</span>
         </label>
+        {/* §38 The isometric comes apart. It is the one view that shows the
+            whole box, so it is the one worth pulling open — a laminated wall
+            explains itself in an exploded picture the way no elevation can. */}
+        <div className="chip-group explode">
+          <label htmlFor="iso-explode">Explode isometric</label>
+          <input id="iso-explode" type="range" min="0" max="120" step="5"
+            value={derived.drawing.explode}
+            onChange={(e) => set(setIn(design, ["drawing", "explode"], Number(e.target.value)))} />
+          <output>{derived.drawing.explode}</output>
+        </div>
         <Num label="Section at x" suffix="mm" step={1} value={Math.round(derived.sectionAt * 10) / 10}
           disabled={!derived.drawing.section}
           onChange={(v) => set({ ...design, sectionAt: v })} />
