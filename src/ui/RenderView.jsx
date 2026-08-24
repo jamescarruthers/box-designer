@@ -25,6 +25,7 @@ import {
 } from "../three/studio.js";
 import { loadPathTracer, START_SAMPLES } from "../render/pathtrace.js";
 import { driverBody, driverMaterial, placeDriver, driversOn } from "../three/driver.js";
+import { boardMaps, boxUV, textureFor, TINT_ONE } from "../three/texture.js";
 
 const POLAR_MIN = 0.12, POLAR_MAX = Math.PI / 2 - 0.02;   // never below the floor
 
@@ -124,6 +125,41 @@ function sweepMesh({ radius, floorRun, wallRise, width, back }, diagonal) {
 }
 
 /**
+ * §39 The board texture, built once and shared by every panel cut from that
+ * sheet — it is one sheet, and generating a 512² field per panel would be the
+ * same numbers over again at six times the cost.
+ */
+function boardTexture(cache, materialId) {
+  const recipe = textureFor(materialId);
+  if (!recipe) return null;
+  if (cache.has(materialId)) return cache.get(materialId);
+
+  const { size, tint, bump, rough } = boardMaps(recipe);
+  const make = (data, colourSpace) => {
+    const t = new THREE.DataTexture(data, size, size, THREE.RGBAFormat, THREE.UnsignedByteType);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.magFilter = THREE.LinearFilter;
+    t.minFilter = THREE.LinearMipmapLinearFilter;
+    t.generateMipmaps = true;
+    t.anisotropy = 8;
+    // None of the three is a colour: the tint is a multiplier, the others are
+    // a height and a roughness. Decoding them as sRGB would bend all three.
+    t.colorSpace = colourSpace;
+    t.needsUpdate = true;
+    return t;
+  };
+  const maps = {
+    map: make(tint, THREE.NoColorSpace),
+    bumpMap: make(bump, THREE.NoColorSpace),
+    roughnessMap: make(rough, THREE.NoColorSpace),
+    bumpScale: recipe.bump,
+    mm: recipe.mm,
+  };
+  cache.set(materialId, maps);
+  return maps;
+}
+
+/**
  * §19 The rendered view.
  *
  * `camera` is where the view was left last time and `onCamera` is how it says
@@ -207,6 +243,9 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
     const state = {
       renderer, scene, camera, target, sph, box, stage, sweep, lights, equirect, pmrem,
       raf: 0, tracer: null, onTrace: null, kept: keptRef.current, onCamera: onCameraRef.current,
+      // §39 One board texture per sheet, kept across rebuilds: the design
+      // changes far more often than the material does.
+      textures: new Map(),
     };
     gl.current = state;
 
@@ -331,6 +370,8 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
       el.removeEventListener("pointercancel", up);
       el.removeEventListener("wheel", wheel);
       state.tracer?.dispose();
+      for (const maps of state.textures.values())
+        for (const m of [maps.map, maps.bumpMap, maps.roughnessMap]) m.dispose();
       pmrem.dispose();
       equirect.dispose();
       renderer.dispose();
@@ -369,10 +410,25 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
       // Always the material's colour, never the face colouring: the face
       // colours are a way of reading the joinery, and this view is a
       // photograph of a box somebody is going to make out of a real sheet.
+      const colour = new THREE.Color(spec.colour);
+      // §39 The texture, where the sheet has one. Its tint averages TINT_ONE
+      // rather than white, so the colour is divided back up by exactly that —
+      // in the linear working space the Color is already in, which is the only
+      // place the arithmetic is the arithmetic.
+      const texture = boardTexture(state.textures, spec.materialId);
+      if (texture) {
+        geometry.setAttribute("uv", new THREE.BufferAttribute(
+          boxUV(positions, geometry.getAttribute("normal").array, texture.mm), 2));
+        colour.multiplyScalar(255 / TINT_ONE);
+      }
       const material = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(spec.colour),
+        color: colour,
         vertexColors: true,               // white, so the colour is the sheet's
         ...surfaceOf(spec),
+        ...(texture
+          ? { map: texture.map, bumpMap: texture.bumpMap, bumpScale: texture.bumpScale,
+              roughnessMap: texture.roughnessMap }
+          : {}),
       });
       const mesh = new THREE.Mesh(geometry, material);
       mesh.castShadow = true;
