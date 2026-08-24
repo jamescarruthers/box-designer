@@ -2733,3 +2733,69 @@ The bore reads the depth as a length and the overshoot at the entry makes a
 clean through-hole of anything longer than the panel, so "deeper than the
 material" needs no special case. The flat views ignore it: a blind hole is still
 a hole to mark out and drill.
+
+## §37 Every interior dimensioned
+
+The drawing measured one inside per axis: the cavity, the innermost box left
+after cladding, carcass, doublers and lining had all taken their cut. On a plain
+carcass that is the only inside there is and nothing was missing. On a box that
+is clad and doubled it is the last of four, and the three between it and the
+outside — sizes somebody has to cut boards to and check openings against — were
+simply not on the sheet.
+
+So the solver now hands the drawing all four, outermost first:
+
+    interiors: [
+      { layer: "cladding", box: L0.inner },   // inside the cladding
+      { layer: "shell",    box: L1.inner },   // inside the carcass
+      { layer: "doubler",  box: L2.inner },   // inside the doublers
+      { layer: "lagging",  box: L3.inner },   // the cavity
+    ]
+
+They are the same four boxes the layer solve already built, named and kept
+rather than thrown away — the last of them *is* `cavity`, so nothing that reads
+the cavity changes.
+
+### One rung each, and no rung drawn twice
+
+Each axis becomes a ladder: the interiors nearest the view, innermost first,
+with the overall size outside them all. A rung is dropped when it measures the
+same span as one already on the ladder, and when it measures the envelope.
+
+That rule is what keeps a plain box exactly as it was drawn before. With no
+cladding, "inside the cladding" *is* the envelope; with no doublers, "inside the
+doublers" is the carcass opening again. Three of the four interiors collapse
+into one and the box gets the two dimensions it always had — 200 and 236 across
+the front, at the same two offsets. Drawing them all would put three dimension
+lines on one pair of extension lines, which reads as a mistake because it is
+one.
+
+Per-axis, too, not per-box: cladding on the front and top and doublers on the
+back and left is four distinct widths, three distinct heights and four distinct
+depths, and each axis gets the ladder it has earned rather than the longest one
+on the sheet.
+
+### Room for the ladder
+
+Five lines where there were two need somewhere to go, and the margin between the
+view and the frame was sized for two. Both halves of that were wrong to leave
+alone, so both moved:
+
+- **The layout reserves the headroom.** `layout()` takes the rung count and
+  keeps `DIM_NEAR + rungs × DIM_STEP + DIM_TEXT` above the views, which pushes
+  the block of views down into the slack the sheet had below it rather than
+  running the ladder up off the top.
+- **The rungs close up when they must.** The step stays at its 8 mm wherever
+  there is room for it, and narrows towards a 5 mm floor when there is not, so a
+  ladder is never spaced below what a reader can separate.
+
+The first attempt did only the second of those, and measuring the drawn SVG
+against the frame in the browser found the outermost number at y = −3.3: off the
+sheet. With the headroom reserved the same measurement reports nothing outside
+the frame, on the worst case the app can make — clad, doubled and lined on all
+six faces, which reads `(182) (202) (238) 274` across the front, `(291) (311)
+(347) 383` up it, and `(227) (247) (265) (301) 337` for depth.
+
+The section keeps its single bracketed internal height. It is a repeat of the
+front elevation's innermost rung put beside the view that explains where it
+comes from, and a ladder of four there would be four repeats.

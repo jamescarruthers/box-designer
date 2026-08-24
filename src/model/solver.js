@@ -183,6 +183,15 @@ export function solve(input) {
     panels, cavity, envVolume,
     carcassInner: L1.inner,          // inside the shell, before doublers
     boardInner: L2.inner,            // §30 inside the boards, before the lining
+    // §37 Every box the wall encloses, outermost first, each named by the
+    // layer it is inside of. The drawing dimensions them all: a doubled,
+    // lined box has four interiors and only the last of them was on the sheet.
+    interiors: [
+      { layer: "cladding", box: L0.inner },
+      { layer: "shell", box: L1.inner },
+      { layer: "doubler", box: L2.inner },
+      { layer: "lagging", box: L3.inner },
+    ],
     internal: boxSize(cavity),
     closure,
     // The invariant is exact in arithmetic; in doubles it is exact to rounding.

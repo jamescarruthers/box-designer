@@ -552,6 +552,36 @@ describe("the app", () => {
     expect(screen.getByLabelText("Thickness").value).toBe("18");
   });
 
+  it("§37 dimensions every interior on the drawing, not just the innermost", () => {
+    const { container } = render(<App />);
+    const sheet = () => {
+      fireEvent.click(screen.getByRole("button", { name: "Drawing" }));
+      return container.querySelector(".sheet-holder").innerHTML;
+    };
+    const brackets = (svg) => [...svg.matchAll(/>\((\d+(?:\.\d+)?)\)</g)].map((m) => Number(m[1]));
+
+    // A plain carcass: one interior, so one bracketed size per axis, plus the
+    // section's repeat of the internal height.
+    const plain = brackets(sheet());
+    expect(new Set(plain).size).toBe(3);
+
+    for (const f of ["front", "back"]) {
+      fireEvent.change(screen.getByLabelText("Add cladding"), { target: { value: f } });
+      fireEvent.change(screen.getByLabelText("Add doublers"), { target: { value: f } });
+      fireEvent.change(screen.getByLabelText("Add lagging"), { target: { value: f } });
+    }
+
+    // Those three layers all take from the depth, so the end view now carries
+    // four nested reference dimensions where it carried one.
+    const lined = brackets(sheet());
+    expect(lined.length).toBeGreaterThan(plain.length);
+    const depths = [...new Set(lined)].filter((v) => !plain.includes(v));
+    expect(depths.length).toBeGreaterThanOrEqual(3);
+    // Each is smaller than the overall depth the box reports.
+    const overall = Number(readout(container, "Envelope").split("×")[1]);
+    for (const d of depths) expect(d).toBeLessThan(overall);
+  });
+
   it("§14 offers a DXF of the sheet layouts", () => {
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
