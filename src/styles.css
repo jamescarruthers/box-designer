@@ -415,6 +415,13 @@ table.cuts .edgework { color: var(--ink-3); }
 .fitting-grid .field { grid-template-columns: 52px 1fr; gap: 4px; }
 .fitting-grid .field > span:first-child { font-size: 10px; }
 .fitting .note { margin: 5px 0 0; font-size: 9.5px; }
+/* §33 How deep each hole goes. Selects rather than numbers, so they need the
+   room a number field does not. */
+.fitting-depth { margin-top: 5px; }
+.fitting-depth .field { grid-template-columns: 62px 1fr; gap: 4px; }
+.fitting-depth select { width: 100%; padding: 2px 4px; font-size: 10px; }
+.inspector .fitting-depth { grid-template-columns: 1fr; }
+
 /* §29 The back of the cutout: a row of its own, since it is a treatment rather
    than a dimension and belongs beside the radius it drives. */
 .fitting-flare { display: grid; grid-template-columns: auto 1fr; gap: 6px; align-items: center; margin-top: 5px; }

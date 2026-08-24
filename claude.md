@@ -2557,3 +2557,55 @@ it was with the section present.
 
 The caption follows the picture rather than sitting at the foot of the cell: in
 a cell that tall, a title half a hand below the box belongs to nothing.
+
+## §33 How deep each hole goes
+
+A hole went through every panel on its face, because that is what a hole
+usually does. But a driver bolts to the baffle and its cutout carries on
+through the doubler behind it — one fitting, two depths — and there was no way
+to say so.
+
+Each fitting now carries **Hole through**, and a driver also carries **Bolts
+through**. Both are offered as the layers of that face, named by the one the
+hole stops in: *Cladding*, *Carcass*, *Doubler*, *Lagging*, or **All layers**.
+A face with one panel on it offers nothing, because there is nothing to choose.
+
+### A depth, not a set
+
+A bore enters at the face and stops. It cannot skip the carcass and reappear in
+the doubler, so what a hole needs is a depth to stop at rather than a set of
+layers to tick — which is also why the control is a list of stopping points and
+not a column of checkboxes.
+
+"All layers" is kept as its own answer rather than spelled as the deepest one
+that exists today. A hole meant to go all the way should still go all the way
+when a doubler is added behind it later.
+
+Bolts are capped by the cutout: a panel with the clearance holes and no cutout
+is a panel the cone cannot get through, which is a mistake rather than an
+option. `boltDepth` applies the cap, and the Bolts control offers nothing
+deeper than the hole it surrounds.
+
+### One place it is applied
+
+`fittingAt(f, depth)` returns the fitting as it applies to the panel that many
+layers in — the whole thing, a bare cutout, or nothing at all. Everything
+downstream already asked *which fittings are on this panel* and then read the
+circles off them, so one function serves the kernel's booleans, the part
+templates, the DXF and the cut list at once. Nothing else learned a new idea.
+
+Two things follow it rather than being told separately:
+
+- The cut list says what each panel actually carries. A doubler behind a driver
+  whose bolts stop at the baffle reads *Driver ⌀116 in a ⌀162 frame, 78 deep,
+  cutout only* — reading "0 × ⌀5 on 147 PCD" off a cut list would be worse than
+  reading nothing.
+- The clearance check asks each panel for the clearance *that panel* needs. The
+  frame is the driver sitting on the outside of the box, so only the panel it
+  bolts to is asked to be big enough for it; a panel with no bolt holes is not
+  asked to hold a bolt circle; and a panel no hole reaches is not this
+  fitting's business at all.
+
+On the default box with a doubled front, sending the bolts to the baffle takes
+the kernel's mesh from 2196 triangles to 1336 — five bores fewer in the panel
+behind.

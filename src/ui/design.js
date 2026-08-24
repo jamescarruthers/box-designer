@@ -6,7 +6,8 @@ import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, pa
 import { mitreCheck, resolveMitres, applyMitres, mitreIssues, mitreLoss } from "../model/mitre.js";
 import { validate } from "../model/validate.js";
 import { fittingOwners, innermostOn, fittingIssues, fittingNote, hasTube, resolveFittings,
-  driverDisplacement, portDisplacement, hasDisplacement, cutoutFlare, largestFlare } from "../model/fittings.js";
+  driverDisplacement, portDisplacement, hasDisplacement, cutoutFlare, largestFlare,
+  fittingStack, fittingAt } from "../model/fittings.js";
 import { buildCutList, cutListTotals } from "../cutlist/cutlist.js";
 import { nest } from "../cutlist/nest.js";
 import { buildSheet } from "../drawing/sheet.js";
@@ -378,9 +379,10 @@ export function derive(design) {
     return { materialId: m.id, material: m.name, colour: spec.colour ?? m.colour, grained: m.grained };
   };
 
-  // §10 A hole goes all the way: every panel on the face is cut, cladding and
-  // doubler included. `fittingPanels` is still the outermost of them, because
-  // that is the face a driver bolts to and the surface positions are set out on.
+  // §10 A hole goes all the way by default: every panel on the face is cut,
+  // cladding and doubler included — §33 makes that a choice per fitting.
+  // `fittingPanels` is still the outermost of them, because that is the face a
+  // driver bolts to and the surface positions are set out on.
   const authored = design.fittings ?? [];
   const faces = [...new Set(authored.map((f) => f.face))];
   const fittingPanels = fittingOwners(sol.panels, faces);
@@ -401,7 +403,14 @@ export function derive(design) {
     const most = largestFlare(f, panelThickness(panel));
     return flare.radius <= most ? f : { ...f, flare: { ...flare, radius: most } };
   };
+  // §33 Where each panel sits in its face's stack, so a fitting can be asked
+  // what it cuts *there*: the whole thing on the baffle, a bare cutout on the
+  // doubler behind it, nothing at all on a layer no hole reaches.
+  const depthOf = new Map();
+  for (const face of faces) fittingStack(sol.panels, face).forEach((p, i) => depthOf.set(p, i));
   const fittingsOn = (panel) => fittings.filter((f) => f.face === panel.face)
+    .map((f) => fittingAt(f, depthOf.get(panel) ?? 0))
+    .filter(Boolean)
     .map((f) => flareOn(f, panel));
   const tubesOn = (panel) =>
     fittings.filter((f) => hasTube(f) && tubePanels[f.face] === panel);
