@@ -51,6 +51,10 @@ export const DEFAULT_DESIGN = {
   // §10's biggest gap: the holes that make a box a speaker.
   fittings: [],
   sectionAt: null,
+  // §32 What the A3 sheet shows. Both on to begin with: the section is what a
+  // laminated wall is drawn for, and a lining that is fitted is a lining that
+  // belongs on the drawing.
+  drawing: { section: true, insulation: true },
 };
 
 export const LAYER_KEY = { cladding: "cladding", doubler: "doubler", lagging: "lagging" };
@@ -442,9 +446,11 @@ export function derive(design) {
   const materialNote = `${material.name.toUpperCase()} ${design.thickness}` +
     (others.length ? ` +${others.length}` : "");
 
+  const drawing = { ...DEFAULT_DESIGN.drawing, ...design.drawing };
   const sheet = buildSheet(sol, edges, {
     title: design.title, material: materialNote, sectionAt,
     fittings, fittingPanels,
+    section: drawing.section, insulation: drawing.insulation,
   });
 
   // The largest consistent set, for the "mitre all" shortcut: asking for every
@@ -453,7 +459,7 @@ export function derive(design) {
     Object.fromEntries(EDGES.filter((k) => mitreCheck(plain, sol.env, k).ok).map((k) => [k, true]))).accepted;
 
   return { sol, edges, requestedEdges, fullLength, mitrable, requestedMitres, mitreRing, owners, material, rows, sheets, totals, messages,
-    sheet, sectionAt, specFor, fittings, fittingPanels, fittingsOn, tubesOn };
+    sheet, sectionAt, drawing, specFor, fittings, fittingPanels, fittingsOn, tubesOn };
 }
 
 export const setIn = (obj, path, value) => {

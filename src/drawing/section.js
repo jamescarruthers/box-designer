@@ -7,10 +7,14 @@ export const HATCH = {
   shell:    { id: "hatch-carcass",  angle: 45,  pitch: 2.2, label: "CARCASS" },
   doubler:  { id: "hatch-doubler",  angle: -45, pitch: 2.2, label: "DOUBLER" },
   cladding: { id: "hatch-cladding", angle: 45,  pitch: 1.2, label: "CLADDING" },
-  // §30 A lining is not a board and should not read as one in section. Widely
-  // spaced and the other way up, so a felted wall is told from a doubled one at
-  // a glance rather than by counting lines.
-  lagging:  { id: "hatch-lagging",  angle: -45, pitch: 4.5, label: "LAGGING" },
+  // §32 Not another line hatch.
+  //
+  // A lining had 45° lines like the boards either side of it, wider apart —
+  // which is a difference you have to measure rather than see, and at 1:5 on a
+  // 10 mm felt it is two lines against three. Stipple is the drawing
+  // convention for a loose fill and it reads as one instantly: no direction to
+  // confuse with a board's, and nothing to count.
+  lagging:  { id: "hatch-lagging",  kind: "dots", pitch: 1.6, r: 0.28, label: "LAGGING" },
 };
 
 /**

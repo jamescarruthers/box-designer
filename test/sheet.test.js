@@ -6,7 +6,11 @@ import { applyMitres } from "../src/model/mitre.js";
 import { fittingDimensions, DIM_ANGLE } from "../src/drawing/fittings.js";
 import { newFitting } from "../src/model/fittings.js";
 import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
-import { buildSheet, layout, planDimensions, pickScale, scaleLabel, edgeNote, mitreDrawingNote, SHEET, TITLE_BLOCK, LW, TS, PREFERRED_SCALES, GAP_H, GAP_V, frameRect } from "../src/drawing/sheet.js";
+import { buildSheet, layout, planDimensions, pickScale, scaleLabel, edgeNote, mitreDrawingNote, noteText, isoFit, withoutLagging, SHEET, TITLE_BLOCK, LW, TS, PREFERRED_SCALES, GAP_H, GAP_V, frameRect } from "../src/drawing/sheet.js";
+import { HATCH } from "../src/drawing/section.js";
+import { buildIsometric } from "../src/drawing/iso.js";
+import { addPanel, editPanel } from "../src/ui/design.js";
+import { FACES } from "../src/model/constants.js";
 
 const sol = solve({ envelope: { x: 236, y: 286, z: 356 }, thickness: 18, doubler: { front: 18 },
   order: ["front", "back", "left", "right", "top", "bottom"] });
@@ -280,5 +284,142 @@ describe("§6.7 the fittings are dimensioned", () => {
     expect(svg).toContain("⌀147 PCD");
     expect(svg).toContain("5×⌀5");
     expect(svg).not.toMatch(/NaN|Infinity/);
+  });
+});
+
+
+/**
+ * §32 What the sheet shows, and how a lining reads on it.
+ *
+ * Three things a reader of the drawing decides: whether the lining is drawn at
+ * all, whether the section is, and — since the section's column is a third of
+ * the sheet — what happens to the space when it goes.
+ */
+const lined = solve({ envelope: { x: 238, y: 283, z: 347 }, thickness: 18, lagging: 10,
+  order: ["front", "back", "left", "right", "top", "bottom"] });
+
+describe("§32 the lining in section", () => {
+  it("is stippled rather than hatched, so it cannot read as another board", () => {
+    // The old lining hatch was 45° lines like the boards either side of it,
+    // which is a difference you measure rather than see.
+    expect(HATCH.lagging.kind).toBe("dots");
+    for (const key of ["shell", "doubler", "cladding"]) {
+      expect(HATCH[key].kind).toBeUndefined();
+      expect(HATCH[key].angle).toBeTypeOf("number");
+    }
+    const svg = buildSheet(lined, noEdges(), {}).svg;
+    const pattern = /<pattern id="hatch-lagging"[^>]*>(.*?)<\/pattern>/s.exec(svg)[1];
+    expect(pattern).toMatch(/<circle/);
+    expect(pattern).not.toMatch(/<line/);
+    // And the pattern is staggered, not a grid: two dots, off-diagonal.
+    expect((pattern.match(/<circle/g) ?? [])).toHaveLength(2);
+  });
+
+  it("names the stipple in the note, and only where a lining is drawn", () => {
+    expect(noteText({})).toMatch(/STIPPLE = LAGGING/);
+    expect(noteText({ insulation: false })).not.toMatch(/LAGGING/);
+    // With no section there is no hatching key to read at all.
+    expect(noteText({ section: false })).not.toMatch(/HATCHING/);
+    expect(noteText({ section: false })).toMatch(/HIDDEN DETAIL DASHED/);
+  });
+});
+
+describe("§32 hiding the insulation", () => {
+  it("draws the box without it rather than drawing it and covering it", () => {
+    const on = buildSheet(lined, noEdges(), {});
+    const off = buildSheet(lined, noEdges(), { insulation: false });
+    expect(on.svg).toMatch(/url\(#hatch-lagging\)/);
+    expect(off.svg).not.toMatch(/url\(#hatch-lagging\)/);
+    expect(off.geometry.section.hatches.every((h) => h.panel.layer !== "lagging")).toBe(true);
+    // Six panels fewer in every view, and the box the same size in all of them.
+    expect(withoutLagging(lined).panels).toHaveLength(lined.panels.length - 6);
+    expect(off.scale).toBe(on.scale);
+    expect(off.layout.cells).toEqual(on.layout.cells);
+  });
+
+  it("leaves a box with no lining exactly as it was", () => {
+    // Same object back, so nothing downstream re-renders for a filter that
+    // filtered nothing.
+    expect(withoutLagging(sol)).toBe(sol);
+    expect(buildSheet(sol, noEdges(), { insulation: false }).svg)
+      .toBe(buildSheet(sol, noEdges(), {}).svg);
+  });
+
+  it("keeps every other panel at the index the bevels were resolved against", () => {
+    // The kernel path sends per-panel bevels and fittings by index, so this is
+    // load-bearing: the lining has to be the *last* group of panels.
+    const kept = withoutLagging(lined).panels;
+    expect(lined.panels.slice(0, kept.length)).toEqual(kept);
+    expect(lined.panels.slice(kept.length).every((p) => p.layer === "lagging")).toBe(true);
+  });
+});
+
+describe("§32 hiding the section", () => {
+  it("takes the view, its cutting plane and its dimension off the sheet", () => {
+    const off = buildSheet(lined, noEdges(), { section: false });
+    expect(off.svg).not.toMatch(/data-view="section"/);
+    expect(off.svg).not.toMatch(/SECTION A–A/);
+    // The plane marker on the plan points at a view that would not be there.
+    expect(buildSheet(lined, noEdges(), {}).svg).toMatch(/SECTION A–A/);
+    // The internal height is still dimensioned — on the front elevation, where
+    // it always was; only the section's repeat of it goes.
+    const dims = planDimensions(lined, layout(lined.E, { section: false }));
+    expect(dims.some((d) => d.kind === "v" && d.text === String(Math.round(lined.internal.z)))).toBe(true);
+  });
+
+  it("gives the isometric the right of the sheet, and more of it", () => {
+    const ext = buildIsometric(lined).ext;
+    const withIt = layout(lined.E).cells.iso;
+    const without = layout(lined.E, { section: false, isoExt: ext }).cells.iso;
+    // Further right, taller, and drawn at a larger scale for it.
+    expect(without.x).toBeGreaterThan(withIt.x);
+    expect(without.h).toBeGreaterThan(withIt.h);
+    expect(isoFit(without, ext)).toBeGreaterThan(isoFit(withIt, ext));
+    expect(buildSheet(lined, noEdges(), { section: false }).isoScale)
+      .toBeGreaterThan(buildSheet(lined, noEdges(), {}).isoScale);
+    // Out to the frame rather than stopping at the column the section had.
+    expect(without.x + without.w).toBeGreaterThan(withIt.x + layout(lined.E).cols[2]);
+    expect(without.x + without.w).toBeLessThanOrEqual(frameRect().x + frameRect().w);
+  });
+
+  it("never draws the isometric smaller than it was", () => {
+    // A long low box projects wide, and a tall narrow column suits it badly —
+    // so the bottom strip out to the frame is offered as well, and whichever
+    // draws it bigger is the one used.
+    for (const E of [{ x: 900, y: 400, z: 500 }, { x: 200, y: 250, z: 900 },
+      { x: 400, y: 400, z: 400 }, { x: 238, y: 283, z: 347 }]) {
+      const box = solve({ envelope: E, thickness: 18 });
+      const ext = buildIsometric(box).ext;
+      const before = isoFit(layout(E).cells.iso, ext);
+      const after = isoFit(layout(E, { section: false, isoExt: ext }).cells.iso, ext);
+      expect(after, JSON.stringify(E)).toBeGreaterThanOrEqual(before);
+    }
+  });
+});
+
+describe("§32 the options in the design", () => {
+  it("starts with both on and carries them into the sheet", () => {
+    expect(DEFAULT_DESIGN.drawing).toEqual({ section: true, insulation: true });
+    const d = derive(DEFAULT_DESIGN);
+    expect(d.drawing).toEqual({ section: true, insulation: true });
+    expect(d.sheet.section).toBe(true);
+    expect(d.sheet.insulation).toBe(true);
+  });
+
+  it("fills in what an older saved design never had", () => {
+    // A design saved before these existed has no `drawing` at all, and an
+    // undefined flag must not read as "off".
+    const old = { ...DEFAULT_DESIGN, drawing: undefined };
+    expect(derive(old).drawing).toEqual({ section: true, insulation: true });
+    expect(derive({ ...DEFAULT_DESIGN, drawing: { section: false } }).drawing)
+      .toEqual({ section: false, insulation: true });
+  });
+
+  it("turns them off through the design", () => {
+    const felt = FACES.reduce((x, f) => editPanel(addPanel(x, "lagging", f), "lagging", f, { thickness: 10 }), DEFAULT_DESIGN);
+    const both = derive({ ...felt, drawing: { section: false, insulation: false } });
+    expect(both.sheet.svg).not.toMatch(/SECTION A–A/);
+    expect(both.sheet.svg).not.toMatch(/url\(#hatch-lagging\)/);
+    expect(derive(felt).sheet.svg).toMatch(/url\(#hatch-lagging\)/);
   });
 });

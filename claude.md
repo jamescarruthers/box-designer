@@ -2500,3 +2500,60 @@ the cutout.
 
 All three feed the displacement of §27 the moment they change the shape — and a
 published figure still overrides the lot of it (§28).
+
+## §32 What the drawing shows
+
+Three changes to the A3 sheet: a lining that reads as a lining, and two things
+the reader of the drawing gets to switch off.
+
+### Stipple, not another hatch
+
+The lining's first hatch was 45° lines like the boards either side of it, more
+widely spaced. That is a difference you measure rather than see: at 1:5 on 10 mm
+of felt it is two lines against three. It is a stipple now — a staggered field
+of dots, the drawing convention for a loose fill — and beside a clad, doubled
+carcass the four read apart at a glance: fine 45°, coarse 45°, opposed 45°,
+dots. The key in the sheet note says `STIPPLE = LAGGING`, and says it only where
+a lining is actually drawn: naming a hatch that is not on the sheet is worse
+than not having a key.
+
+### Two switches
+
+**Acoustic insulation** and **Section A–A**, in the Drawing group beside the
+section position, and kept with the design. Both start on.
+
+Hiding the lining builds the views *without* it rather than drawing it and
+painting over it — one filtered list of panels feeds the elevations, the plan,
+the section and the isometric alike. The box does not change size: hiding felt
+is a drawing decision, not a re-solve, so every dimension on the sheet is the
+one it was. The kernel path filters the same way before it builds its shape,
+which it can do safely because §30 adds the lining last: dropping the tail of
+the panel list leaves every other panel at the index its bevels and fittings
+were resolved against.
+
+Hiding the section takes the view, the cutting-plane symbol on the plan, and
+the hatching key with it — and the internal-height dimension the section
+carried, which was always a repeat of the front elevation's, put beside the
+view that explained it.
+
+### The isometric gets the room
+
+The section owns a third of the sheet, and giving it up is worth something. The
+isometric moves to the right of the page and takes the whole column, both rows,
+out to the frame rather than stopping where the section's column stopped:
+
+| | isometric cell | drawn at |
+| --- | --- | --- |
+| with the section | 153 × 57 | 1:10 |
+| without it | 125 × 172 | **1:5** |
+
+That is not just tidier. The isometric of a box is taller than it is wide, and
+its old cell was wide and short, so its scale was pinned by the height. A long
+low box projects the other way, though, so the bottom row run out to the frame
+is offered as well and whichever draws the picture larger is the one used — the
+column winning a tie, since the request was for the right of the page. A test
+sweeps four shapes and holds the isometric to never being drawn *smaller* than
+it was with the section present.
+
+The caption follows the picture rather than sitting at the foot of the cell: in
+a cell that tall, a title half a hand below the box belongs to nothing.

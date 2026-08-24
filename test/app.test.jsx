@@ -449,6 +449,25 @@ describe("the app", () => {
     expect(container.textContent).not.toMatch(/will not pass/);
   });
 
+  it("§32 turns the section and the insulation off from the sidebar", () => {
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByLabelText("Add lagging"), { target: { value: "back" } });
+    fireEvent.click(screen.getByRole("button", { name: "Drawing" }));
+
+    const sheet = () => container.querySelector(".sheet-holder").innerHTML;
+    expect(sheet()).toMatch(/SECTION A–A/);
+    expect(sheet()).toMatch(/url\(#hatch-lagging\)/);
+
+    fireEvent.click(screen.getByLabelText("Acoustic insulation"));
+    expect(sheet()).not.toMatch(/url\(#hatch-lagging\)/);
+    expect(sheet()).toMatch(/SECTION A–A/);
+
+    fireEvent.click(screen.getByLabelText("Section A–A"));
+    expect(sheet()).not.toMatch(/SECTION A–A/);
+    // The section's own controls have nothing to act on with it off.
+    expect(screen.getByLabelText("Section at x").disabled).toBe(true);
+  });
+
   it("§13 keeps the design across a reload, and lets you get rid of it", () => {
     render(<App />);
     fireEvent.change(screen.getByLabelText("Thickness"), { target: { value: "21" } });

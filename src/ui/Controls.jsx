@@ -234,9 +234,23 @@ export default function Controls({ design, set, derived, colourByFace }) {
       </Group>
 
       <Group title="Drawing" note="Section A–A is cut on a vertical plane and viewed from the left. Move it for a port or an off-centre brace.">
+        {/* §32 What goes on the sheet. Dropping the section hands its column to
+            the isometric, which is the view that wanted the room. */}
+        <label className="check">
+          <input type="checkbox" checked={derived.drawing.section}
+            onChange={(e) => set(setIn(design, ["drawing", "section"], e.target.checked))} />
+          <span>Section A–A</span>
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={derived.drawing.insulation}
+            onChange={(e) => set(setIn(design, ["drawing", "insulation"], e.target.checked))} />
+          <span>Acoustic insulation</span>
+        </label>
         <Num label="Section at x" suffix="mm" step={1} value={Math.round(derived.sectionAt * 10) / 10}
+          disabled={!derived.drawing.section}
           onChange={(v) => set({ ...design, sectionAt: v })} />
-        <button type="button" className="linkish" onClick={() => set({ ...design, sectionAt: null })}>
+        <button type="button" className="linkish" disabled={!derived.drawing.section}
+          onClick={() => set({ ...design, sectionAt: null })}>
           Centre the section plane
         </button>
       </Group>
