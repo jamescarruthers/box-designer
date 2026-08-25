@@ -113,6 +113,13 @@ function merge(cells) {
 export const panelVolume = (panel) =>
   subtractBoxes(panel.box, panel.notches).reduce((a, b) => a + boxVolume(b), 0);
 
+/**
+ * §43 The axis a mitre on this side of the panel runs along: the one that is
+ * neither the panel's own thickness nor the side's.
+ */
+export const mitreRun = (panel, side) =>
+  AXES.find((b) => b !== AXIS[panel.face][0] && b !== AXIS[side][0]);
+
 /** The slab a panel takes on when it is rebated `depth` into the face `side`. */
 export function rebateSlab(panel, side, depth) {
   const [axis, sign] = AXIS[side];
@@ -160,7 +167,18 @@ export function applyRebates(panels, rebates, layer = "shell") {
       // the corner, which is the material the rebate wants to slide into.
       if ((panel.mitres ?? []).some((m) => m.side === side)) {
         rejected.set(`${face}|${side}`,
-          `the ${face}/${side} joint is mitred, and a mitre and a rebate are two different joints`);
+          `that joint is mitred, and a mitre and a rebate are two different joints — take the mitre off the edge to rebate into it`);
+        continue;
+      }
+      // §43 And a rebate must not stretch a mitre the panel carries elsewhere.
+      // Growing the panel along an axis makes every mitre that *runs* along
+      // that axis longer — on this panel only, since the one it is mitred to
+      // has not moved. Two halves of one joint, cut to different lengths.
+      const grows = AXIS[side][0];
+      const stretched = (panel.mitres ?? []).find((m) => mitreRun(panel, m.side) === grows);
+      if (stretched) {
+        rejected.set(`${face}|${side}`,
+          `it would make the ${face}/${stretched.side} mitre longer than the panel it is mitred to`);
         continue;
       }
       const slab = rebateSlab(panel, side, depth);
@@ -182,9 +200,14 @@ export function applyRebates(panels, rebates, layer = "shell") {
         rejected.set(why, `a ${fmt(depth)} mm rebate goes right through the ${fmt(thinnest)} mm panel beside it`);
         continue;
       }
-      const covered = hits.reduce((a, p) => a + boxVolume(intersect(p.box, slab)), 0);
-      const want = boxVolume(slab);
-      if (Math.abs(covered - want) > 1e-6 * Math.max(1, want)) {
+      // §43 What is left of the slab once the panels around it are taken out
+      // of it — the union, not the sum of the pieces. §12 mitred boxes overlap
+      // each other in the corner prism until the 45° cut takes it off them,
+      // and adding their shares up counts that corner twice, which reads as a
+      // slab bigger than it is and refuses a rebate that is perfectly cuttable.
+      const uncovered = subtractBoxes(slab, hits.map((p) => p.box))
+        .reduce((a, c) => a + boxVolume(c), 0);
+      if (uncovered > 1e-6 * Math.max(1, boxVolume(slab))) {
         rejected.set(why,
           `the ${face} panel is not backed by board along the whole of that edge — part of the rebate would be cut into thin air`);
         continue;
@@ -193,7 +216,17 @@ export function applyRebates(panels, rebates, layer = "shell") {
       // Nothing is refused after this point, so the panel can grow.
       const [axis, sign] = AXIS[side];
       if (sign < 0) panel.box[axis][0] -= depth; else panel.box[axis][1] += depth;
-      for (const p of hits) p.notches.push(intersect(p.box, slab));
+      // §43 Each panel takes the part of the slab nobody has taken yet. Where
+      // two mitred boxes overlap in a corner the material is there once, so it
+      // can only be cut away once — notching both for the whole corner takes
+      // out twice what is there and the closure says so.
+      let free = [slab];
+      for (const p of hits) {
+        const mine = free.map((rest) => intersect(rest, p.box)).filter(Boolean);
+        if (!mine.length) continue;
+        p.notches.push(...mine);
+        free = free.flatMap((rest) => subtractBoxes(rest, [p.box]));
+      }
       done.push(side);
     }
     if (done.length) applied[face] = { depth, sides: done };
@@ -213,6 +246,27 @@ export function applyRebates(panels, rebates, layer = "shell") {
  * middle of it — so the note is the whole story: how deep, how wide, and which
  * face of the board it is on.
  */
+/**
+ * §43 The refusals, gathered by what they are: one entry per face and reason,
+ * naming the sides it applies to.
+ *
+ * Reported this way because that is how it went wrong the first time. A rebate
+ * asked for on four sides and cut on two said "let in on front and back" and
+ * nothing whatever about the other two, so the only trace of the refusal was a
+ * warning in a list of warnings — and the answer to "why did it only do front
+ * and back" was on the screen and unfindable.
+ */
+export function rebateProblems(rejected) {
+  const out = [];
+  for (const [key, why] of rejected ?? []) {
+    const [face, side] = key.split("|");
+    const found = out.find((p) => p.face === face && p.why === why);
+    if (found) { if (side) found.sides.push(side); continue; }
+    out.push({ face, why, sides: side ? [side] : [] });
+  }
+  return out;
+}
+
 export function notchNote(panel) {
   if (!panel.notches?.length) return "";
   const a = AXIS[panel.face][0];

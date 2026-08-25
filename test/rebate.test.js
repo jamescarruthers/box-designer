@@ -5,6 +5,7 @@ import { PROMINENCE_PRESETS } from "../src/model/constants.js";
 import { noEdges } from "../src/model/bevel.js";
 import {
   applyRebates, subtractBoxes, panelVolume, rebateSlab, rebateSides, notchNote, intersect, newRebate,
+  rebateProblems, mitreRun,
 } from "../src/model/rebate.js";
 import { panelPositions, notchDepth } from "../src/three/panelGeometry.js";
 import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
@@ -123,9 +124,14 @@ describe("§42 letting a panel in", () => {
     const mitred = applyMitres(sol.panels, sol.env, { "front|top": true });
     expect(mitred.applied).toEqual(["front|top"]);
     const { applied, rejected } = applyRebates(mitred.panels, { front: all(6) });
-    expect([...rejected.values()].join(" ")).toMatch(/mitred/);
-    // The other three sides are cut all the same: one joint is not the panel.
-    expect(applied.front.sides).toEqual(["left", "right", "bottom"]);
+    expect(rejected.get("front|top")).toMatch(/mitred/);
+    // §43 And not on a side that would stretch it either: the front|top mitre
+    // runs across the panel, so letting the panel in at the left or the right
+    // makes that mitre longer on this panel and on no other.
+    expect(rejected.get("front|left")).toMatch(/longer than the panel it is mitred to/);
+    expect(rejected.get("front|right")).toMatch(/longer than the panel it is mitred to/);
+    // The bottom grows the panel the other way, and the mitre does not care.
+    expect(applied.front.sides).toEqual(["bottom"]);
   });
 
   it("offers the four sides that meet the panel, and no others", () => {
@@ -230,5 +236,79 @@ describe("§42 through the design", () => {
     const plain = derive(design({}));
     expect(front.lines.length).toBeGreaterThan(plain.sheet.geometry.front.lines.length);
     expect(front.lines.some((l) => !l.visible)).toBe(true);
+  });
+});
+
+describe("§43 rebating into a mitred box", () => {
+  const mitred = (keys) => ({
+    type: "none", radius: 12, perEdge: true,
+    by: Object.fromEntries(keys.map((k) => [k, { type: "mitre", radius: 18 }])),
+  });
+  const VERTICALS = ["front|left", "back|left", "front|right", "back|right"];
+  const design = (keys, rebate) => ({ ...DEFAULT_DESIGN, edge: mitred(keys), rebate });
+  const allSides = { depth: 6, sides: Object.fromEntries(
+    ["front", "back", "left", "right", "top", "bottom"].map((s) => [s, true])) };
+
+  it("lets a top panel into a box whose corners are mitred, on all four sides", () => {
+    // The bug: the panels of a mitred corner overlap each other in the corner
+    // prism until the 45° cut takes it off them, and adding up their shares of
+    // the slab counted that corner twice — which read as a slab bigger than it
+    // is, and refused the two sides that reached into a mitre.
+    const plain = derive(design([], { top: allSides }));
+    const cut = derive(design(VERTICALS, { top: allSides }));
+    expect(plain.rebated.top.sides).toEqual(["front", "back", "left", "right"]);
+    expect(cut.rebated.top.sides).toEqual(["front", "back", "left", "right"]);
+    expect(cut.rebateRejected.size).toBe(0);
+  });
+
+  it("keeps the closure exact where the tongue reaches a mitred corner", () => {
+    // The other half of the same fact: the corner is there once, so it can be
+    // cut away once. Notching both panels of the mitre for the whole corner
+    // takes out twice what is there.
+    for (const keys of [[], VERTICALS, ["left|top", "left|bottom"]]) {
+      for (const face of ["front", "back", "left", "right", "top", "bottom"]) {
+        const d = derive(design(keys, { [face]: allSides }));
+        expect(d.sol.closureExact, `${face} with ${keys.length} mitres`).toBe(true);
+        expect(d.totals.closure).toBe("exact");
+      }
+    }
+  });
+
+  it("will not stretch a mitre the panel carries somewhere else", () => {
+    // A top mitred to the sides cannot be let in front or back: growing it
+    // that way runs its left and right mitres on past the panels they are
+    // mitred to, and one half of a joint longer than the other is not a joint.
+    const d = derive(design(["left|top", "right|top"], { top: allSides }));
+    expect(d.rebated.top).toBeUndefined();
+    const problems = rebateProblems(d.rebateRejected);
+    expect(problems.find((p) => p.why.includes("longer")).sides).toEqual(["front", "back"]);
+    expect(problems.find((p) => p.why.includes("two different joints")).sides).toEqual(["left", "right"]);
+  });
+
+  it("says which sides it refused, even when it cut the others", () => {
+    // What made this hard to see: the sidebar said "let in on front and back"
+    // and nothing at all about the two it had not done.
+    // The sides have to wrap for the front to be let in at all, and front|top
+    // is the joint that box will mitre.
+    const d = derive({ ...design(["front|top"], { front: allSides }),
+      preset: "sides", order: PROMINENCE_PRESETS[1].order });
+    expect(d.rebated.front.sides).toEqual(["bottom"]);
+    const problems = rebateProblems(d.rebateRejected);
+    expect(problems.flatMap((p) => p.sides).sort()).toEqual(["left", "right", "top"]);
+    // One message per reason, naming the face and the sides it applies to.
+    const warnings = d.messages.filter((m) => /^Rebate:/.test(m.text));
+    expect(warnings).toHaveLength(problems.length);
+    for (const w of warnings) expect(w.text).toMatch(/^Rebate: Front \(/);
+  });
+
+  it("groups the refusals by reason, not one per side", () => {
+    const rejected = new Map([
+      ["top|left", "a"], ["top|right", "a"], ["top|front", "b"], ["back", "c"],
+    ]);
+    expect(rebateProblems(rejected)).toEqual([
+      { face: "top", why: "a", sides: ["left", "right"] },
+      { face: "top", why: "b", sides: ["front"] },
+      { face: "back", why: "c", sides: [] },
+    ]);
   });
 });

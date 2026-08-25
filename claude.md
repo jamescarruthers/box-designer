@@ -3093,3 +3093,57 @@ That one primitive is then all any of them needs:
 - **the kernel** — the notches are boxes and a boolean cut is what a boolean
   cut is for. Cut before the bevels, since a groove in the inner face and a
   round on an outer edge never meet.
+
+## §43 Rebating into a mitred box
+
+A top panel let into a box whose corners are mitred came out rebated on the
+front and back and not on the left and right — which is exactly the case §42
+was asked for, and it refused half of it.
+
+Two faults, one of them arithmetic and one of them a rule that was missing.
+
+### The corner is there once, so it can only be counted once
+
+§12 mitres by growing the panel that was butting out to the corner and cutting
+both boards at 45°. Between those two steps the two boxes *overlap*: the corner
+prism belongs to both of them until the cut takes it off each.
+
+§42's coverage test added up each panel's share of the slab and compared the
+total with the slab. Where the slab reached into a mitred corner, two panels
+both claimed it, the total came out bigger than the slab, and the test read
+that as a slab it could not account for — so it refused a rebate that was
+perfectly cuttable. It is the union that matters, not the sum, and
+`subtractBoxes` already computes it: what is left of the slab once the panels
+around it are taken out of it. Nothing left, nothing to refuse.
+
+The same fact bites on the way out. The notch each panel receives was its whole
+intersection with the slab, so at a mitred corner both panels had the corner cut
+out of them — twice the material that is there, and the closure said so, by
+exactly four corner prisms. Each panel now takes the part of the slab nobody has
+taken yet.
+
+### A rebate must not stretch a mitre somewhere else on the panel
+
+Growing a panel along an axis makes every mitre that *runs* along that axis
+longer — on that panel and on no other, because the board it is mitred to has
+not moved. Half a joint cut longer than the other half is not a joint, and the
+closure catches it: two mitres, 162 mm² of prism each, over the 12 mm the panel
+grew.
+
+So a rebate is refused on a side whose growth axis is the run axis of a mitre
+the panel already carries. Together with §42's rule — no rebate on a mitred
+edge — that means a top mitred to the sides cannot be let in at all, while a
+front mitred only along its top edge can still be let in at the bottom. The
+rule is about which way the panel grows, not about whether it is mitred.
+
+### Saying which sides were refused
+
+What made this hard to find was neither of those. A rebate asked for on four
+sides and cut on two said *"let in on front and back"* and nothing whatever
+about the other two. The reasons were in the messages, but the control that had
+just been used said only what had worked.
+
+Refusals are now grouped by face and reason — one entry naming every side it
+applies to — and shown in the control beside what was cut, as well as in the
+messages. `Rebate: Top (left, right) — that joint is mitred…` is the sentence
+that was missing.

@@ -5,7 +5,7 @@ import { FACES, FACE_LABEL, MATERIALS, LAGGINGS, PROMINENCE_PRESETS, EDGES, edge
 import { ROUND_STEPS } from "../model/solver.js";
 import { setIn, freeFaces, addPanel, removePanel, editPanel, setProjectMaterial, setProjectThickness, setEdgeTreatment, treatedEdges } from "./design.js";
 import { largestBevel, largestBevelAt } from "../model/bevel.js";
-import { rebateSides, newRebate } from "../model/rebate.js";
+import { rebateSides, newRebate, rebateProblems } from "../model/rebate.js";
 import { Group, Num, Colour, Segmented, FaceSwatch, StockThicknesses } from "./fields.jsx";
 import { FittingList } from "./FittingEditor.jsx";
 import { fmt } from "../cutlist/cutlist.js";
@@ -411,9 +411,10 @@ function RebateStack({ design, set, derived }) {
         const sides = rebateSides(face);
         const all = sides.every((g) => rebate.sides?.[g]);
         const cut = derived.rebated?.[face]?.sides ?? [];
-        // Why nothing happened, in the words of whatever stopped it.
-        const refused = [...new Set([...(derived.rebateRejected ?? new Map())]
-          .filter(([k]) => k === face || k.startsWith(`${face}|`)).map(([, why]) => why))];
+        // §43 Why the sides that did not happen did not happen — shown even
+        // when the others did, which is the whole point: a rebate cut on two
+        // sides of four has to account for the other two.
+        const refused = rebateProblems(derived.rebateRejected).filter((p) => p.face === face);
         return (
           <div className="rebate" key={face}>
             <div className="stack-head">
@@ -437,11 +438,16 @@ function RebateStack({ design, set, derived }) {
               onChange={(v) => put(face, { ...rebate, depth: v })} />
             {/* What was actually cut, which is not always what was asked for —
                 the reason is in the messages, and this is the tally. */}
-            <p className="note">
-              {cut.length
-                ? `Let in ${fmt(rebate.depth)} mm on ${cut.map((g) => FACE_LABEL[g].toLowerCase()).join(", ")}.`
-                : refused.length ? `${refused[0]}.` : "No sides chosen yet."}
-            </p>
+            {cut.length ? (
+              <p className="note">
+                Let in {fmt(rebate.depth)} mm on {cut.map((g) => FACE_LABEL[g].toLowerCase()).join(", ")}.
+              </p>
+            ) : refused.length ? null : <p className="note">No sides chosen yet.</p>}
+            {refused.map(({ sides, why }) => (
+              <p className="note bad" key={why}>
+                {sides.length ? `${sides.map((g) => FACE_LABEL[g]).join(", ")}: ` : ""}{why}.
+              </p>
+            ))}
           </div>
         );
       })}

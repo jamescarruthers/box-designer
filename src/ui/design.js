@@ -1,10 +1,10 @@
 // The design state, and everything derived from it.
 
-import { EDGES, FACES, MATERIALS, LAGGINGS, PROMINENCE_PRESETS, DEFAULT_KERF, rankFromOrder, materialById, paletteFor } from "../model/constants.js";
+import { EDGES, FACES, FACE_LABEL, MATERIALS, LAGGINGS, PROMINENCE_PRESETS, DEFAULT_KERF, rankFromOrder, materialById, paletteFor } from "../model/constants.js";
 import { solve, wallOf, boardOf, fillFaces, skinOf, boxVolume, panelThickness, DEFAULT_RATIO, DEFAULT_ROUND } from "../model/solver.js";
 import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, partialEdgeIssues, panelBevels } from "../model/bevel.js";
 import { mitreCheck, resolveMitres, applyMitres, mitreIssues, mitreLoss } from "../model/mitre.js";
-import { applyRebates, panelVolume, notchNote, rebateSides, newRebate } from "../model/rebate.js";
+import { applyRebates, panelVolume, notchNote, rebateSides, newRebate, rebateProblems } from "../model/rebate.js";
 import { validate } from "../model/validate.js";
 import { fittingOwners, innermostOn, fittingIssues, fittingNote, hasTube, resolveFittings,
   driverDisplacement, portDisplacement, hasDisplacement, cutoutFlare, largestFlare,
@@ -479,9 +479,13 @@ export function derive(design) {
     ...partialEdgeIssues(requestedEdges, fullLength),
     ...mitreIssues(rejected),
     ...fittingIssues(fittings, sol.panels, fittingPanels, sol.cavity),
-    // §42 A rebate that cannot be cut says so, once. Four sides refused for
-    // the same reason is one thing wrong, not four.
-    ...[...new Set(rebateRejected.values())].map((why) => ({ level: "warn", text: `Rebate: ${why}.` })),
+    // §42 A rebate that cannot be cut says so, once. §43 And it says which
+    // sides it is talking about, because "only front and back happened" is the
+    // question the message has to answer.
+    ...rebateProblems(rebateRejected).map(({ face, sides, why }) => ({
+      level: "warn",
+      text: `Rebate: ${FACE_LABEL[face] ?? face}${sides.length ? ` (${sides.join(", ")})` : ""} — ${why}.`,
+    })),
   ];
   // §27 What is left for the air. A driver's basket and motor stand in the
   // cavity and a port's tube runs through it, and both take their volume out of
