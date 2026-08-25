@@ -606,6 +606,47 @@ describe("the app", () => {
     expect(iso()).toBe(before);
   });
 
+  it("§42 rebates a panel into the ones around it, from the sidebar", () => {
+    const { container } = render(<App />);
+    // A let-in baffle needs the sides to wrap, or there is nothing to let it
+    // into — and the control says exactly that when there is not.
+    fireEvent.change(screen.getByLabelText("Add a rebate"), { target: { value: "front" } });
+    expect(container.querySelector(".rebate .note").textContent).toMatch(/No sides chosen/);
+
+    fireEvent.click(screen.getByLabelText("Front rebate all sides"));
+    expect(container.querySelector(".rebate .note").textContent).toMatch(/prominence order/);
+
+    const preset = [...container.querySelectorAll("label.field")]
+      .find((l) => l.textContent.startsWith("Preset")).querySelector("select");
+    fireEvent.change(preset, { target: { value: "sides" } });
+    expect(container.querySelector(".rebate .note").textContent)
+      .toMatch(/Let in 6 mm on left, right, top, bottom/);
+
+    // The board that is let in is bigger; the ones it goes into carry a note
+    // and keep their size, and the box still closes.
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    const notes = [...container.querySelectorAll("figcaption")]
+      .map((el) => el.textContent).filter((t) => /Rebate/.test(t));
+    expect(notes).toHaveLength(4);
+    expect(notes[0]).toMatch(/Rebate 6 × 18/);
+    expect(within(container.querySelector(".totals")).getByText("exact")).toBeTruthy();
+  });
+
+  it("§42 changes the depth, and takes the rebate away again", () => {
+    const { container } = render(<App />);
+    const preset = [...container.querySelectorAll("label.field")]
+      .find((l) => l.textContent.startsWith("Preset")).querySelector("select");
+    fireEvent.change(preset, { target: { value: "sides" } });
+    fireEvent.change(screen.getByLabelText("Add a rebate"), { target: { value: "front" } });
+    fireEvent.click(screen.getByLabelText("Front rebate left"));
+    fireEvent.change(screen.getByLabelText("Front rebate depth"), { target: { value: "9" } });
+    expect(container.querySelector(".rebate .note").textContent).toMatch(/Let in 9 mm on left/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    expect(container.querySelector(".rebate")).toBe(null);
+    expect(screen.getByLabelText("Add a rebate").value).toBe("");
+  });
+
   it("§14 offers a DXF of the sheet layouts", () => {
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));

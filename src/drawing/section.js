@@ -1,5 +1,6 @@
 // §6.5 Section A–A. Outline views cannot show a laminated wall.
 
+import { subtractBoxes } from "../model/rebate.js";
 import { PROJECTIONS, hiddenLineRemoval, segEnds, VIEW_EXTENT } from "./hlr.js";
 import { mitresInView, trimMitres } from "./views.js";
 
@@ -28,11 +29,16 @@ export function buildSection(sol, cx = sol.E.x / 2) {
   const cut = mitred.panels.filter((p) => p.box.x[0] < cx && cx < p.box.x[1]);
   const beyond = mitred.panels.filter((p) => p.box.x[0] >= cx);
 
-  const rects = [...cut, ...beyond].map((p) => ({
-    ...PROJECTIONS.end(p.box, sol.E),
-    n: Math.max(p.box.x[0], cx),
-    panel: p,
-  }));
+  // §42 A board with a groove cut in it is not a rectangle in section. Each
+  // piece of it is, though, so it goes in as the pieces — all carrying the
+  // same panel, which is what stops the joins between them being drawn as
+  // lines through the middle of a board.
+  const rects = [...cut, ...beyond].flatMap((p) =>
+    subtractBoxes(p.box, p.notches).map((piece) => ({
+      ...PROJECTIONS.end(piece, sol.E),
+      n: Math.max(piece.x[0], cx),
+      panel: p,
+    })));
 
   const trimmed = trimMitres(hiddenLineRemoval(rects), mitred.corners);
   const lines = trimmed.segs
@@ -40,10 +46,13 @@ export function buildSection(sol, cx = sol.E.x / 2) {
     .map((s) => { const [a, b] = segEnds(s); return { a, b, visible: true, kind: "hlr" }; });
   lines.push(...trimmed.lines.filter((l) => l.visible));
 
-  const hatches = cut.map((p) => {
-    const r = PROJECTIONS.end(p.box, sol.E);
-    return { panel: p, h: r.h, v: r.v, hatch: HATCH[p.layer] };
-  });
+  // §42 Hatched piece by piece as well, so the groove reads as an absence of
+  // board rather than as board with a line drawn on it.
+  const hatches = cut.flatMap((p) =>
+    subtractBoxes(p.box, p.notches).map((piece) => {
+      const r = PROJECTIONS.end(piece, sol.E);
+      return { panel: p, h: r.h, v: r.v, hatch: HATCH[p.layer] };
+    }));
 
   return { view: "section", ext, cx, lines, arcs: [], hatches };
 }

@@ -11,7 +11,8 @@
 import { AXIS, AXES, PAIR } from "../model/constants.js";
 import { faceAxes, fittingCircles } from "../model/fittings.js";
 import { explodedBox } from "../model/explode.js";
-import { ringAt, ringDepths, mitresOnly } from "../three/panelGeometry.js";
+import { ringAt, ringDepths, mitresOnly, notchDepth } from "../three/panelGeometry.js";
+import { subtractBoxes } from "../model/rebate.js";
 
 export const ISO_X = Math.SQRT1_2, ISO_Y = Math.sqrt(1 / 6), ISO_Z = Math.sqrt(2 / 3);
 
@@ -95,15 +96,25 @@ export function paintOrder(items) {
  * the eye can see are the ones whose normal points at it.
  */
 function panelQuads(panel, box, bevels) {
-  const moved = box === panel.box ? panel : { ...panel, box };
+  // §42 An exploded panel takes its grooves with it.
+  const moved = box === panel.box ? panel : {
+    ...panel, box,
+    notches: (panel.notches ?? []).map((n) => Object.fromEntries(AXES.map((b) =>
+      [b, [n[b][0] + box[b][0] - panel.box[b][0], n[b][1] + box[b][0] - panel.box[b][0]]]))),
+  };
   const [a, s] = AXIS[panel.face];
   const [p, q] = AXES.filter((b) => b !== a);
-  const depths = ringDepths(moved, bevels);
   const T = box[a][1] - box[a][0];
 
   // Which face each side of the rectangle belongs to, so a side can be asked
   // what it was bevelled with.
   const sideFace = [PAIR[q][0], PAIR[p][1], PAIR[q][1], PAIR[p][0]];
+
+  const groove = notchDepth(moved);
+  const stop = groove === null ? T : T - groove;
+  const depths = ringDepths(moved, bevels).filter((d) => d <= stop + EPS);
+  if (!depths.some((d) => Math.abs(d - stop) < EPS)) depths.push(stop);
+  depths.sort((u, v) => u - v);
 
   const rings = depths.map((d) => {
     const rect = d >= T - EPS
@@ -162,7 +173,39 @@ function panelQuads(panel, box, bevels) {
       ]);
     }
   }
-  add(rings[rings.length - 1], [true, true, true, true]);
+  if (groove === null) {
+    add(rings[rings.length - 1], [true, true, true, true]);
+  } else {
+    // §42 The grooved part is boxes, and every face of it is a real edge — a
+    // groove has no smooth anything. What is left of the inner face is the
+    // cells' own boundary; what is left of the plane the groove starts at is
+    // the bottom of the groove, and that is the one face of the loft's inner
+    // cap that survives having a groove cut through it.
+    const slab = Object.fromEntries(AXES.map((b) => [b, [...box[b]]]));
+    slab[a] = s < 0 ? [box[a][1] - groove, box[a][1]] : [box[a][0], box[a][0] + groove];
+    const atStop = s < 0 ? slab[a][0] : slab[a][1];
+    for (const cell of subtractBoxes(slab, moved.notches)) {
+      for (const face of boxQuads(cell)) {
+        if (Math.abs(face[0][a] - atStop) < EPS && Math.abs(face[2][a] - atStop) < EPS) continue;
+        add(face.map((v) => ({ x: v.x, y: v.y, z: v.z })), [true, true, true, true]);
+      }
+    }
+    for (const n of moved.notches) {
+      add([[0, 0], [1, 0], [1, 1], [0, 1]].map(([ip, iq]) => {
+        const v = { [a]: atStop, [p]: n[p][ip], [q]: n[q][iq] };
+        return { x: v.x, y: v.y, z: v.z };
+      }), [true, true, true, true]);
+    }
+    // Faces two cells share are inside the board, and a line there is a line
+    // through solid material.
+    const seen = new Map();
+    for (const quad of quads) {
+      const k = quad.pts.map(key3).sort().join("|");
+      seen.set(k, (seen.get(k) ?? 0) + 1);
+      quad.key = k;
+    }
+    for (let i = quads.length - 1; i >= 0; i--) if (seen.get(quads[i].key) === 2) quads.splice(i, 1);
+  }
 
   // Outward, against the centre of the panel.
   const c = { x: 0, y: 0, z: 0 };
@@ -181,6 +224,20 @@ function panelQuads(panel, box, bevels) {
       .reduce((best, k) => (Math.abs(nrm[k]) > Math.abs(nrm[best]) ? k : best), "x");
   }
   return quads;
+}
+
+/** The six faces of a box, each as four corners going round. */
+function boxQuads(b) {
+  const [X, Y, Z] = AXES;
+  const at = (ix, iy, iz) => ({ [X]: b[X][ix], [Y]: b[Y][iy], [Z]: b[Z][iz] });
+  return [
+    [at(0, 0, 0), at(1, 0, 0), at(1, 1, 0), at(0, 1, 0)],
+    [at(0, 0, 1), at(1, 0, 1), at(1, 1, 1), at(0, 1, 1)],
+    [at(0, 0, 0), at(1, 0, 0), at(1, 0, 1), at(0, 0, 1)],
+    [at(0, 1, 0), at(1, 1, 0), at(1, 1, 1), at(0, 1, 1)],
+    [at(0, 0, 0), at(0, 1, 0), at(0, 1, 1), at(0, 0, 1)],
+    [at(1, 0, 0), at(1, 1, 0), at(1, 1, 1), at(1, 0, 1)],
+  ];
 }
 
 function quadNormal(pts) {

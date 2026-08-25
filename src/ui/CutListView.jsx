@@ -96,6 +96,7 @@ export default function CutListView({ derived, title, colourByFace, selected, ho
               <figcaption>
                 {r.id} · {r.faceLabel} · {fmt(r.thickness)} mm {r.material}
                 {r.fittingNote ? <em className="fitting-note">{r.fittingNote}</em> : null}
+                {r.rebateNote ? <em className="fitting-note">{r.rebateNote}</em> : null}
               </figcaption>
             </figure>
           ))}

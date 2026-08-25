@@ -4,6 +4,7 @@ import { EDGES, FACES, MATERIALS, LAGGINGS, PROMINENCE_PRESETS, DEFAULT_KERF, ra
 import { solve, wallOf, boardOf, fillFaces, skinOf, boxVolume, panelThickness, DEFAULT_RATIO, DEFAULT_ROUND } from "../model/solver.js";
 import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, partialEdgeIssues, panelBevels } from "../model/bevel.js";
 import { mitreCheck, resolveMitres, applyMitres, mitreIssues, mitreLoss } from "../model/mitre.js";
+import { applyRebates, panelVolume, notchNote, rebateSides, newRebate } from "../model/rebate.js";
 import { validate } from "../model/validate.js";
 import { fittingOwners, innermostOn, fittingIssues, fittingNote, hasTube, resolveFittings,
   driverDisplacement, portDisplacement, hasDisplacement, cutoutFlare, largestFlare,
@@ -51,6 +52,9 @@ export const DEFAULT_DESIGN = {
   edge: { type: "none", radius: 12, perEdge: false, by: {} },
   // §10's biggest gap: the holes that make a box a speaker.
   fittings: [],
+  // §42 Rebates, per face: which sides are let into the panels beside them,
+  // and how deep. Empty until somebody asks for one.
+  rebate: {},
   sectionAt: null,
   // §32 What the A3 sheet shows. Both on to begin with: the section is what a
   // laminated wall is drawn for, and a lining that is fitted is a lining that
@@ -293,6 +297,29 @@ function applyMitresInto(sol, requested) {
   return { applied, rejected };
 }
 
+/**
+ * §42 Rebates, applied to the mitred panels rather than the bare ones — a front
+ * panel let into a mitred surround is the case this was asked for.
+ *
+ * Closure is recomputed the same way §12 recomputes it, from the volume each
+ * panel is actually left with: a rebate moves material between panels, so the
+ * old residual is not a term in the new sum. `panelVolume` is the box less the
+ * grooves in it, which is why the notches have to be merged before they are
+ * counted — two grooves that overlap in a corner are not two grooves' worth of
+ * missing board.
+ */
+function applyRebatesInto(sol, rebates) {
+  if (!Object.keys(rebates ?? {}).length) return { applied: {}, rejected: new Map() };
+  const { panels, applied, rejected } = applyRebates(sol.panels, rebates);
+  if (!Object.keys(applied).length) return { applied, rejected };
+  sol.panels = panels;
+  sol.mitreLoss = panels.reduce((a, p) => a + mitreLoss(p), 0);
+  const solid = panels.reduce((a, p) => a + panelVolume(p), 0) - sol.mitreLoss;
+  sol.closure = sol.envVolume - (solid + boxVolume(sol.cavity));
+  sol.closureExact = Math.abs(sol.closure) <= 1e-9 * sol.envVolume;
+  return { applied, rejected };
+}
+
 export function thicknessMap(design) {
   return design.perFaceThickness ? { ...design.thicknessBy } : fillFaces(design.thickness);
 }
@@ -337,6 +364,10 @@ export function derive(design) {
   const requestedMitres = mitreMap(design);
   const plain = sol.panels;
   const { applied, rejected } = applyMitresInto(sol, requestedMitres);
+
+  // §42 And then the rebates, which are cut into the panels as the mitres left
+  // them: a panel let into a mitred surround is let into the mitred boxes.
+  const { applied: rebated, rejected: rebateRejected } = applyRebatesInto(sol, design.rebate);
 
   // What the control may still offer. Mitres interact — one can grow a panel
   // past a joint another needs — so this is judged against what is already
@@ -428,7 +459,14 @@ export function derive(design) {
   const rows = buildCutList(sol, edges, owners, { specFor, grainLocked: design.grainLocked })
     .map((r) => {
       const on = fittingsOn(r.panel);
-      return on.length ? { ...r, fittings: on, fittingNote: fittingNote(on) } : { ...r, fittings: [], fittingNote: "" };
+      // §42 The blank is unchanged by a groove — it is cut out of the middle
+      // of the board after the board is cut — so a rebate is a note and not a
+      // size. The panel that was *let in* needs no note: its size says it.
+      const rebate = notchNote(r.panel);
+      const row = rebate ? { ...r, rebateNote: rebate } : r;
+      return on.length
+        ? { ...row, fittings: on, fittingNote: fittingNote(on) }
+        : { ...row, fittings: [], fittingNote: "" };
     });
   const sheets = nest(rows, {
     stockFor: (id) => stockFor(design, id),
@@ -441,6 +479,9 @@ export function derive(design) {
     ...partialEdgeIssues(requestedEdges, fullLength),
     ...mitreIssues(rejected),
     ...fittingIssues(fittings, sol.panels, fittingPanels, sol.cavity),
+    // §42 A rebate that cannot be cut says so, once. Four sides refused for
+    // the same reason is one thing wrong, not four.
+    ...[...new Set(rebateRejected.values())].map((why) => ({ level: "warn", text: `Rebate: ${why}.` })),
   ];
   // §27 What is left for the air. A driver's basket and motor stand in the
   // cavity and a port's tube runs through it, and both take their volume out of
@@ -481,7 +522,8 @@ export function derive(design) {
     Object.fromEntries(EDGES.filter((k) => mitreCheck(plain, sol.env, k).ok).map((k) => [k, true]))).accepted;
 
   return { sol, edges, requestedEdges, fullLength, mitrable, requestedMitres, mitreRing, owners, material, rows, sheets, totals, messages,
-    sheet, sectionAt, drawing, specFor, fittings, fittingPanels, fittingsOn, bevelsOf, tubesOn };
+    sheet, sectionAt, drawing, specFor, fittings, fittingPanels, fittingsOn, bevelsOf, tubesOn,
+    rebated, rebateRejected };
 }
 
 export const setIn = (obj, path, value) => {

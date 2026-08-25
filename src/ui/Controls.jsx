@@ -5,6 +5,7 @@ import { FACES, FACE_LABEL, MATERIALS, LAGGINGS, PROMINENCE_PRESETS, EDGES, edge
 import { ROUND_STEPS } from "../model/solver.js";
 import { setIn, freeFaces, addPanel, removePanel, editPanel, setProjectMaterial, setProjectThickness, setEdgeTreatment, treatedEdges } from "./design.js";
 import { largestBevel, largestBevelAt } from "../model/bevel.js";
+import { rebateSides, newRebate } from "../model/rebate.js";
 import { Group, Num, Colour, Segmented, FaceSwatch, StockThicknesses } from "./fields.jsx";
 import { FittingList } from "./FittingEditor.jsx";
 import { fmt } from "../cutlist/cutlist.js";
@@ -147,6 +148,13 @@ export default function Controls({ design, set, derived, colourByFace }) {
       <Group title="Lagging" note="Lining on the inside of the box, a face at a time. It sits inside the doublers and takes its thickness out of the cavity, so a box sized to a volume grows to keep it.">
         <LayerStack design={design} set={set} layer="lagging" title="Lagging"
           colourByFace={colourByFace} materials={LAGGINGS} />
+      </Group>
+
+      {/* §42 Its own group: a rebate is a joint, not a layer. What it changes
+          is where one panel stops and what is cut out of the ones it runs
+          into, which is nothing like adding a board to a face. */}
+      <Group title="Rebate" note="A panel let into the ones around it: it runs on past where it stopped, and a groove is cut in every panel it runs into. The board gets bigger, the ones beside it get a groove, and the box stays the size it was.">
+        <RebateStack design={design} set={set} derived={derived} />
       </Group>
 
       <Group title="Fittings" note="Drivers and ports are cut into the outermost panel of their face. Position is measured from the panel's own low corner, so it reads straight off the face-on view — or as a percentage across it, which keeps a centred driver centred when the box changes size.">
@@ -367,6 +375,80 @@ function Prominence({ design, set, colourByFace }) {
 }
 
 /** A list of added panels for one layer, plus a side picker to add another. */
+/**
+ * §42 Which faces are rebated, on which sides, and how deep.
+ *
+ * A face is added the way a cladding panel is, because the shape of the thing
+ * is the same — a handful of faces, each with its own numbers — and one idiom
+ * in the sidebar is worth more than a bespoke control for every feature.
+ *
+ * The sides offered are the four that meet the face: a front panel has no
+ * front side to be let into. "All" is the case somebody wants nine times out
+ * of ten, so it is a button rather than four clicks.
+ */
+function RebateStack({ design, set, derived }) {
+  const entries = Object.entries(design.rebate ?? {});
+  const free = FACES.filter((f) => !design.rebate?.[f]);
+  const put = (face, next) => set(setIn(design, ["rebate", face], next));
+  const drop = (face) => {
+    const rest = { ...design.rebate };
+    delete rest[face];
+    set({ ...design, rebate: rest });
+  };
+  return (
+    <div className="stack">
+      <div className="stack-head">
+        <h3>Rebated panels</h3>
+        <select className="add" value="" disabled={!free.length} aria-label="Add a rebate"
+          onChange={(e) => { if (e.target.value) put(e.target.value, newRebate()); }}>
+          <option value="">{free.length ? "Add a panel…" : "All faces rebated"}</option>
+          {free.map((f) => <option key={f} value={f}>{FACE_LABEL[f]}</option>)}
+        </select>
+      </div>
+      {entries.length === 0 ? (
+        <p className="empty">None.</p>
+      ) : entries.map(([face, rebate]) => {
+        const sides = rebateSides(face);
+        const all = sides.every((g) => rebate.sides?.[g]);
+        const cut = derived.rebated?.[face]?.sides ?? [];
+        // Why nothing happened, in the words of whatever stopped it.
+        const refused = [...new Set([...(derived.rebateRejected ?? new Map())]
+          .filter(([k]) => k === face || k.startsWith(`${face}|`)).map(([, why]) => why))];
+        return (
+          <div className="rebate" key={face}>
+            <div className="stack-head">
+              <h3>{FACE_LABEL[face]}</h3>
+              <button type="button" className="linkish" onClick={() => drop(face)}>Remove</button>
+            </div>
+            <div className="chip-group">
+              <button type="button" className={all ? "on" : ""}
+                aria-label={`${FACE_LABEL[face]} rebate all sides`}
+                onClick={() => put(face, { ...rebate,
+                  sides: all ? {} : Object.fromEntries(sides.map((g) => [g, true])) })}>All</button>
+              {sides.map((g) => (
+                <button type="button" key={g} className={rebate.sides?.[g] ? "on" : ""}
+                  aria-label={`${FACE_LABEL[face]} rebate ${g}`}
+                  onClick={() => put(face, { ...rebate,
+                    sides: { ...rebate.sides, [g]: !rebate.sides?.[g] } })}>{FACE_LABEL[g]}</button>
+              ))}
+            </div>
+            <Num label="Depth" suffix="mm" step={0.5} value={rebate.depth}
+              aria={`${FACE_LABEL[face]} rebate depth`}
+              onChange={(v) => put(face, { ...rebate, depth: v })} />
+            {/* What was actually cut, which is not always what was asked for —
+                the reason is in the messages, and this is the tally. */}
+            <p className="note">
+              {cut.length
+                ? `Let in ${fmt(rebate.depth)} mm on ${cut.map((g) => FACE_LABEL[g].toLowerCase()).join(", ")}.`
+                : refused.length ? `${refused[0]}.` : "No sides chosen yet."}
+            </p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function LayerStack({ design, set, layer, title, colourByFace, materials = MATERIALS }) {
   const entries = Object.entries(design[layer] ?? {});
   const free = freeFaces(design, layer);
