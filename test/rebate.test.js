@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { solve, boxVolume } from "../src/model/solver.js";
-import { applyMitres } from "../src/model/mitre.js";
+import { applyMitres, mitreLoss, mitredCells, polyArea } from "../src/model/mitre.js";
 import { PROMINENCE_PRESETS } from "../src/model/constants.js";
 import { noEdges } from "../src/model/bevel.js";
 import {
   applyRebates, subtractBoxes, panelVolume, rebateSlab, rebateSides, notchNote, intersect, newRebate,
-  rebateProblems, mitreRun,
+  rebateProblems, mitreRun, panelSolidVolume,
 } from "../src/model/rebate.js";
 import { panelPositions, notchDepth } from "../src/three/panelGeometry.js";
 import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
@@ -262,9 +262,10 @@ describe("§43 rebating into a mitred box", () => {
   });
 
   it("keeps the closure exact where the tongue reaches a mitred corner", () => {
-    // The other half of the same fact: the corner is there once, so it can be
-    // cut away once. Notching both panels of the mitre for the whole corner
-    // takes out twice what is there.
+    // §44 The corner belongs to both boards, split by the 45° cut, so the
+    // tongue that lands there is let into both — each losing the half it
+    // actually has. Handing the whole corner to one of them cuts a groove
+    // where the mitre had already taken the material away.
     for (const keys of [[], VERTICALS, ["left|top", "left|bottom"]]) {
       for (const face of ["front", "back", "left", "right", "top", "bottom"]) {
         const d = derive(design(keys, { [face]: allSides }));
@@ -310,5 +311,101 @@ describe("§43 rebating into a mitred box", () => {
       { face: "top", why: "b", sides: ["front"] },
       { face: "back", why: "c", sides: [] },
     ]);
+  });
+});
+
+describe("§44 the mitre and the groove, reckoned together", () => {
+  const mitred = (keys) => ({
+    type: "none", radius: 12, perEdge: true,
+    by: Object.fromEntries(keys.map((k) => [k, { type: "mitre", radius: 18 }])),
+  });
+  const VERTICALS = ["front|left", "back|left", "front|right", "back|right"];
+  const allSides = { depth: 6, sides: Object.fromEntries(
+    ["front", "back", "left", "right", "top", "bottom"].map((s) => [s, true])) };
+
+  const meshVolume = (pos) => {
+    let v = 0;
+    for (let i = 0; i < pos.length; i += 9) {
+      const a = [pos[i], pos[i + 1], pos[i + 2]];
+      const b = [pos[i + 3], pos[i + 4], pos[i + 5]];
+      const c = [pos[i + 6], pos[i + 7], pos[i + 8]];
+      v += (a[0] * (b[1] * c[2] - b[2] * c[1])
+        - a[1] * (b[0] * c[2] - b[2] * c[0])
+        + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6;
+    }
+    return v;
+  };
+
+  it("cuts the mitre from the grooved part of the panel too", () => {
+    // The bug: the loft stopped where the groove began and the rest was built
+    // from plain boxes, so a panel with both kept the corner its mitre should
+    // have taken off — a step where one gave way to the other.
+    const d = derive({ ...DEFAULT_DESIGN, edge: mitred(VERTICALS), rebate: { top: allSides } });
+    for (let i = 0; i < d.sol.panels.length; i += 1) {
+      const panel = d.sol.panels[i];
+      const { positions } = panelPositions(panel, d.bevelsOf(panel, i), d.sol.E);
+      expect(meshVolume(positions), panel.face).toBeCloseTo(panelSolidVolume(panel), 6);
+    }
+  });
+
+  it("is the invariant that would have caught it: the mesh is the model", () => {
+    // What let it through was that the closure and the drawing were computed
+    // the same wrong way, so they agreed with each other. They are checked
+    // against each other now, over the shapes where they can disagree.
+    for (const keys of [[], VERTICALS, ["front|left", "back|left"], ["left|top", "right|top"]]) {
+      for (const face of ["front", "top", "left"]) {
+        const d = derive({ ...DEFAULT_DESIGN, edge: mitred(keys), rebate: { [face]: allSides } });
+        expect(d.sol.closureExact, `${face} with ${keys.length} mitres`).toBe(true);
+        for (let i = 0; i < d.sol.panels.length; i += 1) {
+          const panel = d.sol.panels[i];
+          const { positions } = panelPositions(panel, d.bevelsOf(panel, i), d.sol.E);
+          expect(meshVolume(positions), `${face}/${keys.length}/${panel.face}`)
+            .toBeCloseTo(panelSolidVolume(panel), 6);
+        }
+      }
+    }
+  });
+
+  it("takes the groove and the mitre off once between them, not once each", () => {
+    const d = derive({ ...DEFAULT_DESIGN, edge: mitred(VERTICALS), rebate: { top: allSides } });
+    const front = d.sol.panels.find((p) => p.face === "front" && p.layer === "shell");
+    expect(front.mitres).toHaveLength(2);
+    expect(front.notches).toHaveLength(1);
+    // Where the tongue lands in the mitred corner, the material was already
+    // gone: the two-term sum takes it off twice and comes out light.
+    expect(panelSolidVolume(front)).toBeGreaterThan(panelVolume(front) - mitreLoss(front));
+    // With no groove to overlap, the two agree exactly.
+    const bare = derive({ ...DEFAULT_DESIGN, edge: mitred(VERTICALS) });
+    for (const p of bare.sol.panels) {
+      expect(panelSolidVolume(p)).toBeCloseTo(panelVolume(p) - mitreLoss(p), 6);
+    }
+  });
+
+  it("clips a cell to the 45° face, and to the flat where the leg runs out", () => {
+    const panel = { face: "front", box: { x: [0, 100], y: [0, 18], z: [0, 50] },
+      mitres: [{ side: "left", leg: 18 }] };
+    const whole = mitredCells(panel, panel.box);
+    expect(whole).toHaveLength(1);
+    // A triangle 18 × 18 off a 100 × 18 section, extruded 50 along z.
+    expect(polyArea(whole[0].poly)).toBeCloseTo(100 * 18 - 162, 9);
+    expect(whole[0].length).toBe(50);
+
+    // A leg that stops short bends the boundary, so it comes back in pieces.
+    const short = mitredCells({ ...panel, mitres: [{ side: "left", leg: 9 }] }, panel.box);
+    expect(short.length).toBeGreaterThan(1);
+    expect(short.reduce((a, p) => a + polyArea(p.poly), 0))
+      .toBeCloseTo(100 * 18 - (40.5 + 9 * 9), 9);
+
+    // No mitres, nothing to say.
+    expect(mitredCells({ ...panel, mitres: [] }, panel.box)).toBe(null);
+  });
+
+  it("shows the refusals as warnings, which is the level the app renders", () => {
+    // They were emitted at level "warn" and the app only renders "warning",
+    // so every one of them went to the floor.
+    const d = derive({ ...DEFAULT_DESIGN, rebate: { front: allSides } });
+    const rebates = d.messages.filter((m) => /^Rebate:/.test(m.text));
+    expect(rebates.length).toBeGreaterThan(0);
+    for (const m of rebates) expect(m.level).toBe("warning");
   });
 });

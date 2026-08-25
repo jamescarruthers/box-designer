@@ -4,7 +4,7 @@ import { EDGES, FACES, FACE_LABEL, MATERIALS, LAGGINGS, PROMINENCE_PRESETS, DEFA
 import { solve, wallOf, boardOf, fillFaces, skinOf, boxVolume, panelThickness, DEFAULT_RATIO, DEFAULT_ROUND } from "../model/solver.js";
 import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, partialEdgeIssues, panelBevels } from "../model/bevel.js";
 import { mitreCheck, resolveMitres, applyMitres, mitreIssues, mitreLoss } from "../model/mitre.js";
-import { applyRebates, panelVolume, notchNote, rebateSides, newRebate, rebateProblems } from "../model/rebate.js";
+import { applyRebates, panelVolume, panelSolidVolume, notchNote, rebateSides, newRebate, rebateProblems } from "../model/rebate.js";
 import { validate } from "../model/validate.js";
 import { fittingOwners, innermostOn, fittingIssues, fittingNote, hasTube, resolveFittings,
   driverDisplacement, portDisplacement, hasDisplacement, cutoutFlare, largestFlare,
@@ -314,7 +314,9 @@ function applyRebatesInto(sol, rebates) {
   if (!Object.keys(applied).length) return { applied, rejected };
   sol.panels = panels;
   sol.mitreLoss = panels.reduce((a, p) => a + mitreLoss(p), 0);
-  const solid = panels.reduce((a, p) => a + panelVolume(p), 0) - sol.mitreLoss;
+  // §44 One term, not two. Taking the grooves off and then the mitres off
+  // counts the material where a groove runs into a mitred corner twice.
+  const solid = panels.reduce((a, p) => a + panelSolidVolume(p), 0);
   sol.closure = sol.envVolume - (solid + boxVolume(sol.cavity));
   sol.closureExact = Math.abs(sol.closure) <= 1e-9 * sol.envVolume;
   return { applied, rejected };
@@ -483,7 +485,7 @@ export function derive(design) {
     // sides it is talking about, because "only front and back happened" is the
     // question the message has to answer.
     ...rebateProblems(rebateRejected).map(({ face, sides, why }) => ({
-      level: "warn",
+      level: "warning",
       text: `Rebate: ${FACE_LABEL[face] ?? face}${sides.length ? ` (${sides.join(", ")})` : ""} — ${why}.`,
     })),
   ];

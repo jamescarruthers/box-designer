@@ -190,3 +190,103 @@ export function mitreIssues(rejected) {
       text: `No mitre on ${FACE_LABEL[f1].toLowerCase()}/${FACE_LABEL[f2].toLowerCase()}: ${why}. Left as a butt joint.` };
   });
 }
+
+/**
+ * §44 A panel's mitres as half-planes, in the two axes they live in.
+ *
+ * A mitre cuts at 45° through the panel's thickness: at depth `d` from the
+ * outer face it has eaten `min(d, leg)` off that side. So it is a plane in the
+ * side axis against the thickness axis, and it does nothing at all to the
+ * third — which is why a solid can be clipped by one and stay a prism.
+ *
+ * §12 keeps a panel's mitres on opposite sides, never adjacent ones, so they
+ * all share a single side axis and one 2D plane holds the lot.
+ */
+export function mitrePlanes(panel) {
+  const cuts = panel.mitres ?? [];
+  if (!cuts.length) return null;
+  const [thick, sign] = AXIS[panel.face];
+  const axis = AXIS[cuts[0].side][0];
+  if (cuts.some((m) => AXIS[m.side][0] !== axis)) return null;   // never, but not assumed
+  const outer = sign < 0 ? panel.box[thick][0] : panel.box[thick][1];
+  return {
+    thick, axis, outer, sign,
+    run: AXES.find((b) => b !== thick && b !== axis),
+    cuts: cuts.map((m) => ({ side: m.side, leg: m.leg, low: AXIS[m.side][1] < 0 })),
+  };
+}
+
+/** Clip a convex polygon to `keep(point) >= 0`, cutting the edges that cross. */
+function clipHalf(poly, f) {
+  const out = [];
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    const fa = f(a), fb = f(b);
+    if (fa >= -EPS) out.push(a);
+    if ((fa > EPS && fb < -EPS) || (fa < -EPS && fb > EPS)) {
+      const t = fa / (fa - fb);
+      out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+    }
+  }
+  return out;
+}
+
+/**
+ * §44 What is left of one box of a panel once its mitres have been cut.
+ *
+ * Returned as cross-sections in [side axis, thickness axis] with a length to
+ * extrude each along — because that is exactly what they are. A box with no
+ * mitres on it comes back as null, so the caller can keep its own box.
+ *
+ * More than one piece only where a mitre's leg stops short of the far face:
+ * the cut is 45° down to the leg and flat from there on, and the region above
+ * a boundary that bends is not convex. Split at the bend and each half is.
+ * §12 cuts every mitre with a leg equal to the thickness, so in practice the
+ * bend is at the far face and there is one piece — but the general shape is
+ * cheap enough to get right, and a leg that stops short is a thing to draw.
+ */
+export function mitredCells(panel, cell) {
+  const m = mitrePlanes(panel);
+  if (!m) return null;
+  const { thick, axis, outer, sign, run, cuts } = m;
+
+  // Depths at which a cut stops biting, as coordinates on the thickness axis.
+  const bends = new Set([cell[thick][0], cell[thick][1]]);
+  for (const c of cuts) {
+    const at = sign < 0 ? outer + c.leg : outer - c.leg;
+    if (at > cell[thick][0] + EPS && at < cell[thick][1] - EPS) bends.add(at);
+  }
+  const cuts0 = [...bends].sort((a, b) => a - b);
+
+  const out = [];
+  for (let i = 0; i + 1 < cuts0.length; i++) {
+    const v = [cuts0[i], cuts0[i + 1]];
+    const u = cell[axis];
+    let poly = [[u[0], v[0]], [u[1], v[0]], [u[1], v[1]], [u[0], v[1]]];
+    const mid = sign < 0 ? (v[0] + v[1]) / 2 - outer : outer - (v[0] + v[1]) / 2;
+    for (const c of cuts) {
+      const edge = c.low ? panel.box[axis][0] : panel.box[axis][1];
+      // One rule per piece: the sloping face while the cut is still biting,
+      // the flat it runs out to once it is not.
+      const inset = mid <= c.leg
+        ? (p) => (sign < 0 ? p[1] - outer : outer - p[1])
+        : () => c.leg;
+      poly = clipHalf(poly, c.low
+        ? (p) => p[0] - (edge + inset(p))
+        : (p) => (edge - inset(p)) - p[0]);
+      if (poly.length < 3) { poly = []; break; }
+    }
+    if (poly.length >= 3) out.push({ axis, thick, run, poly, at: cell[run], length: cell[run][1] - cell[run][0] });
+  }
+  return out;
+}
+
+/** The area of a convex polygon, by the shoelace. */
+export const polyArea = (poly) => {
+  let a = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i], q = poly[(i + 1) % poly.length];
+    a += p[0] * q[1] - q[0] * p[1];
+  }
+  return Math.abs(a) / 2;
+};

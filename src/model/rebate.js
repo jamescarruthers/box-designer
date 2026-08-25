@@ -13,6 +13,7 @@
 
 import { FACES, AXIS, AXES } from "./constants.js";
 import { boxVolume } from "./solver.js";
+import { mitredCells, polyArea } from "./mitre.js";
 
 const EPS = 1e-9;
 
@@ -112,6 +113,31 @@ function merge(cells) {
 /** The solid volume of a panel: its box, less whatever has been cut out of it. */
 export const panelVolume = (panel) =>
   subtractBoxes(panel.box, panel.notches).reduce((a, b) => a + boxVolume(b), 0);
+
+/**
+ * §44 What a panel is actually left with: its box, less the grooves, less the
+ * mitres — reckoned together rather than one after the other.
+ *
+ * Apart they double-count. §12's `mitreLoss` takes off the whole 45° prism and
+ * `panelVolume` takes off the whole groove, and where a groove runs into a
+ * mitred corner the same material is in both. A panel mitred at two corners
+ * and grooved for a rebated top came out 58 860 mm³ light on a box that size,
+ * and the closure never noticed because both sides of the sum were computed
+ * the same wrong way.
+ *
+ * So the groove cuts the box into cells, each cell is clipped by the mitres,
+ * and the volume is what the cells add up to. One rule, applied to a shape
+ * that has both.
+ */
+export function panelSolidVolume(panel) {
+  const cells = subtractBoxes(panel.box, panel.notches);
+  if (!(panel.mitres ?? []).length) return cells.reduce((a, b) => a + boxVolume(b), 0);
+  return cells.reduce((a, cell) => {
+    const pieces = mitredCells(panel, cell);
+    if (!pieces) return a + boxVolume(cell);
+    return a + pieces.reduce((b, piece) => b + polyArea(piece.poly) * piece.length, 0);
+  }, 0);
+}
 
 /**
  * §43 The axis a mitre on this side of the panel runs along: the one that is
@@ -216,17 +242,13 @@ export function applyRebates(panels, rebates, layer = "shell") {
       // Nothing is refused after this point, so the panel can grow.
       const [axis, sign] = AXIS[side];
       if (sign < 0) panel.box[axis][0] -= depth; else panel.box[axis][1] += depth;
-      // §43 Each panel takes the part of the slab nobody has taken yet. Where
-      // two mitred boxes overlap in a corner the material is there once, so it
-      // can only be cut away once — notching both for the whole corner takes
-      // out twice what is there and the closure says so.
-      let free = [slab];
-      for (const p of hits) {
-        const mine = free.map((rest) => intersect(rest, p.box)).filter(Boolean);
-        if (!mine.length) continue;
-        p.notches.push(...mine);
-        free = free.flatMap((rest) => subtractBoxes(rest, [p.box]));
-      }
+      // §44 Every panel the slab reaches takes its share of it, overlaps and
+      // all. Two mitred boxes overlap in the corner prism, and the tongue that
+      // lands there has to be let into both of them — each losing the half of
+      // the corner the 45° cut left it, which is what `panelSolidVolume`
+      // reckons. Handing the whole corner to the first of them instead cuts a
+      // groove in a board where the mitre had already taken the material away.
+      for (const p of hits) p.notches.push(intersect(p.box, slab));
       done.push(side);
     }
     if (done.length) applied[face] = { depth, sides: done };
@@ -239,13 +261,6 @@ export function applyRebates(panels, rebates, layer = "shell") {
   return { panels: out, applied, rejected };
 }
 
-/**
- * §42 What a rebate does to the panel it is cut into, for the cut list.
- *
- * The blank does not change — the groove is cut after the board is, out of the
- * middle of it — so the note is the whole story: how deep, how wide, and which
- * face of the board it is on.
- */
 /**
  * §43 The refusals, gathered by what they are: one entry per face and reason,
  * naming the sides it applies to.
@@ -267,6 +282,13 @@ export function rebateProblems(rejected) {
   return out;
 }
 
+/**
+ * §42 What a rebate does to the panel it is cut into, for the cut list.
+ *
+ * The blank does not change — the groove is cut after the board is, out of the
+ * middle of it — so the note is the whole story: how deep, how wide, and which
+ * face of the board it is on.
+ */
 export function notchNote(panel) {
   if (!panel.notches?.length) return "";
   const a = AXIS[panel.face][0];

@@ -3147,3 +3147,66 @@ Refusals are now grouped by face and reason — one entry naming every side it
 applies to — and shown in the control beside what was cut, as well as in the
 messages. `Rebate: Top (left, right) — that joint is mitred…` is the sentence
 that was missing.
+
+## §44 The mitre and the groove, reckoned together
+
+A review of §43 said the mitre material could be subtracted twice. It could, and
+worse: the *drawing* and the *closure* were each wrong, in opposite directions,
+and they agreed with each other because they were computed the same way.
+
+The invariant that finds it in one line: **the mesh is the model.** Sum the
+signed volume of a panel's triangles and it must equal the volume the model says
+that panel has. It did not, by 58 860 mm³ on a 300 mm box — on every panel that
+had both a mitre and a groove, and on no other.
+
+### The drawing kept a corner the mitre had taken
+
+§42 stopped the ring loft where the grooves began and built the rest from plain
+boxes. The loft is what cuts the mitre — `ringAt` insets the side by `min(d,
+leg)` at each depth — so the part built from boxes had no mitre in it at all.
+Worse than a rounding error: a mitre eats *more* the deeper it goes, so the part
+that was dropped was the widest part of the cut, and the panel came out with a
+step in it where the loft gave way to the boxes.
+
+So a box of a mitred panel is now clipped to the cut before it is drawn.
+The cut is a plane at 45° through the side axis and the thickness axis and it
+does nothing at all to the third, so a clipped box is still a prism — a
+cross-section and a length to extrude it along. §12 keeps a panel's mitres on
+opposite sides and never adjacent ones, so they all share one side axis and one
+2D section holds the lot.
+
+A leg that stops short of the far face bends the boundary — 45° down to the leg,
+flat from there on — and the region above a boundary that bends is not convex.
+Split at the bend and each half is. §12 always cuts with a leg equal to the
+thickness, so in practice there is one piece; the general shape costs four lines
+and a mitre with a shorter leg is a thing somebody may want to draw.
+
+### The closure took the same material off twice
+
+The other direction. `panelVolume` took off the whole groove and `mitreLoss`
+took off the whole 45° prism, and where a groove runs into a mitred corner the
+same material is in both. One term now: the groove cuts the box into cells, each
+cell is clipped by the mitres, and the volume is what the cells add up to. For a
+panel with no groove it comes to `box − mitreLoss` exactly, as it must.
+
+### And the corner belongs to both boards
+
+§43 had each panel take the part of the slab nobody had taken yet, on the
+grounds that the corner is there once. That was the right observation and the
+wrong remedy. At a mitred corner the material is there once but it is *shared*:
+the 45° cut gives half to each board. Handing the whole corner to the first of
+them cuts a groove in a board where the mitre had already taken the material
+away, and leaves the other board full where the tongue now is.
+
+So every panel the slab reaches takes its share of it, overlaps and all — and
+each loses only the half it actually has, because the volume is reckoned after
+the mitre rather than beside it. §43's rule goes; the fault it was working
+around was this one all along.
+
+### The refusals were never shown
+
+Separately, and more embarrassingly: §42 emitted them at `level: "warn"` and the
+app renders `level: "warning"`. Every rebate refusal since §42 has gone straight
+to the floor. The control's own note was the only place they appeared, which is
+why §43 added them there — and why the missing warnings went unnoticed for two
+sections running.
