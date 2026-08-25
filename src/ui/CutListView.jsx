@@ -2,8 +2,9 @@
 
 import React from "react";
 import { fmt, cutListCsv } from "../cutlist/cutlist.js";
-import { panelColour, ACCENT } from "../three/palette.js";
+import { panelColour, ACCENT, REBATE } from "../three/palette.js";
 import { blankCircles, blankBoltCircles } from "../model/fittings.js";
+import { blankNotches } from "../model/rebate.js";
 import { panelBlank } from "../model/solver.js";
 import { sheetYield } from "../cutlist/nest.js";
 import { sheetsDxf } from "../cutlist/dxf.js";
@@ -32,7 +33,7 @@ export default function CutListView({ derived, title, colourByFace, selected, ho
         <div className="scroll">
           <table className="cuts">
             <thead>
-              <tr><th>Part</th><th>Face</th><th>Layer</th><th>Length</th><th>Width</th><th>Th.</th><th>Material</th><th>Grain</th><th>Edge</th></tr>
+              <tr><th>Part</th><th>Face</th><th>Layer</th><th>Length</th><th>Width</th><th>Th.</th><th>Material</th><th>Grain</th><th>Edge</th><th>Rebate</th></tr>
             </thead>
             <tbody>
               {rows.map((r) => (
@@ -46,6 +47,7 @@ export default function CutListView({ derived, title, colourByFace, selected, ho
                   <td>{r.material}</td>
                   <td>{r.grainLocked ? "Locked" : "Free"}</td>
                   <td className="edgework">{r.edgeWork}</td>
+                  <td className="rebate-cell">{r.rebate ?? ""}</td>
                 </tr>
               ))}
             </tbody>
@@ -86,6 +88,7 @@ export default function CutListView({ derived, title, colourByFace, selected, ho
                   fillOpacity="0.24"
                   stroke={selected === r.panelIndex || hovered === r.panelIndex ? ACCENT : "currentColor"}
                   strokeWidth={longest * 0.006} />
+                <Rebates row={r} longest={longest} />
                 <Fittings row={r} longest={longest} />
                 <text x={r.length / 2} y={r.width / 2} textAnchor="middle" dominantBaseline="middle"
                   fontSize={longest * 0.05}>{r.id}</text>
@@ -123,6 +126,10 @@ export default function CutListView({ derived, title, colourByFace, selected, ho
                       fillOpacity={selected === p.row.panelIndex || hovered === p.row.panelIndex ? 0.62 : 0.3}
                       stroke={selected === p.row.panelIndex || hovered === p.row.panelIndex ? ACCENT : "#8ea1b4"}
                       strokeWidth="5" />
+                    {placedNotches(p).map((r, k) => (
+                      <rect key={k} x={r.x} y={r.y} width={r.w} height={r.h}
+                        fill={REBATE} fillOpacity="0.4" stroke={REBATE} strokeWidth="4" />
+                    ))}
                     <text x={p.x + p.w / 2} y={p.y + p.h / 2} textAnchor="middle" dominantBaseline="middle"
                       fontSize={Math.min(p.w, p.h) * 0.22} fill="#e8eef4">{p.row.id}</text>
                   </g>
@@ -142,10 +149,63 @@ export default function CutListView({ derived, title, colourByFace, selected, ho
 }
 
 /**
+ * §45 The grooves, on the face the cutter goes at.
+ *
+ * Drawn under the fittings, because a hole through a rebate is still a hole
+ * and the reader wants to see it whole. Its own colour rather than the
+ * cutouts': a cutout goes through the board and a rebate does not, and that is
+ * the distinction a template exists to make. The depth is written in it where
+ * there is room, since a rebate that does not say how deep it is is only a
+ * rectangle drawn on a board.
+ */
+function Rebates({ row, longest }) {
+  const cut = row.panel?.notches?.length ? blankNotches(row.panel, panelBlank(row.panel)) : [];
+  if (!cut.length) return null;
+  const w = longest * 0.005;
+  return (
+    <g className="rebates">
+      {cut.map((r, i) => {
+        // The depth runs along the groove, the way it would be written on the
+        // board — so a groove 18 mm across does not have to hold the words.
+        const down = r.h > r.w;
+        const [along, across] = down ? [r.h, r.w] : [r.w, r.h];
+        const size = Math.min(longest * 0.03, across * 0.62);
+        const label = `${fmt(r.depth)} deep`;
+        const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+        return (
+          <g key={i}>
+            <rect x={r.x} y={r.y} width={r.w} height={r.h}
+              fill={REBATE} fillOpacity="0.28" stroke={REBATE} strokeWidth={w} />
+            {along > size * label.length * 0.62 && across > longest * 0.028 ? (
+              <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
+                fontSize={size} fill={REBATE}
+                transform={down ? `rotate(-90 ${cx} ${cy})` : undefined}>{label}</text>
+            ) : null}
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/**
  * §10: "without cutouts the part templates are rectangles and not worth
  * printing at 1:1." The bolt circle is drawn as a chain line, because it is a
  * setting-out circle rather than anything the router follows.
  */
+/**
+ * §45 A part's grooves where the nest actually put it — turned with the part
+ * when the nest laid it on its side, which is the whole reason this is not
+ * just the blank rectangle offset by x and y.
+ */
+function placedNotches(part) {
+  const row = part.row;
+  if (!row.panel?.notches?.length) return [];
+  return blankNotches(row.panel, panelBlank(row.panel)).map((r) => (part.rotated
+    ? { x: part.x + part.w - (r.y + r.h), y: part.y + r.x, w: r.h, h: r.w }
+    : { x: part.x + r.x, y: part.y + r.y, w: r.w, h: r.h }));
+}
+
 function Fittings({ row, longest }) {
   if (!row.fittings?.length) return null;
   const blank = panelBlank(row.panel);

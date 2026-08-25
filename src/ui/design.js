@@ -1,10 +1,10 @@
 // The design state, and everything derived from it.
 
-import { EDGES, FACES, MATERIALS, LAGGINGS, PROMINENCE_PRESETS, DEFAULT_KERF, rankFromOrder, materialById, paletteFor } from "../model/constants.js";
+import { EDGES, FACES, FACE_LABEL, MATERIALS, LAGGINGS, PROMINENCE_PRESETS, DEFAULT_KERF, rankFromOrder, materialById, paletteFor } from "../model/constants.js";
 import { solve, wallOf, boardOf, fillFaces, skinOf, boxVolume, panelThickness, DEFAULT_RATIO, DEFAULT_ROUND } from "../model/solver.js";
 import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, partialEdgeIssues, panelBevels } from "../model/bevel.js";
 import { mitreCheck, resolveMitres, applyMitres, mitreIssues, mitreLoss } from "../model/mitre.js";
-import { applyRebates, panelVolume, notchNote, rebateSides, newRebate } from "../model/rebate.js";
+import { applyRebates, panelVolume, panelSolidVolume, notchNote, notchSpec, rebateSides, newRebate, rebateProblems } from "../model/rebate.js";
 import { validate } from "../model/validate.js";
 import { fittingOwners, innermostOn, fittingIssues, fittingNote, hasTube, resolveFittings,
   driverDisplacement, portDisplacement, hasDisplacement, cutoutFlare, largestFlare,
@@ -314,7 +314,9 @@ function applyRebatesInto(sol, rebates) {
   if (!Object.keys(applied).length) return { applied, rejected };
   sol.panels = panels;
   sol.mitreLoss = panels.reduce((a, p) => a + mitreLoss(p), 0);
-  const solid = panels.reduce((a, p) => a + panelVolume(p), 0) - sol.mitreLoss;
+  // §44 One term, not two. Taking the grooves off and then the mitres off
+  // counts the material where a groove runs into a mitred corner twice.
+  const solid = panels.reduce((a, p) => a + panelSolidVolume(p), 0);
   sol.closure = sol.envVolume - (solid + boxVolume(sol.cavity));
   sol.closureExact = Math.abs(sol.closure) <= 1e-9 * sol.envVolume;
   return { applied, rejected };
@@ -462,8 +464,10 @@ export function derive(design) {
       // §42 The blank is unchanged by a groove — it is cut out of the middle
       // of the board after the board is cut — so a rebate is a note and not a
       // size. The panel that was *let in* needs no note: its size says it.
+      // §45 Two forms of the same fact: the sentence under the template, and
+      // the cell in the table.
       const rebate = notchNote(r.panel);
-      const row = rebate ? { ...r, rebateNote: rebate } : r;
+      const row = rebate ? { ...r, rebateNote: rebate, rebate: notchSpec(r.panel) } : r;
       return on.length
         ? { ...row, fittings: on, fittingNote: fittingNote(on) }
         : { ...row, fittings: [], fittingNote: "" };
@@ -479,9 +483,13 @@ export function derive(design) {
     ...partialEdgeIssues(requestedEdges, fullLength),
     ...mitreIssues(rejected),
     ...fittingIssues(fittings, sol.panels, fittingPanels, sol.cavity),
-    // §42 A rebate that cannot be cut says so, once. Four sides refused for
-    // the same reason is one thing wrong, not four.
-    ...[...new Set(rebateRejected.values())].map((why) => ({ level: "warn", text: `Rebate: ${why}.` })),
+    // §42 A rebate that cannot be cut says so, once. §43 And it says which
+    // sides it is talking about, because "only front and back happened" is the
+    // question the message has to answer.
+    ...rebateProblems(rebateRejected).map(({ face, sides, why }) => ({
+      level: "warning",
+      text: `Rebate: ${FACE_LABEL[face] ?? face}${sides.length ? ` (${sides.join(", ")})` : ""} — ${why}.`,
+    })),
   ];
   // §27 What is left for the air. A driver's basket and motor stand in the
   // cavity and a port's tube runs through it, and both take their volume out of

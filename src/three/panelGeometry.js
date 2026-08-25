@@ -5,6 +5,7 @@ import { AXIS, PAIR, AXES } from "../model/constants.js";
 import { insetAt, bevelDepths } from "../model/bevel.js";
 import { EXPLODE_SCALE, explodeShift } from "../model/explode.js";
 import { subtractBoxes } from "../model/rebate.js";
+import { mitredCells } from "../model/mitre.js";
 
 const EPS = 1e-9;
 
@@ -120,22 +121,59 @@ export function panelSolid(panel, bevels = {}) {
     slab[a] = s < 0 ? [panel.box[a][1] - groove, panel.box[a][1]]
                     : [panel.box[a][0], panel.box[a][0] + groove];
     for (const cell of subtractBoxes(slab, panel.notches)) {
-      const base = verts.length;
-      for (const [ix, iy, iz] of CORNERS) verts.push([cell.x[ix], cell.y[iy], cell.z[iz]]);
-      const mid = [cell.x, cell.y, cell.z].map(([lo, hi]) => (lo + hi) / 2);
-      for (const f of BOX_FACES) {
-        tris.push([base + f[0], base + f[1], base + f[2]], [base + f[0], base + f[2], base + f[3]]);
-        refs.push(mid, mid);
-      }
+      // §44 And the mitres are cut from the grooved part too. They were not,
+      // and a panel that had both kept the corner the mitre should have taken
+      // off it — a step where the loft stopped and the boxes began.
+      const pieces = mitredCells(panel, cell);
+      if (!pieces) { addPrism(verts, tris, refs, boxPrism(cell), a); continue; }
+      for (const piece of pieces) addPrism(verts, tris, refs, piece, a);
     }
   }
   return { verts, tris, centroid, refs };
 }
 
-/** The eight corners of a box, as which end of each axis to take. */
-const CORNERS = [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]];
-/** Its six faces, as corner indices going round. Winding is fixed afterwards. */
-const BOX_FACES = [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [2, 3, 7, 6], [1, 2, 6, 5], [3, 0, 4, 7]];
+/**
+ * §44 A box as a prism, so a mitred cell and a plain one are the same thing to
+ * whatever draws them: a cross-section, and a length to extrude it along.
+ */
+function boxPrism(cell) {
+  const [X, Y, Z] = AXES;
+  return {
+    axis: X, thick: Y, run: Z, at: cell[Z], length: cell[Z][1] - cell[Z][0],
+    poly: [[cell[X][0], cell[Y][0]], [cell[X][1], cell[Y][0]],
+      [cell[X][1], cell[Y][1]], [cell[X][0], cell[Y][1]]],
+  };
+}
+
+/**
+ * §44 One prism into the mesh: a cap at each end of the run and a quad down
+ * each side of the cross-section. Turned outward against its own middle, which
+ * is exact because a prism on a convex section is convex.
+ */
+function addPrism(verts, tris, refs, prism, _thickAxis) {
+  const { axis, thick, run, at, poly } = prism;
+  if (poly.length < 3) return;
+  const base = verts.length;
+  for (const end of [0, 1]) {
+    for (const [u, v] of poly) {
+      const p = { [axis]: u, [thick]: v, [run]: at[end] };
+      verts.push([p.x, p.y, p.z]);
+    }
+  }
+  const n = poly.length;
+  const mid = [0, 0, 0];
+  for (let i = base; i < verts.length; i++) for (let k = 0; k < 3; k++) mid[k] += verts[i][k] / (2 * n);
+  const tri = (i, j, k) => { tris.push([i, j, k]); refs.push(mid); };
+  for (let i = 1; i + 1 < n; i++) {
+    tri(base, base + i, base + i + 1);                       // near cap
+    tri(base + n, base + n + i, base + n + i + 1);           // far cap
+  }
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    tri(base + i, base + j, base + n + j);
+    tri(base + i, base + n + j, base + n + i);
+  }
+}
 
 /** §4.3 model → three.js. A rotation, not an axis swap: determinant +1. */
 export const toThree = (v, E) => [v[0] - E.x / 2, v[2] - E.z / 2, -(v[1] - E.y / 2)];

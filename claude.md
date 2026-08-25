@@ -3093,3 +3093,159 @@ That one primitive is then all any of them needs:
 - **the kernel** — the notches are boxes and a boolean cut is what a boolean
   cut is for. Cut before the bevels, since a groove in the inner face and a
   round on an outer edge never meet.
+
+## §43 Rebating into a mitred box
+
+A top panel let into a box whose corners are mitred came out rebated on the
+front and back and not on the left and right — which is exactly the case §42
+was asked for, and it refused half of it.
+
+Two faults, one of them arithmetic and one of them a rule that was missing.
+
+### The corner is there once, so it can only be counted once
+
+§12 mitres by growing the panel that was butting out to the corner and cutting
+both boards at 45°. Between those two steps the two boxes *overlap*: the corner
+prism belongs to both of them until the cut takes it off each.
+
+§42's coverage test added up each panel's share of the slab and compared the
+total with the slab. Where the slab reached into a mitred corner, two panels
+both claimed it, the total came out bigger than the slab, and the test read
+that as a slab it could not account for — so it refused a rebate that was
+perfectly cuttable. It is the union that matters, not the sum, and
+`subtractBoxes` already computes it: what is left of the slab once the panels
+around it are taken out of it. Nothing left, nothing to refuse.
+
+The same fact bites on the way out. The notch each panel receives was its whole
+intersection with the slab, so at a mitred corner both panels had the corner cut
+out of them — twice the material that is there, and the closure said so, by
+exactly four corner prisms. Each panel now takes the part of the slab nobody has
+taken yet.
+
+### A rebate must not stretch a mitre somewhere else on the panel
+
+Growing a panel along an axis makes every mitre that *runs* along that axis
+longer — on that panel and on no other, because the board it is mitred to has
+not moved. Half a joint cut longer than the other half is not a joint, and the
+closure catches it: two mitres, 162 mm² of prism each, over the 12 mm the panel
+grew.
+
+So a rebate is refused on a side whose growth axis is the run axis of a mitre
+the panel already carries. Together with §42's rule — no rebate on a mitred
+edge — that means a top mitred to the sides cannot be let in at all, while a
+front mitred only along its top edge can still be let in at the bottom. The
+rule is about which way the panel grows, not about whether it is mitred.
+
+### Saying which sides were refused
+
+What made this hard to find was neither of those. A rebate asked for on four
+sides and cut on two said *"let in on front and back"* and nothing whatever
+about the other two. The reasons were in the messages, but the control that had
+just been used said only what had worked.
+
+Refusals are now grouped by face and reason — one entry naming every side it
+applies to — and shown in the control beside what was cut, as well as in the
+messages. `Rebate: Top (left, right) — that joint is mitred…` is the sentence
+that was missing.
+
+## §44 The mitre and the groove, reckoned together
+
+A review of §43 said the mitre material could be subtracted twice. It could, and
+worse: the *drawing* and the *closure* were each wrong, in opposite directions,
+and they agreed with each other because they were computed the same way.
+
+The invariant that finds it in one line: **the mesh is the model.** Sum the
+signed volume of a panel's triangles and it must equal the volume the model says
+that panel has. It did not, by 58 860 mm³ on a 300 mm box — on every panel that
+had both a mitre and a groove, and on no other.
+
+### The drawing kept a corner the mitre had taken
+
+§42 stopped the ring loft where the grooves began and built the rest from plain
+boxes. The loft is what cuts the mitre — `ringAt` insets the side by `min(d,
+leg)` at each depth — so the part built from boxes had no mitre in it at all.
+Worse than a rounding error: a mitre eats *more* the deeper it goes, so the part
+that was dropped was the widest part of the cut, and the panel came out with a
+step in it where the loft gave way to the boxes.
+
+So a box of a mitred panel is now clipped to the cut before it is drawn.
+The cut is a plane at 45° through the side axis and the thickness axis and it
+does nothing at all to the third, so a clipped box is still a prism — a
+cross-section and a length to extrude it along. §12 keeps a panel's mitres on
+opposite sides and never adjacent ones, so they all share one side axis and one
+2D section holds the lot.
+
+A leg that stops short of the far face bends the boundary — 45° down to the leg,
+flat from there on — and the region above a boundary that bends is not convex.
+Split at the bend and each half is. §12 always cuts with a leg equal to the
+thickness, so in practice there is one piece; the general shape costs four lines
+and a mitre with a shorter leg is a thing somebody may want to draw.
+
+### The closure took the same material off twice
+
+The other direction. `panelVolume` took off the whole groove and `mitreLoss`
+took off the whole 45° prism, and where a groove runs into a mitred corner the
+same material is in both. One term now: the groove cuts the box into cells, each
+cell is clipped by the mitres, and the volume is what the cells add up to. For a
+panel with no groove it comes to `box − mitreLoss` exactly, as it must.
+
+### And the corner belongs to both boards
+
+§43 had each panel take the part of the slab nobody had taken yet, on the
+grounds that the corner is there once. That was the right observation and the
+wrong remedy. At a mitred corner the material is there once but it is *shared*:
+the 45° cut gives half to each board. Handing the whole corner to the first of
+them cuts a groove in a board where the mitre had already taken the material
+away, and leaves the other board full where the tongue now is.
+
+So every panel the slab reaches takes its share of it, overlaps and all — and
+each loses only the half it actually has, because the volume is reckoned after
+the mitre rather than beside it. §43's rule goes; the fault it was working
+around was this one all along.
+
+### The refusals were never shown
+
+Separately, and more embarrassingly: §42 emitted them at `level: "warn"` and the
+app renders `level: "warning"`. Every rebate refusal since §42 has gone straight
+to the floor. The control's own note was the only place they appeared, which is
+why §43 added them there — and why the missing warnings went unnoticed for two
+sections running.
+
+## §45 Rebates on the flat drawings
+
+A rebate was in the model, in the three-dimensional views and in the section,
+and nowhere a person cutting boards would look. The cut list said `Rebate 6 ×
+18` in a sentence under the template and the template drew a plain rectangle.
+
+Three places now, and one colour.
+
+### A column
+
+The cut list has a **Rebate** column beside the edge work, because that is what
+it is: a second operation on a board whose size has not changed. `6 × 18`, or
+`6 × 18 stopped` where the groove does not run out at the ends. It is in the CSV
+too — the sheet somebody takes to the saw is the one that matters.
+
+### The templates and the nest
+
+Drawn as the rectangle it is, in its own colour, with the depth written along
+the groove. Along it rather than across it, because an 18 mm groove has no room
+for the words but a 300 mm one does — the same way it would be written on the
+board.
+
+Its own colour and not the cutouts': **a cutout goes through the board and a
+rebate does not**, and on a template read across a workshop that is the one
+distinction worth being able to make without looking closely. Cyan against the
+orange, which no common colour blindness confuses.
+
+The nest draws them too, turned with the part when a part is laid on its side —
+through the same `placeOnSheet` the holes go through, so a rotated part cannot
+come out with its holes right and its grooves wrong.
+
+### The DXF
+
+A `REBATE` layer, cyan, one closed profile per groove. Its own layer because it
+is its own operation: a groove is cut to a depth with the board still whole, and
+a machine that runs it at the profile depth has made scrap. The layer is
+declared whether or not anything is on it, so a template that switches layers on
+and off does not find one appearing from nowhere between one job and the next.

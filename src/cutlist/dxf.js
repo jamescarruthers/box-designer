@@ -14,9 +14,14 @@
 // Bevels and mitres are not in here either, and cannot be: a blank is a
 // rectangle, and the 45° is a saw set over after the parts come off the sheet.
 // The cut list's edge column carries that work.
+//
+// §45 Rebates are, though, on a layer of their own — a groove is cut in the
+// board while it is still on the sheet, and it is the one operation here that
+// is not a through cut.
 
 import { panelBlank } from "../model/solver.js";
 import { blankCircles } from "../model/fittings.js";
+import { blankNotches } from "../model/rebate.js";
 
 /**
  * Layers, so the shop can order the work: holes before the profile, or the
@@ -27,6 +32,10 @@ export const LAYERS = [
   { name: "HOLES", colour: 1 },       // red — cutouts and bolt holes
   { name: "SHEET", colour: 8 },       // grey — the stock boundary, for reference
   { name: "LABEL", colour: 3 },       // green — text, cuts nothing
+  // §45 Its own layer, because it is its own operation: a rebate is cut to a
+  // depth with the board still whole, and a machine that runs it at the
+  // through-cut depth has made scrap. Cyan, as everywhere else it is drawn.
+  { name: "REBATE", colour: 4 },      // cyan — grooves, cut to a depth
 ];
 
 /** Space between one sheet and the next, so they read as separate sheets. */
@@ -87,6 +96,26 @@ export function partHoles(part, stockWidth, originX = 0) {
     });
 }
 
+/**
+ * §45 Every groove this part carries, placed on the sheet as a closed profile.
+ *
+ * Turned with the part when the nest laid it on its side, by the same
+ * `placeOnSheet` the holes go through — one rule for where a feature ends up,
+ * so a rotated part cannot have its holes right and its grooves wrong.
+ */
+export function partRebates(part, stockWidth, originX = 0) {
+  const row = part.row;
+  if (!row.panel?.notches?.length) return [];
+  return blankNotches(row.panel, panelBlank(row.panel)).map((r) => ({
+    depth: r.depth,
+    points: [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]]
+      .map(([bx, by]) => {
+        const [X, Y] = placeOnSheet(part, bx, by, stockWidth);
+        return [X + originX, Y];
+      }),
+  }));
+}
+
 /** One sheet's entities, offset to `originX`. */
 function sheetEntities(sheet, originX) {
   const [SL, SW] = sheet.stock;
@@ -100,6 +129,7 @@ function sheetEntities(sheet, originX) {
   for (const part of sheet.parts) {
     out.push(polyline("OUTLINE", shift(partOutline(part, SW))));
     for (const h of partHoles(part, SW, originX)) out.push(circle("HOLES", h.x, h.y, h.r));
+    for (const r of partRebates(part, SW, originX)) out.push(polyline("REBATE", r.points));
     const [cx, cy] = [part.x + part.w / 2 + originX, SW - (part.y + part.h / 2)];
     out.push(text("LABEL", cx, cy, Math.min(part.w, part.h) * 0.18, part.row.id));
   }

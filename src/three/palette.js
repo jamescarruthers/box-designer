@@ -29,6 +29,16 @@ export const LAGGING_COLOUR = "#8d8377";
 export const SELECT_EMISSIVE = 0x5f2110;
 export const ACCENT = "#e8703a";
 
+/**
+ * §45 Rebates, wherever a part is drawn flat.
+ *
+ * A different colour from the cutouts on purpose: a cutout goes through the
+ * board and a rebate does not, and on a template that is the one distinction
+ * worth being able to make across the room. Cyan against the orange, which no
+ * common colour blindness confuses with it.
+ */
+export const REBATE = "#3fb6c4";
+
 export function hexToHsl(hex) {
   const n = parseInt(hex.slice(1), 16);
   const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;

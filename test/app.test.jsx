@@ -19,6 +19,7 @@ vi.mock("../src/occt/client.js", async () => {
 });
 
 import App from "../src/ui/App.jsx";
+import { ACCENT, REBATE } from "../src/three/palette.js";
 
 beforeAll(() => {
   global.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
@@ -645,6 +646,45 @@ describe("the app", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
     expect(container.querySelector(".rebate")).toBe(null);
     expect(screen.getByLabelText("Add a rebate").value).toBe("");
+  });
+
+  it("§45 shows the rebate in the cut list and on the flat drawings", () => {
+    const { container } = render(<App />);
+    const preset = [...container.querySelectorAll("label.field")]
+      .find((l) => l.textContent.startsWith("Preset")).querySelector("select");
+    fireEvent.change(preset, { target: { value: "sides" } });
+    fireEvent.change(screen.getByLabelText("Add a rebate"), { target: { value: "front" } });
+    fireEvent.click(screen.getByLabelText("Front rebate all sides"));
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+
+    // A column of its own, filled in for the four boards that carry a groove
+    // and blank for the two that do not.
+    const head = [...container.querySelectorAll("table.cuts thead th")].map((t) => t.textContent);
+    expect(head).toContain("Rebate");
+    const at = head.indexOf("Rebate");
+    const cells = [...container.querySelectorAll("table.cuts tbody tr")]
+      .map((r) => r.children[at].textContent);
+    expect(cells.filter(Boolean)).toHaveLength(4);
+    expect(cells.filter(Boolean)[0]).toMatch(/^6 × 18/);
+
+    // And drawn on the templates and on the nest, in the rebate colour.
+    expect(container.querySelectorAll(".parts g.rebates rect")).toHaveLength(4);
+    const onSheets = [...container.querySelectorAll(".col-sheets rect")]
+      .filter((r) => r.getAttribute("stroke") === REBATE);
+    expect(onSheets).toHaveLength(4);
+    // Never the colour a cutout is drawn in.
+    for (const r of container.querySelectorAll(".parts g.rebates rect"))
+      expect(r.getAttribute("stroke")).not.toBe(ACCENT);
+  });
+
+  it("§45 draws no rebate on a board that has none", () => {
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    expect(container.querySelectorAll(".parts g.rebates")).toHaveLength(0);
+    const head = [...container.querySelectorAll("table.cuts thead th")].map((t) => t.textContent);
+    const at = head.indexOf("Rebate");
+    for (const row of container.querySelectorAll("table.cuts tbody tr"))
+      expect(row.children[at].textContent).toBe("");
   });
 
   it("§14 offers a DXF of the sheet layouts", () => {

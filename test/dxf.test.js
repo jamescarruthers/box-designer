@@ -7,7 +7,10 @@
  */
 import { describe, it, expect } from "vitest";
 import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
-import { sheetsDxf, placeOnSheet, partHoles, LAYERS, SHEET_GAP } from "../src/cutlist/dxf.js";
+import { sheetsDxf, placeOnSheet, partHoles, partRebates, LAYERS, SHEET_GAP } from "../src/cutlist/dxf.js";
+import { blankNotches } from "../src/model/rebate.js";
+import { panelBlank } from "../src/model/solver.js";
+import { PROMINENCE_PRESETS } from "../src/model/constants.js";
 import { faceAxes } from "../src/model/fittings.js";
 
 /** Enough of a DXF reader to check one. Pairs in, entities out. */
@@ -216,5 +219,66 @@ describe("§14 everything lands where it should", () => {
     for (let i = 1; i < sheets.length; i++) {
       expect(sheets[i].x0 - sheets[i - 1].x1).toBeCloseTo(SHEET_GAP, 6);
     }
+  });
+});
+
+describe("§45 rebates in the file", () => {
+  const letIn = () => derive({
+    ...DEFAULT_DESIGN, preset: "sides", order: PROMINENCE_PRESETS[1].order,
+    rebate: { front: { depth: 6, sides: { left: true, right: true, top: true, bottom: true } } },
+  });
+
+  it("puts them on a layer of their own", () => {
+    // A groove is not a through cut, and a machine that runs it at the profile
+    // depth has made scrap. It goes on a layer the setter can order.
+    expect(LAYERS.map((l) => l.name)).toContain("REBATE");
+    const dxf = dxfOf(letIn());
+    expect(dxf.layers).toContain("REBATE");
+    const grooves = dxf.entities.filter((e) => e.layer === "REBATE");
+    // Four panels take the baffle: left, right, top and bottom.
+    expect(grooves).toHaveLength(4);
+    for (const g of grooves) expect(g.type).toBe("POLYLINE");
+  });
+
+  it("draws nothing at all when nothing is rebated", () => {
+    const plain = readDxf(sheetsDxf(derive(DEFAULT_DESIGN).sheets));
+    expect(plain.entities.filter((e) => e.layer === "REBATE")).toHaveLength(0);
+    // The layer is still declared, so a template that switches layers on and
+    // off does not have one appear from nowhere between one job and the next.
+    expect(plain.layers).toContain("REBATE");
+  });
+
+  it("keeps a groove inside the part it is cut in, turned or not", () => {
+    const d = letIn();
+    const row = d.rows.find((r) => r.panel.notches?.length);
+    for (const rotated of [false, true]) {
+      const part = { row, x: 300, y: 120,
+        w: rotated ? row.width : row.length, h: rotated ? row.length : row.width, rotated };
+      const cut = partRebates(part, 2440);
+      expect(cut).toHaveLength(1);
+      expect(cut[0].depth).toBe(6);
+      for (const [x, y] of cut[0].points) {
+        expect(x).toBeGreaterThanOrEqual(part.x - 1e-9);
+        expect(x).toBeLessThanOrEqual(part.x + part.w + 1e-9);
+        expect(y).toBeGreaterThanOrEqual(2440 - (part.y + part.h) - 1e-9);
+        expect(y).toBeLessThanOrEqual(2440 - part.y + 1e-9);
+      }
+      // A groove is a rectangle wherever it is put: four corners, two widths.
+      const xs = new Set(cut[0].points.map(([x]) => Math.round(x * 1e6)));
+      const ys = new Set(cut[0].points.map(([, y]) => Math.round(y * 1e6)));
+      expect(xs.size).toBe(2);
+      expect(ys.size).toBe(2);
+    }
+  });
+
+  it("goes through the same placement the holes do", () => {
+    // One rule for where a feature lands, so a rotated part cannot come out
+    // with its holes right and its grooves wrong.
+    const d = letIn();
+    const row = d.rows.find((r) => r.panel.notches?.length);
+    const part = { row, x: 40, y: 90, w: row.width, h: row.length, rotated: true };
+    const blank = blankNotches(row.panel, panelBlank(row.panel))[0];
+    const corner = placeOnSheet(part, blank.x, blank.y, 2440);
+    expect(partRebates(part, 2440)[0].points).toContainEqual(corner);
   });
 });
