@@ -4,7 +4,7 @@ import { EDGES, FACES, FACE_LABEL, MATERIALS, LAGGINGS, PROMINENCE_PRESETS, DEFA
 import { solve, wallOf, boardOf, fillFaces, skinOf, boxVolume, panelThickness, DEFAULT_RATIO, DEFAULT_ROUND } from "../model/solver.js";
 import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, partialEdgeIssues, panelBevels } from "../model/bevel.js";
 import { mitreCheck, resolveMitres, applyMitres, mitreIssues, mitreLoss } from "../model/mitre.js";
-import { applyRebates, panelVolume, panelSolidVolume, notchNote, rebateSides, newRebate, rebateProblems } from "../model/rebate.js";
+import { applyRebates, panelVolume, panelSolidVolume, notchNote, notchSpec, rebateSides, newRebate, rebateProblems } from "../model/rebate.js";
 import { validate } from "../model/validate.js";
 import { fittingOwners, innermostOn, fittingIssues, fittingNote, hasTube, resolveFittings,
   driverDisplacement, portDisplacement, hasDisplacement, cutoutFlare, largestFlare,
@@ -464,8 +464,10 @@ export function derive(design) {
       // §42 The blank is unchanged by a groove — it is cut out of the middle
       // of the board after the board is cut — so a rebate is a note and not a
       // size. The panel that was *let in* needs no note: its size says it.
+      // §45 Two forms of the same fact: the sentence under the template, and
+      // the cell in the table.
       const rebate = notchNote(r.panel);
-      const row = rebate ? { ...r, rebateNote: rebate } : r;
+      const row = rebate ? { ...r, rebateNote: rebate, rebate: notchSpec(r.panel) } : r;
       return on.length
         ? { ...row, fittings: on, fittingNote: fittingNote(on) }
         : { ...row, fittings: [], fittingNote: "" };

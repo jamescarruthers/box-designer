@@ -12,6 +12,7 @@
   --ink-3: #64727f;
   --accent: #e8703a;
   --accent-dim: #b8541f;
+  --rebate: #3fb6c4;
   --error: #ff7a6b;
   --warning: #e8b84b;
   --ok: #6fce8f;
@@ -255,6 +256,8 @@ table.cuts tbody tr.sel { background: rgb(232 112 58 / 0.12); box-shadow: inset 
 table.cuts .num { text-align: right; }
 table.cuts .id { color: var(--ink); }
 table.cuts .edgework { color: var(--ink-3); }
+/* §45 The rebate cell reads in the colour it is drawn in everywhere else. */
+table.cuts .rebate-cell { color: var(--rebate); white-space: nowrap; }
 
 .totals { margin: 0; display: flex; gap: 16px; padding: 7px 11px; border-top: 1px solid var(--line); background: var(--bg-2); }
 .totals div { display: flex; gap: 6px; }

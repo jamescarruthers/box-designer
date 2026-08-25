@@ -3210,3 +3210,42 @@ app renders `level: "warning"`. Every rebate refusal since §42 has gone straigh
 to the floor. The control's own note was the only place they appeared, which is
 why §43 added them there — and why the missing warnings went unnoticed for two
 sections running.
+
+## §45 Rebates on the flat drawings
+
+A rebate was in the model, in the three-dimensional views and in the section,
+and nowhere a person cutting boards would look. The cut list said `Rebate 6 ×
+18` in a sentence under the template and the template drew a plain rectangle.
+
+Three places now, and one colour.
+
+### A column
+
+The cut list has a **Rebate** column beside the edge work, because that is what
+it is: a second operation on a board whose size has not changed. `6 × 18`, or
+`6 × 18 stopped` where the groove does not run out at the ends. It is in the CSV
+too — the sheet somebody takes to the saw is the one that matters.
+
+### The templates and the nest
+
+Drawn as the rectangle it is, in its own colour, with the depth written along
+the groove. Along it rather than across it, because an 18 mm groove has no room
+for the words but a 300 mm one does — the same way it would be written on the
+board.
+
+Its own colour and not the cutouts': **a cutout goes through the board and a
+rebate does not**, and on a template read across a workshop that is the one
+distinction worth being able to make without looking closely. Cyan against the
+orange, which no common colour blindness confuses.
+
+The nest draws them too, turned with the part when a part is laid on its side —
+through the same `placeOnSheet` the holes go through, so a rotated part cannot
+come out with its holes right and its grooves wrong.
+
+### The DXF
+
+A `REBATE` layer, cyan, one closed profile per groove. Its own layer because it
+is its own operation: a groove is cut to a depth with the board still whole, and
+a machine that runs it at the profile depth has made scrap. The layer is
+declared whether or not anything is on it, so a template that switches layers on
+and off does not find one appearing from nowhere between one job and the next.

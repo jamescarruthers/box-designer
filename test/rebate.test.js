@@ -5,9 +5,12 @@ import { PROMINENCE_PRESETS } from "../src/model/constants.js";
 import { noEdges } from "../src/model/bevel.js";
 import {
   applyRebates, subtractBoxes, panelVolume, rebateSlab, rebateSides, notchNote, intersect, newRebate,
-  rebateProblems, mitreRun, panelSolidVolume,
+  rebateProblems, mitreRun, panelSolidVolume, blankNotches, notchSpec,
 } from "../src/model/rebate.js";
 import { panelPositions, notchDepth } from "../src/three/panelGeometry.js";
+import { panelBlank } from "../src/model/solver.js";
+import { cutListCsv } from "../src/cutlist/cutlist.js";
+import { ACCENT, REBATE } from "../src/three/palette.js";
 import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
 
 const box = (x, y, z) => ({ x, y, z });
@@ -407,5 +410,68 @@ describe("§44 the mitre and the groove, reckoned together", () => {
     const rebates = d.messages.filter((m) => /^Rebate:/.test(m.text));
     expect(rebates.length).toBeGreaterThan(0);
     for (const m of rebates) expect(m.level).toBe("warning");
+  });
+});
+
+describe("§45 rebates where a part is drawn flat", () => {
+  const letIn = () => derive({
+    ...DEFAULT_DESIGN, preset: "sides", order: PROMINENCE_PRESETS[1].order,
+    rebate: { front: { depth: 6, sides: { left: true, right: true, top: true, bottom: true } } },
+  });
+
+  it("puts the groove on the blank where the cutter will find it", () => {
+    const d = letIn();
+    for (const row of d.rows) {
+      const blank = panelBlank(row.panel);
+      const cut = blankNotches(row.panel, blank);
+      expect(cut).toHaveLength(row.panel.notches?.length ?? 0);
+      for (const r of cut) {
+        // Inside the board, and never bigger than it.
+        expect(r.x).toBeGreaterThanOrEqual(-1e-9);
+        expect(r.y).toBeGreaterThanOrEqual(-1e-9);
+        expect(r.x + r.w).toBeLessThanOrEqual(blank.length + 1e-9);
+        expect(r.y + r.h).toBeLessThanOrEqual(blank.width + 1e-9);
+        // The depth is the rebate's, not the board's: that is the difference
+        // between a groove and a hole, and the whole reason it is drawn apart.
+        expect(r.depth).toBe(6);
+        expect(r.depth).toBeLessThan(row.thickness);
+      }
+    }
+  });
+
+  it("flips the width axis the way the fittings do", () => {
+    // A template laid on the board has its work in the right places rather
+    // than mirrored, so the groove has to use the transform the holes use.
+    const panel = { face: "front", box: { x: [0, 200], y: [0, 18], z: [0, 100] },
+      notches: [{ x: [0, 200], y: [12, 18], z: [0, 20] }] };
+    const blank = panelBlank(panel);
+    const [r] = blankNotches(panel, blank);
+    // z 0–20 is the *bottom* of the panel, so it is the bottom of the blank.
+    expect(r.y + r.h).toBeCloseTo(blank.width, 9);
+    expect(r.h).toBeCloseTo(20, 9);
+    expect(r.depth).toBeCloseTo(6, 9);
+  });
+
+  it("says it in the cut list, in the row and in the file", () => {
+    const d = letIn();
+    const grooved = d.rows.filter((r) => r.rebate);
+    expect(grooved).toHaveLength(4);
+    for (const r of grooved) expect(r.rebate).toMatch(/^6 × 18/);
+    // The short form for a column, the sentence for under the template.
+    expect(grooved[0].rebateNote).toBe(`Rebate ${grooved[0].rebate}`);
+    expect(d.rows.find((r) => r.panel.face === "front").rebate).toBeUndefined();
+
+    const csv = cutListCsv(d.rows).split("\n");
+    expect(csv[0].split(",")).toContain("Rebate");
+    const at = csv[0].split(",").indexOf("Rebate");
+    const cells = csv.slice(1).map((line) => line.split(",")[at]);
+    expect(cells.filter((c) => c && c !== '""')).toHaveLength(4);
+  });
+
+  it("draws it in its own colour, which is not the cutouts'", () => {
+    // A cutout goes through the board and a rebate does not; on a template
+    // across the room that is the distinction worth being able to make.
+    expect(REBATE).not.toBe(ACCENT);
+    expect(REBATE).toMatch(/^#[0-9a-f]{6}$/i);
   });
 });

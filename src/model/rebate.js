@@ -289,6 +289,27 @@ export function rebateProblems(rejected) {
  * middle of it — so the note is the whole story: how deep, how wide, and which
  * face of the board it is on.
  */
+/**
+ * §45 The grooves in a panel, in the coordinates its blank is drawn in.
+ *
+ * The same transform the fittings use — length axis across, width axis down,
+ * flipped so a template laid on the board has its work in the right places —
+ * except that a groove is a rectangle rather than a circle, and it carries how
+ * deep it is, which is the whole of what makes it a rebate rather than a hole.
+ */
+export function blankNotches(panel, blank) {
+  const a = AXIS[panel.face][0];
+  const { lengthAxis, widthAxis } = blank;
+  return (panel.notches ?? []).map((n) => {
+    const x = [n[lengthAxis][0] - panel.box[lengthAxis][0], n[lengthAxis][1] - panel.box[lengthAxis][0]];
+    const y = [panel.box[widthAxis][1] - n[widthAxis][1], panel.box[widthAxis][1] - n[widthAxis][0]];
+    return {
+      x: x[0], y: y[0], w: x[1] - x[0], h: y[1] - y[0],
+      depth: n[a][1] - n[a][0],
+    };
+  });
+}
+
 export function notchNote(panel) {
   if (!panel.notches?.length) return "";
   const a = AXIS[panel.face][0];
@@ -303,6 +324,15 @@ export function notchNote(panel) {
     return `${fmt(deep)} × ${fmt(spans[0].cut)}${through ? "" : " stopped"}`;
   });
   return `Rebate ${parts.join(", ")}`;
+}
+
+/**
+ * §45 The same thing in a table cell: how deep and how wide, without the word
+ * "Rebate" in front of it, because the column is already called that.
+ */
+export function notchSpec(panel) {
+  const note = notchNote(panel);
+  return note ? note.replace(/^Rebate /, "") : "";
 }
 
 const fmt = (v) => String(Math.round(v * 100) / 100);

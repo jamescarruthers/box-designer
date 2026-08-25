@@ -80,9 +80,12 @@ const csvCell = (v) => {
 };
 
 export function cutListCsv(rows) {
-  const head = ["Part", "Face", "Layer", "Length mm", "Width mm", "Thickness mm", "Material", "Grain", "Edge work"];
+  // §45 The rebate goes in the sheet somebody takes to the saw, not only on
+  // the screen: it is work to do to the board, the same as the edge treatment.
+  const head = ["Part", "Face", "Layer", "Length mm", "Width mm", "Thickness mm",
+    "Material", "Grain", "Edge work", "Rebate"];
   const body = rows.map((r) => [r.id, r.faceLabel, r.layerLabel,
-    fmt(r.length), fmt(r.width), fmt(r.thickness), r.material, r.grain, r.edgeWork]);
+    fmt(r.length), fmt(r.width), fmt(r.thickness), r.material, r.grain, r.edgeWork, r.rebate ?? ""]);
   return [head, ...body].map((line) => line.map(csvCell).join(",")).join("\n");
 }
 
