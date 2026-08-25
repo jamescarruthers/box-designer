@@ -4,6 +4,7 @@
 import { AXIS, PAIR, AXES } from "../model/constants.js";
 import { insetAt, bevelDepths } from "../model/bevel.js";
 import { EXPLODE_SCALE, explodeShift } from "../model/explode.js";
+import { subtractBoxes } from "../model/rebate.js";
 
 const EPS = 1e-9;
 
@@ -44,14 +45,40 @@ export function ringDepths(panel, bevels) {
 }
 
 /**
+ * §42 The depth the grooves start at, measured from the outer face.
+ *
+ * A rebate is a tongue slid in from inside the box, so the groove that takes
+ * it is always in the panel's inner face and always the rebate's depth deep.
+ * Everything shallower than this is the panel as it was.
+ */
+export function notchDepth(panel) {
+  if (!panel.notches?.length) return null;
+  const [a, s] = AXIS[panel.face];
+  const inner = s < 0 ? panel.box[a][1] : panel.box[a][0];
+  return Math.min(...panel.notches.map((n) => Math.abs(inner - (s < 0 ? n[a][0] : n[a][1]))));
+}
+
+/**
  * Build the solid in model coordinates.
- * Returns { verts: [[x,y,z],…], tris: [[i,j,k],…], centroid }.
+ * Returns { verts: [[x,y,z],…], tris: [[i,j,k],…], centroid, refs }.
+ *
+ * §42 `refs` is what each triangle is turned outward against. A panel with no
+ * groove in it is convex, and the panel's own centre settles every face; one
+ * with a groove is not, so the boxes the grooved part is made of are each
+ * turned against their own centre instead. Same rule, applied to the piece
+ * that is actually convex.
  */
 export function panelSolid(panel, bevels = {}) {
   const [a, s] = AXIS[panel.face];
   const [p, q] = AXES.filter((b) => b !== a);
-  const depths = ringDepths(panel, bevels);
   const T = panel.box[a][1] - panel.box[a][0];
+  const groove = notchDepth(panel);
+  // The loft stops where the grooves start, and the rest is built from boxes.
+  // `groove` is measured from the inner face, the ring depths from the outer.
+  const stop = groove === null ? T : T - groove;
+  const depths = ringDepths(panel, bevels).filter((d) => d <= stop + EPS);
+  if (!depths.some((d) => Math.abs(d - stop) < EPS)) depths.push(stop);
+  depths.sort((u, v) => u - v);
 
   const verts = [], rings = [];
   for (const d of depths) {
@@ -84,8 +111,31 @@ export function panelSolid(panel, bevels = {}) {
   quad(last[0], last[1], last[2], last[3]);       // inner cap
 
   const centroid = [0, 1, 2].map((k) => verts.reduce((acc, v) => acc + v[k], 0) / verts.length);
-  return { verts, tris, centroid };
+  const refs = tris.map(() => centroid);
+
+  // §42 The grooved part: what is left of the inner slab once the tongues that
+  // slide into it are taken out. Cell by cell, each one a box of its own.
+  if (groove !== null) {
+    const slab = Object.fromEntries(AXES.map((b) => [b, [...panel.box[b]]]));
+    slab[a] = s < 0 ? [panel.box[a][1] - groove, panel.box[a][1]]
+                    : [panel.box[a][0], panel.box[a][0] + groove];
+    for (const cell of subtractBoxes(slab, panel.notches)) {
+      const base = verts.length;
+      for (const [ix, iy, iz] of CORNERS) verts.push([cell.x[ix], cell.y[iy], cell.z[iz]]);
+      const mid = [cell.x, cell.y, cell.z].map(([lo, hi]) => (lo + hi) / 2);
+      for (const f of BOX_FACES) {
+        tris.push([base + f[0], base + f[1], base + f[2]], [base + f[0], base + f[2], base + f[3]]);
+        refs.push(mid, mid);
+      }
+    }
+  }
+  return { verts, tris, centroid, refs };
 }
+
+/** The eight corners of a box, as which end of each axis to take. */
+const CORNERS = [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]];
+/** Its six faces, as corner indices going round. Winding is fixed afterwards. */
+const BOX_FACES = [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [2, 3, 7, 6], [1, 2, 6, 5], [3, 0, 4, 7]];
 
 /** §4.3 model → three.js. A rotation, not an axis swap: determinant +1. */
 export const toThree = (v, E) => [v[0] - E.x / 2, v[2] - E.z / 2, -(v[1] - E.y / 2)];
@@ -100,16 +150,20 @@ const dot = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
  * Returns { positions: Float32Array, flipped, inward } in three coordinates.
  */
 export function panelPositions(panel, bevels, E) {
-  const { verts, tris } = panelSolid(panel, bevels);
+  const { verts, tris, refs } = panelSolid(panel, bevels);
   const V = verts.map((v) => toThree(v, E));
   const c = [0, 1, 2].map((k) => V.reduce((acc, v) => acc + v[k], 0) / V.length);
+  // §42 Each triangle is turned outward against the piece it belongs to, which
+  // for everything but a grooved panel is the panel.
+  const R = refs.map((r) => (r === undefined ? c : toThree(r, E)));
 
   const out = new Float32Array(tris.length * 9);
   let flipped = 0, o = 0;
-  for (const t of tris) {
-    let [i, j, k] = t;
+  for (let t = 0; t < tris.length; t++) {
+    let [i, j, k] = tris[t];
+    const ref = R[t] ?? c;
     const n = cross(sub(V[j], V[i]), sub(V[k], V[i]));
-    const m = [0, 1, 2].map((d) => (V[i][d] + V[j][d] + V[k][d]) / 3 - c[d]);
+    const m = [0, 1, 2].map((d) => (V[i][d] + V[j][d] + V[k][d]) / 3 - ref[d]);
     if (dot(n, m) < 0) { [j, k] = [k, j]; flipped++; }
     for (const idx of [i, j, k]) { out[o++] = V[idx][0]; out[o++] = V[idx][1]; out[o++] = V[idx][2]; }
   }

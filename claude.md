@@ -3013,3 +3013,83 @@ repeat of the internal height measures what the section shows.
 The layout follows: one interior fewer is one rung fewer to reserve room for, so
 the block sits a rung closer to the frame. Every view stays exactly the size it
 was — the box has not changed, only what is drawn of it.
+
+## §42 Rebates
+
+A front panel sitting inside a mitred carcass can be let into it: the panel runs
+on past where it stopped, and a groove is cut in each panel it runs into to
+receive it. One board comes out longer and wider, the others come out with a
+groove in them, and the box is the size it always was.
+
+Chosen per face — which of the four sides that meet it are let in, and how deep.
+Four sides is the common case, so "All" is a button rather than four clicks.
+
+### No material appears or disappears
+
+That is the whole design, and everything else follows from it. The panel grows
+by exactly the slab it now occupies, and every panel that slab lands in loses
+exactly its share of the same slab, so §2.4's closure — envelope = panels +
+cavity — still comes out at zero to the cubic millimetre. The test asserts both
+halves: that closure holds, and that what one panel gained is what the others
+lost.
+
+A rebate that cannot be cut is refused rather than fudged, and the check is the
+one the closure would have caught later anyway: does the slab land wholly
+inside other panels?
+
+- **Nothing there.** A panel that already runs past its neighbours has nothing
+  to be let into — the message says to move it down the prominence order,
+  because that is the actual fix.
+- **Not backed all the way.** Part of the slab lands in the cavity or outside
+  the box, so part of the rebate would be cut into thin air.
+- **Right through.** A rebate as deep as the board it goes into is a hole.
+- **§12 Already mitred.** A mitre and a rebate are two ways to make the same
+  joint. The mitre runs the panel out to the corner, which is exactly the
+  material the rebate wants to slide into, so a board cannot have both on one
+  edge. Only that edge is refused: the other three are cut as asked.
+
+The first three are worded about the panel rather than about one of its sides,
+so a rebate on four sides that all fail for the same reason is one warning
+rather than four. The mitre is the exception, being a fact about one joint.
+
+### Taking boxes out of a box
+
+A grooved panel is no longer a box, and everything downstream had assumed one.
+Rather than teach five subsystems about grooves, one primitive does it:
+`subtractBoxes(box, notches)` returns what is left as a handful of boxes.
+
+Every cut plane of every notch divides the box into cells, and a cell survives
+if its middle is not inside a notch. Crude, and exactly right — including the
+case that matters most, where two grooves overlap in a corner. Subtracting them
+one at a time counts that corner twice and loses the closure; a cell is either
+in a notch or it is not, and it can only be counted once either way. Survivors
+are glued back together along each axis, so a board with one groove in it comes
+back as two boxes rather than a wall of them.
+
+Three grooves that meet are merged into one for the same reason: a rebate on
+the left, top and bottom of a front panel cuts *one* groove down the panel
+beside it, and the cut list should say so once.
+
+That one primitive is then all any of them needs:
+
+- **the cut list** — the blank is unchanged, because a groove is machined out
+  of the middle of a board after the board is cut, so a rebate is a note and
+  not a size: `Rebate 6 × 18`, or `6 × 18 stopped` where the groove does not
+  run out at the ends. The board that was *let in* needs no note; its size says
+  it.
+- **the elevations and the section** — a grooved panel goes into the hidden
+  line removal as the pieces it is left in, all carrying the panel itself. That
+  is what makes the groove show as hidden detail and, just as important, what
+  stops the joins between the pieces being drawn: a segment with the same panel
+  on both sides of it at the same depth is a line through the middle of one
+  board, and it is dropped.
+- **the 3D view and the isometric** — the loft stops where the grooves start
+  and the rest is built from those boxes. A grooved panel is not convex, so
+  §4.4's trick of turning every face outward against the panel's own centre
+  stops working; each box is turned against *its* centre instead, which is the
+  same rule applied to the piece that is actually convex. The test is the
+  signed volume of the triangles, which catches a face left the wrong way round
+  where a centroid test cannot.
+- **the kernel** — the notches are boxes and a boolean cut is what a boolean
+  cut is for. Cut before the bevels, since a groove in the inner face and a
+  round on an outer edge never meet.

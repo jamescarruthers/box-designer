@@ -1,6 +1,10 @@
 // §6.2 projections and §6.3 hidden line removal.
 // Every panel is an axis-aligned box, so it projects to a rectangle and
-// visibility is exact — no tolerance anywhere.
+// visibility is exact — no tolerance anywhere. §42 A panel with a groove cut
+// in it is not one box, but it is a handful of them, and the same is true of
+// each.
+
+import { subtractBoxes } from "../model/rebate.js";
 
 /** b → { h:[lo,hi], v:[lo,hi], n } with n the nearness; smaller is nearer. */
 export const PROJECTIONS = {
@@ -17,7 +21,11 @@ export const VIEW_EXTENT = {
 
 export function projectPanels(panels, view, E) {
   const p = PROJECTIONS[view];
-  return panels.map((panel) => ({ ...p(panel.box, E), panel }));
+  // §42 A grooved panel goes in as the pieces it is left in, all carrying the
+  // panel itself — so the groove shows as hidden detail and the joins between
+  // the pieces do not show at all.
+  return panels.flatMap((panel) =>
+    subtractBoxes(panel.box, panel.notches).map((piece) => ({ ...p(piece, E), panel })));
 }
 
 const uniqSorted = (xs) => [...new Set(xs)].sort((a, b) => a - b);
@@ -34,8 +42,8 @@ export function hiddenLineRemoval(rects) {
   // 1 + 2. Boundary segments, split at every rectangle boundary coordinate.
   const raw = [];
   for (const r of live) {
-    for (const v of r.v) for (const [a, b] of split(r.h, hCuts)) raw.push({ orient: "h", fixed: v, a, b, n: r.n });
-    for (const h of r.h) for (const [a, b] of split(r.v, vCuts)) raw.push({ orient: "v", fixed: h, a, b, n: r.n });
+    for (const v of r.v) for (const [a, b] of split(r.h, hCuts)) raw.push({ orient: "h", fixed: v, a, b, n: r.n, panel: r.panel });
+    for (const h of r.h) for (const [a, b] of split(r.v, vCuts)) raw.push({ orient: "v", fixed: h, a, b, n: r.n, panel: r.panel });
   }
 
   // 3. Hidden when a strictly nearer rectangle strictly contains the midpoint.
@@ -46,9 +54,30 @@ export function hiddenLineRemoval(rects) {
       r.n < s.n && r.h[0] < mh && mh < r.h[1] && r.v[0] < mv && mv < r.v[1]);
   }
 
+  // §42 3b. A board with a groove in it arrives as two or three rectangles at
+  // the same depth, and the joins between them are not edges of anything —
+  // they are lines through the middle of one board. Dropped where the same
+  // panel lies on both sides of the segment at the same depth.
+  const solid = raw.filter((s) => s.panel);
+  if (solid.length) {
+    const EPS = 1e-7;
+    for (const s of raw) {
+      if (!s.panel || !s.visible) continue;
+      const mid = (s.a + s.b) / 2;
+      const covers = (dh, dv) => {
+        const [mh, mv] = s.orient === "h" ? [mid + dh, s.fixed + dv] : [s.fixed + dh, mid + dv];
+        return live.some((r) => r.panel === s.panel && r.n === s.n &&
+          r.h[0] < mh && mh < r.h[1] && r.v[0] < mv && mv < r.v[1]);
+      };
+      const [dh, dv] = s.orient === "h" ? [0, EPS] : [EPS, 0];
+      if (covers(dh, dv) && covers(-dh, -dv)) s.visible = null;    // neither seen nor hidden
+    }
+  }
+
   // 4. Dedupe; visible wins.
   const seen = new Map();
   for (const s of raw) {
+    if (s.visible === null) continue;
     const k = `${s.orient}|${s.fixed}|${s.a}|${s.b}`;
     const prev = seen.get(k);
     if (!prev) seen.set(k, s);

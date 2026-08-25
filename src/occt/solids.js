@@ -62,8 +62,29 @@ export function panelBox(oc, panel) {
  * so the edge treatment lands on exactly the edges the analytic model says it
  * should, and OCCT is left to make the surface rather than decide the joinery.
  */
+/**
+ * §42 The grooves a rebate cuts, taken out of the panel.
+ *
+ * The kernel needs no cell decomposition — the notches are boxes and a boolean
+ * cut is what a boolean cut is for. Overlapping notches cut the same material
+ * twice, which costs nothing and removes it once.
+ */
+export function cutNotches(oc, shape, panel) {
+  let result = shape;
+  for (const n of panel.notches ?? []) {
+    const tool = new oc.BRepPrimAPI_MakeBox_4(
+      new oc.gp_Pnt_3(n.x[0], n.y[0], n.z[0]),
+      new oc.gp_Pnt_3(n.x[1], n.y[1], n.z[1])).Shape();
+    result = new oc.BRepAlgoAPI_Cut_3(result, tool, new oc.Message_ProgressRange_1()).Shape();
+  }
+  return result;
+}
+
 export function panelSolid(oc, panel, bevels = {}, fittings = []) {
-  const shape = panelBox(oc, panel);
+  // §42 Before the bevels: a groove in the inner face and a round on an outer
+  // edge do not meet, and cutting the box down first gives the fillet less
+  // shape to chew on.
+  const shape = cutNotches(oc, panelBox(oc, panel), panel);
   const all = Object.entries(bevels).filter(([, t]) => t && t.type !== "none" && t.radius > 0);
   const mitres = all.filter(([, t]) => t.type === "mitre");
   const wanted = all.filter(([, t]) => t.type !== "mitre");

@@ -323,6 +323,12 @@ table.cuts .edgework { color: var(--ink-3); }
 
 /* Reinforcement: a side picker per layer, then a row per added panel. */
 .stack + .stack { margin-top: 10px; }
+
+/* §42 One rebated panel: the sides it is let into, how deep, and what was cut. */
+.rebate { margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--line); }
+.rebate .stack-head { margin-bottom: 4px; }
+.rebate .chip-group { flex-wrap: wrap; margin-bottom: 5px; }
+.rebate .note { margin: 4px 0 0; color: var(--ink-3); font-size: 10.5px; }
 .stack-head { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
 .stack-head h3 {
   margin: 0; flex: 1; font-size: 10.5px; font-weight: 400;
