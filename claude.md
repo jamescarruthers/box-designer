@@ -3439,3 +3439,66 @@ the block will not fit, it closes up and the words get smaller, down to 3 mm and
 no further, and it moves off the middle of the board, which is where an edge
 mark writes its own words. A note nobody can read is worse than a note that is
 slightly in the way.
+
+## §49 The isometric of a rebated board
+
+Reported as "the isometric view in the drawing is now really messed up" on a box
+with a rebate, extra layers and mitred corners: boards drawn through each other,
+faces missing, lines where the board has no edge.
+
+Nothing recent caused it. The drawing is byte-for-byte what it was before §46,
+and the fault is as old as §42 — but a rebate on a *doubler* is a rebate on a
+board you can see the back of, so §46 made it visible.
+
+### One primitive doing two jobs
+
+`subtractBoxes` cuts a box at every face of every notch, keeps the cells whose
+middle is outside them, and then **glues the survivors back together**. Merging
+is right for a volume and right for a rectangle to hatch: a board with one
+groove down it comes back as two boxes rather than a wall of them.
+
+It is wrong for a surface. Glued cells meet along *part* of a face — a full-width
+cell above, two narrow ones below — and the isometric cancelled the faces inside
+the material by matching them exactly, four corners against four corners. A face
+shared by only half its area never matched, so it stayed in: faces drawn inside
+the board, and holes in the surface where the missing partner should have closed
+it. The grid cells always meet a whole face at a time, so `subtractCells` is now
+the primitive and `subtractBoxes` is `merge(subtractCells(…))`.
+
+### And a loft that could not do it
+
+The other half was worse. A grooved panel was drawn as a loft from the outer
+face inward, stopping short, with the grooved slab bolted on behind it — two
+surfaces built by different rules meeting along a plane neither knew about, and
+the slab was a plain rectangle that knew nothing of the mitres the loft had
+already cut. A board that was mitred *and* grooved was drawn as two shapes that
+disagreed about where the board stops.
+
+So a grooved panel is now drawn as the cells it is left as, each clipped by the
+mitres exactly as §44 clips them for the volume. Same decomposition, same
+clipping, same shape. What is given up is a fillet on a grooved board, which
+draws with a square arris: a closed solid with a sharp corner beats a rounded
+one with holes in its surface, and the two are hardly ever asked for together.
+
+### The two invariants
+
+Both are the ones that caught §44, and they are what the tests assert now:
+
+- **The surface closes.** Every edge of the drawn surface has a face on each
+  side of it. An edge with one face is a hole; an edge with three is a face
+  that should not be there.
+- **The drawing is the model.** What the drawn faces enclose is the volume
+  `panelSolidVolume` gives the panel — checked wherever the model can speak,
+  which is every panel without a fillet or a chamfer on it.
+
+Over every prominence preset × four edge treatments × a rebate on each face ×
+exploded and not: 2,040 panels, every surface closed, every volume exact.
+
+### Not the paint order, and not the layout
+
+Both were suspected and both were cleared, which is worth writing down so the
+next person does not start there. The painter's order was checked by casting
+rays along the view direction and comparing what they meet first: no panel is
+painted in front of one it is behind. The layout was checked over 75 sheets:
+the isometric never leaves its cell, never touches another view, never reaches
+the title block.
