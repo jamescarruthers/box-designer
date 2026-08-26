@@ -346,8 +346,11 @@ function sheetEntities(sheet, originX) {
   const shift = (points) => points.map(([x, y]) => [x + originX, y]);
 
   out.push(polyline("SHEET", shift([[0, 0], [SL, 0], [SL, SW], [0, SW]])));
+  // §50 And which colour of it, where the sheet is sold in a range: the caption
+  // is what tells somebody which board to put on the bed.
+  const colour = sheet.colourNote ? ` ${sheet.colourNote.toUpperCase()}` : "";
   out.push(text("LABEL", originX + SL / 2, SW + 30, 24,
-    `SHEET ${sheet.index} — ${sheet.material} ${sheet.thickness}mm — ${SL} x ${SW}`));
+    `SHEET ${sheet.index} — ${sheet.material}${colour} ${sheet.thickness}mm — ${SL} x ${SW}`));
 
   for (const part of sheet.parts) {
     out.push(polyline("OUTLINE", shift(partOutline(part, SW))));

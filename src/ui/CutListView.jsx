@@ -34,7 +34,7 @@ export default function CutListView({ derived, title, colourByFace, selected, ho
         <div className="scroll">
           <table className="cuts">
             <thead>
-              <tr><th>Part</th><th>Face</th><th>Layer</th><th>Length</th><th>Width</th><th>Th.</th><th>Material</th><th>Grain</th><th>Edge</th><th>Rebate</th></tr>
+              <tr><th>Part</th><th>Face</th><th>Layer</th><th>Length</th><th>Width</th><th>Th.</th><th>Material</th><th>Colour</th><th>Grain</th><th>Edge</th><th>Rebate</th></tr>
             </thead>
             <tbody>
               {rows.map((r) => (
@@ -46,6 +46,12 @@ export default function CutListView({ derived, title, colourByFace, selected, ho
                   <td className="num">{fmt(r.width)}</td>
                   <td className="num">{fmt(r.thickness)}</td>
                   <td>{r.material}</td>
+                  {/* §50 The colour it is cut from, in the colour it is: a chip
+                      of the board beside the name a merchant would answer to. */}
+                  <td className="colour-cell">
+                    <i className="chip" style={{ background: r.colour }} />
+                    {r.colourNote}
+                  </td>
                   <td>{r.grainLocked ? "Locked" : "Free"}</td>
                   <td className="edgework">{r.edgeWork}</td>
                   <td className="rebate-cell">{r.rebate ?? ""}</td>
@@ -58,8 +64,11 @@ export default function CutListView({ derived, title, colourByFace, selected, ho
           <table className="by-material">
             <tbody>
               {totals.byMaterial.map((m) => (
-                <tr key={`${m.materialId}${m.thickness}`}>
-                  <th scope="row">{m.material} {fmt(m.thickness)} mm</th>
+                <tr key={`${m.materialId}${m.thickness}${m.colourNote}`}>
+                  <th scope="row">
+                    {m.colourNote ? <i className="chip" style={{ background: m.colour }} /> : null}
+                    {m.material} {fmt(m.thickness)} mm{m.colourNote ? ` · ${m.colourNote}` : ""}
+                  </th>
                   <td className="num">{m.parts} part{m.parts === 1 ? "" : "s"}</td>
                   <td className="num">{m.area.toFixed(3)} m²</td>
                   <td className="num">{m.sheets} sheet{m.sheets === 1 ? "" : "s"}</td>
@@ -138,7 +147,7 @@ export default function CutListView({ derived, title, colourByFace, selected, ho
                 ))}
               </svg>
               <figcaption>
-                Sheet {sh.index} · {sh.material} {fmt(sh.thickness)} mm · {sh.stock[0]} × {sh.stock[1]} ·
+                Sheet {sh.index} · {sh.material} {fmt(sh.thickness)} mm{sh.colourNote ? ` ${sh.colourNote}` : ""} · {sh.stock[0]} × {sh.stock[1]} ·
                 yield {(sheetYield(sh) * 100).toFixed(0)}%
                 {sh.overflow ? " · a part is larger than the sheet" : ""}
               </figcaption>

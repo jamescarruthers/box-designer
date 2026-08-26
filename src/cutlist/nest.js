@@ -1,6 +1,9 @@
-// §5 Nesting: shelf packing, first fit decreasing, grouped by material and thickness.
+// §5 Nesting: shelf packing, first fit decreasing, grouped by the stock a part
+// is cut from — material, thickness, and §50 the colour where the sheet is sold
+// in a range of them.
 
 import { DEFAULT_KERF } from "../model/constants.js";
+import { stockKey } from "./cutlist.js";
 
 /**
  * Shelf packing. Sort by width descending, place along the current shelf, open
@@ -15,10 +18,12 @@ export function nest(rows, { stock, stockFor, kerf = DEFAULT_KERF, grainLocked =
   const sheets = [];
 
   // 6 mm cladding cannot share a sheet with an 18 mm carcass, and 18 mm MDF
-  // cannot share one with 18 mm ply either.
+  // cannot share one with 18 mm ply either. §50 Nor can a green sheet of
+  // Valchromat share one with a red: they are two boards, and nesting them
+  // together lays out parts nobody can cut.
   const groups = new Map();
   for (const r of rows) {
-    const k = `${r.materialId ?? "default"}|${r.thickness}`;
+    const k = stockKey(r);
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(r);
   }
@@ -27,7 +32,7 @@ export function nest(rows, { stock, stockFor, kerf = DEFAULT_KERF, grainLocked =
     b[1][0].thickness - a[1][0].thickness || String(a[0]).localeCompare(String(b[0])));
 
   for (const [, group] of ordered) {
-    const { materialId, thickness, material } = group[0];
+    const { materialId, thickness, material, colour, colourNote } = group[0];
     const [SL, SW] = sizeOf(materialId);
     const queue = [...group].sort((a, b) => b.width - a.width || b.length - a.length);
     const made = [];
@@ -37,7 +42,8 @@ export function nest(rows, { stock, stockFor, kerf = DEFAULT_KERF, grainLocked =
         ? [[r.length, r.width, false]]
         : [[r.length, r.width, false], [r.width, r.length, true]];
       if (!place(made, r, options, SL, SW, kerf)) {
-        made.push({ materialId, material, thickness, stock: [SL, SW], shelves: [], parts: [] });
+        made.push({ materialId, material, thickness, colour, colourNote,
+          stock: [SL, SW], shelves: [], parts: [] });
         if (!place(made, r, options, SL, SW, kerf)) {
           made[made.length - 1].overflow = true;             // larger than the sheet
         }
