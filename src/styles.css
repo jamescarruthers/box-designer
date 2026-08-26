@@ -137,6 +137,14 @@ input:focus, select:focus { outline: 1px solid var(--accent); border-color: var(
   gap: 7px; background: var(--bg-3); padding: 3px 5px; border-radius: 2px;
 }
 .rank { color: var(--ink-3); text-align: center; }
+
+/* §53 A layer ordered differently from the box, set off from the box's own
+   order so the two lists are never read as one. */
+.layer-prominence {
+  margin-top: 8px; padding-top: 7px; border-top: 1px dashed var(--line-2);
+  display: flex; flex-direction: column; gap: 5px;
+}
+.layer-prominence .note { margin: 0; }
 .moves { display: flex; gap: 2px; }
 .moves button {
   background: transparent; border: 1px solid var(--line-2); color: var(--ink-3);
@@ -163,12 +171,21 @@ input:focus, select:focus { outline: 1px solid var(--accent); border-color: var(
 .edge-key em { font-style: normal; color: var(--ink-3); font-size: 9px; }
 .edge-row select, .edge-row input { padding: 2px 5px; font-size: 10.5px; }
 
-.side-foot { padding: 10px 14px; border-top: 1px solid var(--line); }
+.side-foot { padding: 10px 14px; border-top: 1px solid var(--line); display: flex; gap: 6px; }
 .side-foot button {
   background: var(--bg-3); border: 1px solid var(--line-2); color: var(--ink-2);
   padding: 4px 10px; border-radius: 2px; cursor: pointer;
 }
 .side-foot button:hover { color: var(--accent); border-color: var(--accent); }
+
+/* §52 The file input the Open button drives. Off screen rather than
+   `display: none`, which in some browsers takes the click with it. */
+.hidden-file { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.file-note {
+  margin: 0; padding: 7px 14px 10px; border-top: 1px solid var(--line); background: var(--bg-2);
+}
+.file-note.bad { color: var(--warning); }
+.file-note .linkish { margin-left: 6px; }
 
 /* ------------------------------------------------------------------ main */
 

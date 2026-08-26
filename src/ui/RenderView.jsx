@@ -19,6 +19,7 @@ import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { panelPositions, explodeOffset } from "../three/panelGeometry.js";
 import { panelBevels } from "../model/bevel.js";
+import { slug } from "./file.js";
 import {
   equirectStudio, sweepProfile, sweepShade, framing, surfaceOf, lampDirection,
   RIG, SWEEP, EXPOSURE,
@@ -602,7 +603,7 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
     if (!state.tracer?.running) state.render();
     const a = document.createElement("a");
     a.href = state.renderer.domElement.toDataURL("image/png");
-    a.download = `${(design?.title ?? "box").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-render.png`;
+    a.download = `${slug(design?.title ?? "box")}-render.png`;
     a.click();
   };
 

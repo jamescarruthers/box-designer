@@ -1,6 +1,6 @@
 // §2 The core model. One rule, applied three times.
 
-import { FACES, AXIS, PAIR, AXES, rankFromOrder } from "./constants.js";
+import { FACES, AXIS, PAIR, AXES, LAYERS, rankFromOrder } from "./constants.js";
 
 /** Tile the walls of `box` with panels of thickness `th`, ordered by `rank`. */
 export function shellLayer(box, th, rank, name) {
@@ -158,6 +158,13 @@ export function solve(input) {
   const doubler = fillFaces(input.doubler);
   const lagging = fillFaces(input.lagging);
   const rank = input.rank ?? rankFromOrder(input.order ?? FACES);
+  // §53 Prominence is a property of a layer, not only of the box. Each layer
+  // tiles the cavity the one outside it left, and which of its panels runs past
+  // which is a question asked afresh at that depth: a doubler ring stiffening a
+  // baffle wants its own answer, and the carcass around it is not affected by
+  // the answer either way. Unstated, a layer follows the box — which is what
+  // every design before this one meant.
+  const ranks = Object.fromEntries(LAYERS.map((l) => [l, input.ranks?.[l] ?? rank]));
   const wall = wallOf(cladding, thickness, doubler, lagging);
   const board = boardOf(cladding, thickness, doubler);
 
@@ -165,12 +172,12 @@ export function solve(input) {
     input.round === undefined ? 0.1 : input.round);
   const env = envelopeBox(E);
 
-  const L0 = shellLayer(env, cladding, rank, "cladding");
-  const L1 = shellLayer(L0.inner, thickness, rank, "shell");
-  const L2 = shellLayer(L1.inner, doubler, rank, "doubler");
+  const L0 = shellLayer(env, cladding, ranks.cladding, "cladding");
+  const L1 = shellLayer(L0.inner, thickness, ranks.shell, "shell");
+  const L2 = shellLayer(L1.inner, doubler, ranks.doubler, "doubler");
   // §30 One rule, applied four times now. The lining is the innermost of them,
   // so the cavity is the air inside the lagging rather than inside the boards.
-  const L3 = shellLayer(L2.inner, lagging, rank, "lagging");
+  const L3 = shellLayer(L2.inner, lagging, ranks.lagging, "lagging");
 
   const panels = [...L0.parts, ...L1.parts, ...L2.parts, ...L3.parts];
   const cavity = L3.inner;
@@ -179,7 +186,7 @@ export function solve(input) {
   const closure = envVolume - (panels.reduce((a, p) => a + boxVolume(p.box), 0) + boxVolume(cavity));
 
   return {
-    E, env, rank, wall, board, cladding, thickness, doubler, lagging,
+    E, env, rank, ranks, wall, board, cladding, thickness, doubler, lagging,
     panels, cavity, envVolume,
     carcassInner: L1.inner,          // inside the shell, before doublers
     boardInner: L2.inner,            // §30 inside the boards, before the lining

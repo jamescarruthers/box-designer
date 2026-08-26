@@ -9,6 +9,7 @@ import { blankBevels } from "../model/bevel.js";
 import { panelBlank } from "../model/solver.js";
 import { sheetYield } from "../cutlist/nest.js";
 import { sheetsDxf } from "../cutlist/dxf.js";
+import { download, slug } from "./file.js";
 
 const Swatch = ({ row, on }) => on
   ? <i className="swatch" style={{ background: panelColour(row.panel) }} /> : null;
@@ -29,7 +30,7 @@ export default function CutListView({ derived, title, colourByFace, selected, ho
       <section className="col col-list">
         <header>
           <h2>Cut list</h2>
-          <button type="button" onClick={() => download(cutListCsv(rows), "cut-list.csv")}>Export CSV</button>
+          <button type="button" onClick={() => download(cutListCsv(rows), "cut-list.csv", "text/csv;charset=utf-8")}>Export CSV</button>
         </header>
         <div className="scroll">
           <table className="cuts">
@@ -289,14 +290,4 @@ function Fittings({ row, longest }) {
   );
 }
 
-/** A filename that will not need renaming before it can be emailed. */
-const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "box";
 
-function download(text, name, type = "text/csv;charset=utf-8") {
-  const blob = new Blob([text], { type });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-}
