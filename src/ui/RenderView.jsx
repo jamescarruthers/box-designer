@@ -18,6 +18,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { panelPositions, explodeOffset } from "../three/panelGeometry.js";
+import { explodeSink } from "../model/explode.js";
 import { panelBevels } from "../model/bevel.js";
 import { slug } from "./file.js";
 import {
@@ -493,14 +494,23 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
 
     // On the floor rather than through it: the geometry is centred on the box's
     // middle, and a photograph of a box hovering is a photograph of a mistake.
-    state.box.position.set(0, E.z / 2, 0);
+    //
+    // §54 What stands on the floor is the *lowest piece*, which once the box is
+    // exploded is not its underside. The bottom panels move down along their own
+    // normals — the bottom cladding by 1.5× the amount asked for — and the floor
+    // does not go with them, so an exploded box was half sunk into it. The
+    // assembly is lifted by however far its lowest piece has dropped, and the
+    // camera and the lamps are aimed that much higher so it stays in frame.
+    const sink = explodeSink(sol.panels, explode);
+    const stand = E.z / 2 - sink;
+    state.box.position.set(0, stand, 0);
 
     const view = framing(E);
     // §51 An exploded box reaches further than the box does, and the sweep
     // behind it and the shadow map over it are both fitted to this.
     state.radius = Math.hypot(E.x, E.y, E.z) + explode * 2;
     state.sweep.add(sweepMesh(view.sweep, state.radius));
-    state.target.set(...view.target);
+    state.target.set(view.target[0], view.target[1] - sink, view.target[2]);
     if (!state.framed) {
       // Where it was left, if it has been here before; the framing of §19 if
       // this is the first time.
@@ -517,7 +527,7 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
       const light = state.lights[name];
       const [lx, ly, lz] = lampDirection(lamp);
       light.position.set(lx * throwDistance, ly * throwDistance, lz * throwDistance);
-      light.target.position.set(0, E.z / 2, 0);
+      light.target.position.set(0, stand, 0);
       light.target.updateMatrixWorld();
       if (!lamp.casts) continue;
       // Fitted to the box *and the shadow it throws*, which is the part that

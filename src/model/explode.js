@@ -22,6 +22,19 @@ export function explodeShift(panel, amount) {
   return { x: 0, y: 0, z: 0, [a]: d };
 }
 
+/**
+ * §54 How far the lowest piece of an exploded assembly reaches below the floor
+ * the box stands on, as a number that is zero or negative.
+ *
+ * The envelope stands on z = 0, so an un-exploded box's lowest point is 0. Once
+ * it comes apart the bottom panels move down along their own normals — the
+ * bottom cladding by 1.5× the amount asked for — and anything standing the box
+ * on a floor has to stand it on *this* instead of on its underside, or the
+ * pieces that moved go through the floor.
+ */
+export const explodeSink = (panels, amount) =>
+  Math.min(0, ...panels.map((p) => p.box.z[0] + explodeShift(p, amount).z));
+
 /** The same shift applied to a panel's box, which is what the views draw. */
 export function explodedBox(panel, amount) {
   if (!(amount > 0)) return panel.box;

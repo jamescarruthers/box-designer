@@ -301,6 +301,13 @@ export function applyRebates(panels, rebates) {
       }
 
       // Nothing is refused after this point, so the panel can grow.
+      //
+      // §54 What it grew from is kept. A tongue reaches into the panel beside
+      // it, so a rebated panel's box is no longer clear of its neighbours' —
+      // and "clear of each other along at least one axis" is what the
+      // isometric's back-to-front sort is built on. The core is the box that
+      // still has that property: the panel as prominence left it.
+      if (!panel.core) panel.core = Object.fromEntries(AXES.map((b) => [b, [...panel.box[b]]]));
       const [axis, sign] = AXIS[side];
       if (sign < 0) panel.box[axis][0] -= depth; else panel.box[axis][1] += depth;
       // §44 Every panel the slab reaches takes its share of it, overlaps and

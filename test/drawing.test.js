@@ -1,15 +1,16 @@
 import { describe, it, expect } from "vitest";
 import { solve } from "../src/model/solver.js";
 import { uniformEdges, noEdges, edgeOwners, fullLengthEdges, applicableEdges, panelBevels } from "../src/model/bevel.js";
-import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
+import { DEFAULT_DESIGN, derive, addPanel, setRebateSides, setLayerOrder } from "../src/ui/design.js";
 import { buildOrthoView, classifyEdges, FACE_SIDE } from "../src/drawing/views.js";
 import { buildSection, HATCH } from "../src/drawing/section.js";
-import { buildIsometric, isoProject, ISO_Z, inFront, paintOrder, panelQuads } from "../src/drawing/iso.js";
+import { buildIsometric, isoProject, ISO_Z, ISO_X, ISO_Y, ISO_EYE, inFront, paintOrder,
+  panelQuads, isoSurfaces } from "../src/drawing/iso.js";
 import { explodeShift, explodedBox } from "../src/model/explode.js";
 import { newFitting } from "../src/model/fittings.js";
 import { VIEW_EXTENT } from "../src/drawing/hlr.js";
-import { EDGES, PROMINENCE_PRESETS } from "../src/model/constants.js";
-import { panelSolidVolume, subtractCells, subtractBoxes } from "../src/model/rebate.js";
+import { EDGES, FACES, PROMINENCE_PRESETS } from "../src/model/constants.js";
+import { panelSolidVolume, subtractCells, subtractBoxes, rebateSides } from "../src/model/rebate.js";
 import { buildSheet, HIDDEN_DASH } from "../src/drawing/sheet.js";
 
 const box = () => solve({
@@ -541,5 +542,136 @@ describe("§49 the isometric draws the board the model has", () => {
     }
     // Shared faces come in pairs; the rest are the outside of the shape.
     for (const n of faceKeys.values()) expect(n).toBeLessThanOrEqual(2);
+  });
+});
+
+/**
+ * §54 Nothing is drawn in front of what stands in front of it.
+ *
+ * The isometric is a painter's algorithm: faces are drawn back to front and
+ * whatever is painted last wins. §42's rebates broke that twice over, and the
+ * only honest test is the one that asks the picture itself — sample points
+ * across it, work out every face that covers each point and how far along the
+ * eye it is, and check that the face painted LAST there is the NEAREST.
+ */
+describe("§54 the isometric paints back to front", () => {
+  const depthAt = (v) => v.x - v.y + v.z;
+
+  /** Is the projected point inside the projected polygon? */
+  const inside = (pts, p) => {
+    let hit = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const a = pts[i], b = pts[j];
+      if ((a.y > p.y) !== (b.y > p.y) &&
+          p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) hit = !hit;
+    }
+    return hit;
+  };
+
+  /** How deep along the eye a face is at a point in the picture. */
+  function depthOnFace(pts, p) {
+    const [A, B, C] = pts;
+    const u = { x: B.x - A.x, y: B.y - A.y, z: B.z - A.z };
+    const w = { x: C.x - A.x, y: C.y - A.y, z: C.z - A.z };
+    const n = { x: u.y * w.z - u.z * w.y, y: u.z * w.x - u.x * w.z, z: u.x * w.y - u.y * w.x };
+    // Any point that projects to p will do: fix z = 0 and invert the projection.
+    const sum = p.x / ISO_X, diff = p.y / ISO_Y;
+    const o = { x: (sum + diff) / 2, y: (sum - diff) / 2, z: 0 };
+    const denom = n.x * ISO_EYE.x + n.y * ISO_EYE.y + n.z * ISO_EYE.z;
+    if (Math.abs(denom) < 1e-12) return null;             // edge-on to the eye
+    const t = ((A.x - o.x) * n.x + (A.y - o.y) * n.y + (A.z - o.z) * n.z) / denom;
+    return depthAt({ x: o.x + ISO_EYE.x * t, y: o.y + ISO_EYE.y * t, z: o.z + ISO_EYE.z * t });
+  }
+
+  /**
+   * Every visible face of the whole picture, in the order it is painted — from
+   * the same function the drawing is built from, so this is what was drawn and
+   * not a second opinion about what should have been.
+   */
+  function painted(sol, explode) {
+    return isoSurfaces(sol, { explode }).flatMap(({ panel, visible }) =>
+      visible.map((q) => ({ name: `${panel.layer}|${panel.face}`, pts: q.pts, flat: q.pts.map(isoProject) })));
+  }
+
+  /** Samples where something solid is showing through something in front. */
+  function showingThrough(sol, explode = 0, grid = 90) {
+    const faces = painted(sol, explode);
+    const all = faces.flatMap((f) => f.flat);
+    const lo = { x: Math.min(...all.map((p) => p.x)), y: Math.min(...all.map((p) => p.y)) };
+    const hi = { x: Math.max(...all.map((p) => p.x)), y: Math.max(...all.map((p) => p.y)) };
+    const bad = [];
+    for (let gx = 0; gx < grid; gx++) {
+      for (let gy = 0; gy < grid; gy++) {
+        const p = { x: lo.x + ((hi.x - lo.x) * (gx + 0.5)) / grid,
+                    y: lo.y + ((hi.y - lo.y) * (gy + 0.5)) / grid };
+        let last = null, lastDepth = 0, best = -Infinity, bestFace = null;
+        for (const f of faces) {
+          if (!inside(f.flat, p)) continue;
+          const d = depthOnFace(f.pts, p);
+          if (d === null) continue;
+          last = f; lastDepth = d;
+          if (d > best) { best = d; bestFace = f; }
+        }
+        if (last && best - lastDepth > 1e-6) {
+          bad.push({ over: last.name, under: bestFace.name, by: best - lastDepth });
+        }
+      }
+    }
+    return bad;
+  }
+
+  /** A box wearing `layers`, with the two least prominent faces rebated in. */
+  function rebatedBox(preset, layers) {
+    let d = setLayerOrder(DEFAULT_DESIGN, "shell", preset.order);
+    for (const layer of layers) for (const f of FACES) d = addPanel(d, layer, f);
+    for (const face of preset.order.slice(4)) {
+      for (const key of [face, ...(layers.includes("doubler") ? [`doubler|${face}`] : [])]) {
+        d = setRebateSides(d, key, Object.fromEntries(rebateSides(face).map((s) => [s, true])));
+      }
+    }
+    return derive(d).sol;
+  }
+
+  it("draws a plain box with nothing showing through", () => {
+    expect(showingThrough(box())).toEqual([]);
+  });
+
+  it("keeps a rebated board behind the panels standing in front of it", () => {
+    // The bug: a rebate grows the panel into its neighbours, so its box is no
+    // longer clear of theirs along any axis — and the sort that decides what
+    // covers what is built on exactly that. The rebated top was painted last,
+    // over the front and the side it is let into.
+    const sol = rebatedBox(PROMINENCE_PRESETS[0], ["doubler"]);
+    expect(sol.panels.filter((p) => p.notches?.length).length).toBeGreaterThan(0);
+    const bad = showingThrough(sol);
+    expect(bad.filter((b) => b.over.split("|")[1] !== b.under.split("|")[1])).toEqual([]);
+  });
+
+  it("keeps the inside of a groove behind the board it is cut into", () => {
+    // The other half of the bug, within one panel: a grooved board is not
+    // convex, so its own faces overlap on the paper, and the step at the bottom
+    // of the rebate was painted over the face it is cut into.
+    const sol = rebatedBox(PROMINENCE_PRESETS[0], ["doubler"]);
+    const bad = showingThrough(sol).filter((b) => b.over === b.under);
+    expect(bad).toEqual([]);
+  });
+
+  it("holds over every preset, layer stack and explode", () => {
+    let worst = 0;
+    for (const preset of PROMINENCE_PRESETS) {
+      for (const layers of [[], ["doubler"], ["cladding", "doubler"]]) {
+        const sol = rebatedBox(preset, layers);
+        for (const explode of [0, 30, 80]) {
+          const bad = showingThrough(sol, explode, 60);
+          // What is left is the sliver where a groove wall meets the tongue
+          // filling it: two panels interlock there, and no order of whole
+          // panels is right for both. It is a line, not a face — never more
+          // than a handful of samples out of 3,600.
+          expect(bad.length).toBeLessThanOrEqual(4);
+          worst = Math.max(worst, bad.length);
+        }
+      }
+    }
+    expect(worst).toBeLessThanOrEqual(4);
   });
 });
