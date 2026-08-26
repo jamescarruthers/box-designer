@@ -17,7 +17,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { panelPositions } from "../three/panelGeometry.js";
+import { panelPositions, explodeOffset } from "../three/panelGeometry.js";
 import { panelBevels } from "../model/bevel.js";
 import {
   equirectStudio, sweepProfile, sweepShade, framing, surfaceOf, lampDirection,
@@ -26,8 +26,13 @@ import {
 import { loadPathTracer, START_SAMPLES } from "../render/pathtrace.js";
 import { driverBody, driverMaterial, placeDriver, driversOn } from "../three/driver.js";
 import { boardMaps, boxUV, textureFor, TINT_ONE } from "../three/texture.js";
+import { makeCamera, frameParallel, parallelPlanes } from "../three/camera.js";
 
 const POLAR_MIN = 0.12, POLAR_MAX = Math.PI / 2 - 0.02;   // never below the floor
+
+/** §51 The field a perspective camera renders at, and the field a parallel one
+ *  is framed from so that switching between them does not jump. */
+const FOV = 35;
 
 /**
  * How finely the sweep is divided: along the curve, and across the width.
@@ -170,7 +175,8 @@ function boardTexture(cache, materialId) {
  * the 3D view's: the two are different views of the same box and each keeps
  * its own.
  */
-export default function RenderView({ derived, design, solids, hidden, camera: kept, onCamera, drivers = true, onDrivers }) {
+export default function RenderView({ derived, design, solids, hidden, camera: kept, onCamera,
+  drivers = true, onDrivers, explode = 0, onExplode, parallel = false, onParallel }) {
   const host = useRef(null);
   const gl = useRef(null);
   // Read once, on mount: the view restores where it was left and then owns its
@@ -179,6 +185,10 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
   const keptRef = useRef(kept);
   const onCameraRef = useRef(onCamera);
   onCameraRef.current = onCamera;
+  // §51 Read at mount and swapped in place afterwards, so the effect that
+  // builds the scene does not depend on which projection is on.
+  const parallelRef = useRef(parallel);
+  parallelRef.current = parallel;
   const [trace, setTrace] = useState({ status: "off" });
   // §19 How far to refine before stopping. A render is finished when it stops
   // getting better, and that is a judgement about the picture rather than a
@@ -199,7 +209,7 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
     el.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(35, 1, 1, 100000);
+    let camera = makeCamera(parallelRef.current, FOV);
     const target = new THREE.Vector3();
     const sph = { az: -0.68, pol: 1.02, dist: 1200 };
 
@@ -250,14 +260,25 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
     gl.current = state;
 
     const place = () => {
-      camera.position.set(
+      const cam = state.camera;
+      cam.position.set(
         sph.dist * Math.sin(sph.pol) * Math.sin(sph.az),
         sph.dist * Math.cos(sph.pol),
         sph.dist * Math.sin(sph.pol) * Math.cos(sph.az)).add(target);
-      camera.lookAt(target);
-      camera.near = Math.max(1, (sph.dist - state.radius) * 0.6);
-      camera.far = (sph.dist + state.radius) * 4;
-      camera.updateProjectionMatrix();
+      cam.lookAt(target);
+      if (cam.isOrthographicCamera) {
+        // §51 Framed on what the perspective camera saw, and with depth planes
+        // that may sit behind the eye — parallel rays do not care where along
+        // them the camera is, only what gets clipped.
+        frameParallel(cam, sph.dist, (state.width || 1) / (state.height || 1), FOV);
+        const { near, far } = parallelPlanes(sph.dist, state.radius);
+        cam.near = near;
+        cam.far = far;
+      } else {
+        cam.near = Math.max(1, (sph.dist - state.radius) * 0.6);
+        cam.far = (sph.dist + state.radius) * 4;
+      }
+      cam.updateProjectionMatrix();
 
       // The studio follows the camera round. A rotation about y by the camera's
       // own azimuth puts the sweep's wall exactly opposite the lens, which is
@@ -286,7 +307,7 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
         state.width = w;
         state.height = h;
         renderer.setSize(w, h, false);
-        camera.aspect = w / h;
+        if (!state.camera.isOrthographicCamera) state.camera.aspect = w / h;
         state.tracer?.setSize(w, h);
       }
       place();
@@ -308,7 +329,7 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
       // A stopped render is held, not discarded: the picture somebody watched
       // converge stays up until they move the view.
       if (state.tracer?.held && state.tracer.hasImage) return state.tracer.present();
-      renderer.render(scene, camera);
+      renderer.render(scene, state.camera);
     };
     state.render = render;
     const invalidate = () => { if (!state.raf) state.raf = requestAnimationFrame(render); };
@@ -433,6 +454,10 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
       const mesh = new THREE.Mesh(geometry, material);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
+      // §51 Exploded as it is placed rather than moved afterwards: the studio,
+      // the shadows and the path tracer all read the scene as it stands, and a
+      // panel moved after they were fitted is a panel none of them knows about.
+      mesh.position.set(...explodeOffset(panel, explode));
       state.box.add(mesh);
 
       for (const tube of solids?.[index]?.tubes ?? []) {
@@ -443,6 +468,7 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
         const tm = new THREE.Mesh(tg, material.clone());
         tm.castShadow = true;
         tm.receiveShadow = true;
+        tm.position.set(...explodeOffset(panel, explode));
         state.box.add(tm);
       }
     });
@@ -455,7 +481,12 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
         const mesh = new THREE.Mesh(driverBody(fitting), driverMaterial());
         mesh.castShadow = true;
         mesh.receiveShadow = true;
-        state.box.add(placeDriver(mesh, fitting, panel, E));
+        // A driver goes with the panel it is bolted to, in a group of its own so
+        // that where it sits on that panel is not overwritten by the explode.
+        const group = new THREE.Group();
+        group.position.set(...explodeOffset(panel, explode));
+        group.add(placeDriver(mesh, fitting, panel, E));
+        state.box.add(group);
       }
     }
 
@@ -464,7 +495,9 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
     state.box.position.set(0, E.z / 2, 0);
 
     const view = framing(E);
-    state.radius = Math.hypot(E.x, E.y, E.z);
+    // §51 An exploded box reaches further than the box does, and the sweep
+    // behind it and the shadow map over it are both fitted to this.
+    state.radius = Math.hypot(E.x, E.y, E.z) + explode * 2;
     state.sweep.add(sweepMesh(view.sweep, state.radius));
     state.target.set(...view.target);
     if (!state.framed) {
@@ -504,7 +537,18 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
     // that no longer exists.
     if (state.tracer) { state.tracer.dispose(); state.tracer = null; setTrace({ status: "off" }); }
     state.moved?.();
-  }, [derived, solids, drivers]);
+  }, [derived, solids, drivers, explode]);
+
+  // §51 Swap the projection in place. The tracer goes with it: a different
+  // projection is a different picture, not a better one, and the samples it had
+  // taken are of the other.
+  useEffect(() => {
+    const state = gl.current;
+    if (!state || Boolean(state.camera.isOrthographicCamera) === Boolean(parallel)) return;
+    state.camera = makeCamera(parallel, FOV);
+    if (state.tracer) { state.tracer.dispose(); state.tracer = null; setTrace({ status: "off" }); }
+    state.moved?.();
+  }, [parallel]);
 
   useEffect(() => { if (!hidden) gl.current?.invalidate?.(); }, [hidden]);
 
@@ -576,6 +620,25 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
           <div className="chip-group">
             <button type="button" className={drivers ? "on" : ""} aria-pressed={drivers}
               onClick={() => onDrivers(!drivers)}>Drivers</button>
+          </div>
+        ) : null}
+        {/* §51 A photograph of a box is a box seen from somewhere, and the far
+            end is smaller than the near one. A parallel picture is the box
+            itself — worth having where the picture is what gets judged. */}
+        {onParallel ? (
+          <div className="chip-group">
+            <button type="button" className={parallel ? "" : "on"} aria-pressed={!parallel}
+              onClick={() => onParallel(false)}>Perspective</button>
+            <button type="button" className={parallel ? "on" : ""} aria-pressed={parallel}
+              onClick={() => onParallel(true)}>Parallel</button>
+          </div>
+        ) : null}
+        {onExplode ? (
+          <div className="chip-group explode">
+            <label htmlFor="render-explode">Explode</label>
+            <input id="render-explode" type="range" min="0" max="120" value={explode}
+              onChange={(e) => onExplode(Number(e.target.value))} />
+            <output>{explode}</output>
           </div>
         ) : null}
         <div className="chip-group samples">

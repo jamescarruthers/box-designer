@@ -13,6 +13,7 @@ import { edgeProxies, pickableEdges, pickRadius, hintSize } from "../three/edgeP
 import { toThree } from "../three/panelGeometry.js";
 import { panelColour, SELECT_EMISSIVE, ACCENT } from "../three/palette.js";
 import { lineWidthFor, nearFar, sceneRadius } from "../three/lines.js";
+import { makeCamera, frameParallel, parallelPlanes } from "../three/camera.js";
 
 /** §4 The two depth comparisons the edge passes use. */
 const DEPTH_FUNC = { "less-equal": THREE.LessEqualDepth, greater: THREE.GreaterDepth };
@@ -66,15 +67,24 @@ export const RENDER_STYLES = [
 ];
 
 // §4 View presets: [azimuth, polar].
+/** §51 The field of view a perspective camera uses, and the one a parallel
+ *  camera sizes its frustum from so the two frame the box alike. */
+export const FOV = 38;
+
 export const VIEW_PRESETS = {
   iso: [-0.72, 1.08], front: [0, Math.PI / 2], top: [0, 0.08], right: [Math.PI / 2, Math.PI / 2],
 };
 
 const POLAR_MIN = 0.06, POLAR_MAX = Math.PI - 0.06;
 
-export default function Viewport({ derived, style, colourByFace, explode, selected, onSelect, hovered, hidden, camera, solids, edgeTool, onEdgePick, drivers = true }) {
+export default function Viewport({ derived, style, colourByFace, explode, parallel = false, selected, onSelect, hovered, hidden, camera, solids, edgeTool, onEdgePick, drivers = true }) {
   const host = useRef(null);
   const gl = useRef(null);
+
+  // §51 Read at mount and on every change: the camera is built once and then
+  // swapped in place, so the effect that builds the scene must not depend on it.
+  const parallelRef = useRef(parallel);
+  parallelRef.current = parallel;
 
   // The renderer, scene and camera outlive every re-render, so the camera
   // survives a switch to another mode.
@@ -86,7 +96,10 @@ export default function Viewport({ derived, style, colourByFace, explode, select
     el.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(38, 1, 1, 100000);
+    // §51 Held on the state rather than in a closure: the projection can be
+    // switched, and a camera captured by `render` would go on being the one
+    // that was built at mount.
+    let camera = makeCamera(parallelRef.current, FOV);
     const target = new THREE.Vector3();
     const sph = { az: VIEW_PRESETS.iso[0], pol: VIEW_PRESETS.iso[1], dist: 900 };
 
@@ -112,21 +125,27 @@ export default function Viewport({ derived, style, colourByFace, explode, select
     gl.current = state;
 
     const place = () => {
+      const cam = state.camera;
       const p = new THREE.Vector3(
         sph.dist * Math.sin(sph.pol) * Math.sin(sph.az),
         sph.dist * Math.cos(sph.pol),
         sph.dist * Math.sin(sph.pol) * Math.cos(sph.az));
-      camera.position.copy(p.add(target));
-      camera.lookAt(target);
+      cam.position.copy(p.add(target));
+      cam.lookAt(target);
 
       // §17 The depth planes follow the camera. Left at 1 and 100000 the buffer
       // spends its precision on empty space, and two surfaces a millimetre
       // apart — a panel and the edge drawn along it — cannot be told apart.
-      const { near, far } = nearFar(sph.dist, state.radius + target.length());
-      if (near !== camera.near || far !== camera.far) {
-        camera.near = near;
-        camera.far = far;
-        camera.updateProjectionMatrix();
+      const reach = state.radius + target.length();
+      const { near, far } = cam.isOrthographicCamera
+        ? parallelPlanes(sph.dist, reach) : nearFar(sph.dist, reach);
+      if (cam.isOrthographicCamera) {
+        frameParallel(cam, sph.dist, (state.width || 1) / (state.height || 1), FOV);
+      }
+      if (near !== cam.near || far !== cam.far || cam.isOrthographicCamera) {
+        cam.near = near;
+        cam.far = far;
+        cam.updateProjectionMatrix();
       }
     };
     state.place = place;
@@ -142,8 +161,8 @@ export default function Viewport({ derived, style, colourByFace, explode, select
         state.width = w;
         state.height = h;
         renderer.setSize(w, h, false);
-        camera.aspect = w / h;
-        camera.updateProjectionMatrix();
+        if (!state.camera.isOrthographicCamera) state.camera.aspect = w / h;
+        state.camera.updateProjectionMatrix();
       }
       // Cheap, and the alternative is a line that keeps its old width until
       // something else happens to rebuild the scene.
@@ -152,7 +171,7 @@ export default function Viewport({ derived, style, colourByFace, explode, select
         if (!m.resolution.equals(buffer)) m.resolution.copy(buffer);
       }
       place();
-      renderer.render(scene, camera);
+      renderer.render(scene, state.camera);
     };
     state.render = render;
     const invalidate = () => { if (!state.raf) state.raf = requestAnimationFrame(render); };
@@ -168,7 +187,7 @@ export default function Viewport({ derived, style, colourByFace, explode, select
       const r = el.getBoundingClientRect();
       ray.setFromCamera(new THREE.Vector2(
         ((e.clientX - r.left) / r.width) * 2 - 1,
-        -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+        -((e.clientY - r.top) / r.height) * 2 + 1), state.camera);
       return ray;
     };
     const edgeUnder = (e) => {
@@ -191,8 +210,8 @@ export default function Viewport({ derived, style, colourByFace, explode, select
       drag.x = e.clientX; drag.y = e.clientY;
       drag.moved += Math.abs(dx) + Math.abs(dy);
       if (drag.pan) {
-        const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
-        const up = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
+        const right = new THREE.Vector3().setFromMatrixColumn(state.camera.matrix, 0);
+        const up = new THREE.Vector3().setFromMatrixColumn(state.camera.matrix, 1);
         const k = sph.dist * 0.0016;
         target.addScaledVector(right, -dx * k).addScaledVector(up, dy * k);
       } else {
@@ -433,6 +452,17 @@ export default function Viewport({ derived, style, colourByFace, explode, select
 
     state.invalidate?.();
   }, [derived, style, colourByFace, explode, selected, hovered, onSelect, solids, drivers]);
+
+  // §51 Swap the projection without touching anything else: the orbit, the
+  // target and the scene are all where they were, so the box does not move —
+  // only the rays change.
+  useEffect(() => {
+    const state = gl.current;
+    if (!state || Boolean(state.camera.isOrthographicCamera) === Boolean(parallel)) return;
+    state.camera = makeCamera(parallel, FOV);
+    state.place?.();
+    state.invalidate?.();
+  }, [parallel]);
 
   // Fit the camera when the box size changes.
   const sizeKey = `${derived.sol.E.x}|${derived.sol.E.y}|${derived.sol.E.z}`;

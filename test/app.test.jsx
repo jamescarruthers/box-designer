@@ -280,6 +280,26 @@ describe("the app", () => {
     expect(errors).toEqual([]);
   });
 
+  it("§51 switches the 3D view to a parallel projection, and back", () => {
+    errors.length = 0;
+    const { container } = render(<App />);
+    const chip = (name) => within(container.querySelector(".pane-view .chips"))
+      .getByRole("button", { name });
+    // Perspective to begin with: a picture of the box from somewhere.
+    expect(chip("Perspective").getAttribute("aria-pressed")).toBe("true");
+    expect(chip("Parallel").getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.click(chip("Parallel"));
+    expect(chip("Parallel").getAttribute("aria-pressed")).toBe("true");
+    expect(chip("Perspective").getAttribute("aria-pressed")).toBe("false");
+    // The scene survives the swap — it is the camera that changed, not the box.
+    expect(container.querySelector(".viewport")).toBeTruthy();
+
+    fireEvent.click(chip("Perspective"));
+    expect(chip("Perspective").getAttribute("aria-pressed")).toBe("true");
+    expect(errors).toEqual([]);
+  });
+
   it("switches the starting point between dimensions and volume", () => {
     const { container } = render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "Dimensions" }));
