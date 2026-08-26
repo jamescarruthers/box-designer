@@ -44,6 +44,10 @@ export function buildCutList(sol, edges, owners, { specFor, grainLocked }) {
         grainLocked: locked,
         grain: locked ? "Locked, along length" : "Free",
         edgeWork: panelEdgeNote(r.bevels) || "—",
+        // §48 The treatments themselves, not just the sentence about them: the
+        // DXF marks the edge each one is on, and it cannot get that back out
+        // of "45° all".
+        bevels: r.bevels,
         panel: r.panel,
         panelIndex: r.index,
       };

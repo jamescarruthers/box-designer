@@ -781,7 +781,16 @@ export function fittingIssues(fittings, panels, owners, cavity) {
   return msgs;
 }
 
-export function describeFitting(f) {
+/**
+ * §48 `thickness` is the board this fitting is being described *on*, where the
+ * caller knows it. It decides one thing: whether a bolt hole's depth is worth
+ * saying. §36 hands a panel the depth that is left for it rather than clamping,
+ * so a hole given 30 mm from the mounting face arrives at an 18 mm board still
+ * carrying 30 — which is a through hole, and reading "30 deep" off a note is an
+ * instruction to drill the bench. Without a thickness the depth is the user's
+ * own figure from the mounting face, and that is worth saying as it stands.
+ */
+export function describeFitting(f, thickness = null) {
   if (f.type !== "port") {
     // §24 The depth is in the line because it is the number that decides
     // whether the driver fits the box at all, and it is the one dimension of a
@@ -792,17 +801,22 @@ export function describeFitting(f) {
     const back = flare ? `, ${flare.type === "fillet" ? "R" : ""}${round1(flare.radius)}${flare.type === "fillet" ? "" : " mm"} ${flare.type} inside` : "";
     // §33 A panel the bolts do not reach has a cutout and nothing else, and
     // reading "0 × ⌀5 on 147 PCD" off a cut list is worse than reading nothing.
-    const ring = f.bolts > 0 ? `, ${f.bolts} × ⌀${f.boltHole} on ${f.pcd} PCD` : ", cutout only";
+    // §36 A blind hole says how deep it is; a through hole says nothing, which
+    // is what a hole has always said here.
+    const blind = Number.isFinite(f.boltDeep) && f.boltDeep > 0
+      && !(thickness > 0 && f.boltDeep >= thickness - 1e-9);
+    const deep = blind ? ` × ${round1(f.boltDeep)} deep` : "";
+    const ring = f.bolts > 0 ? `, ${f.bolts} × ⌀${f.boltHole}${deep} on ${f.pcd} PCD` : ", cutout only";
     return `Driver ⌀${f.cutout} in a ⌀${round1(driverOuter(f))} frame, ${round1(driverDepth(f))} deep`
       + `${ring}${back}`;
   }
   return hasTube(f) ? `Port ⌀${f.diameter} × ${f.length}` : `Port ⌀${f.diameter}, no tube`;
 }
 
-/** A short note for the cut list. */
-export function fittingNote(fittings) {
+/** A short note for the cut list, about the board it is a note on. */
+export function fittingNote(fittings, thickness = null) {
   if (!fittings.length) return "";
-  return fittings.map(describeFitting).join("; ");
+  return fittings.map((f) => describeFitting(f, thickness)).join("; ");
 }
 
 /**

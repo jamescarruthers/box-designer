@@ -561,7 +561,9 @@ describe("the app", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
     const notes = [...container.querySelectorAll("figcaption")]
       .map((el) => el.textContent).filter((t) => /Driver/.test(t));
-    expect(notes.filter((t) => /5 × ⌀5 on 147 PCD/.test(t))).toHaveLength(1);
+    // §48 And the note says how deep, because a hole that stops inside the
+    // board is a different hole from one that goes through it.
+    expect(notes.filter((t) => /5 × ⌀5 × 12 deep on 147 PCD/.test(t))).toHaveLength(1);
     expect(notes.filter((t) => /cutout only/.test(t))).toHaveLength(1);
   });
 

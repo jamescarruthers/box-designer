@@ -3370,3 +3370,72 @@ was offered birch ply. It had been unreachable in practice because the sidebar's
 lagging stack was the one anybody used, and it was passed the linings. The
 inspector now picks from the linings for a lagging panel, and a test holds it
 there.
+
+## §48 The DXF says what each thing is
+
+The file was a set of paths and six part numbers. Everything that made a path
+what it is — how big the hole is, whether it goes through, which edge is
+mitred — was in the cut list on another screen, or in a column that names faces
+of a box while the shop is holding a rectangle that has been turned to nest.
+
+Three additions, all on one new layer.
+
+### The mitre is marked on the edge it is on
+
+It is still not *cut* here and cannot be: a blank is a rectangle, and the 45° is
+a saw set over after the parts come off the sheet. But which edge it goes on is
+a fact about the blank, and the file could not say it.
+
+So each treatment gets a line just inside its own edge and a word beside it:
+`MITRE 45° THIS EDGE`, `R8 ROUND THIS EDGE`, `6 CHAMFER THIS EDGE`. The mapping
+is the one piece of real work: a bevel is named by the face across the corner
+from it, and `blankBevels` turns that into a side of the rectangle. `toBlank`
+(§10) flips the width axis so a template laid on the board is not mirrored,
+which puts the *high* end of that axis at the **top** of the blank — the one
+place in the codebase that has to remember it, and the one thing the test
+pins down.
+
+The part templates carry the same mark, because the template and the file are
+the same drawing.
+
+### Every hole says what it is
+
+Read off the fitting as this panel gets it (§33, §36), so the notes describe
+the board in front of you rather than the fitting in the abstract:
+
+- `⌀116 CUTOUT THRU`, `⌀68 BORE THRU`
+- `5 x ⌀5 12 DEEP ON ⌀147 PCD`, or `THRU` where it goes through
+- `R8 FILLET IN BACK OF CUTOUT`, which is a second setting-up from the other side
+- `GROOVE 6 DEEP`, written along the groove
+- the blank's own `327 x 218 x 18`, under its number, and `GRAIN ALONG LENGTH`
+  where the grain is locked
+
+`THRU` and a depth are the only two things a hole can be. §36 hands a panel the
+depth that is *left* for it rather than clamping, so a hole given 30 mm from the
+mounting face arrives at an 18 mm board still carrying 30 — and a note reading
+"30 DEEP" there is an instruction to drill the bench. Anything at or past the
+board reads as `THRU`. The cut list's own note learned the same rule, and now
+carries the depth as well.
+
+`%%C` and `%%D` are R12's escapes for the diameter and degree signs. The
+literal characters would be a gamble on the code page at the far end.
+
+### Nothing that is cut has words on it
+
+The new layer is `NOTES`, and every word in the file is on it or on `LABEL`.
+`OUTLINE`, `HOLES` and `REBATE` stay paths and nothing else, so a CAM seat can
+import the cutting layers and machine them without filtering out a wall of text
+that a post-processor would otherwise try to cut.
+
+That rule is also what makes the annotation safe to be generous with: it is a
+layer somebody switches off.
+
+### Where a note goes
+
+Under the holes it describes, or over them, whichever side of the fitting has
+more clear board — and never into the band along an edge that carries a mark,
+because two notes written over each other are one note fewer than none. Where
+the block will not fit, it closes up and the words get smaller, down to 3 mm and
+no further, and it moves off the middle of the board, which is where an edge
+mark writes its own words. A note nobody can read is worse than a note that is
+slightly in the way.

@@ -5,6 +5,7 @@ import { fmt, cutListCsv } from "../cutlist/cutlist.js";
 import { panelColour, ACCENT, REBATE } from "../three/palette.js";
 import { blankCircles, blankBoltCircles } from "../model/fittings.js";
 import { blankNotches } from "../model/rebate.js";
+import { blankBevels } from "../model/bevel.js";
 import { panelBlank } from "../model/solver.js";
 import { sheetYield } from "../cutlist/nest.js";
 import { sheetsDxf } from "../cutlist/dxf.js";
@@ -89,6 +90,7 @@ export default function CutListView({ derived, title, colourByFace, selected, ho
                   stroke={selected === r.panelIndex || hovered === r.panelIndex ? ACCENT : "currentColor"}
                   strokeWidth={longest * 0.006} />
                 <Rebates row={r} longest={longest} />
+                <EdgeMarks row={r} longest={longest} />
                 <Fittings row={r} longest={longest} />
                 <text x={r.length / 2} y={r.width / 2} textAnchor="middle" dominantBaseline="middle"
                   fontSize={longest * 0.05}>{r.id}</text>
@@ -187,6 +189,52 @@ function Rebates({ row, longest }) {
     </g>
   );
 }
+
+/**
+ * §48 Which edge the saw is set over for, marked on the edge.
+ *
+ * The same mark the DXF carries, for the same reason: "45° front, back" in the
+ * cut list names faces of the box, and what is in front of somebody is a
+ * rectangle that has been turned to nest. A line inside the edge and a word
+ * beside it answers the question the words cannot.
+ *
+ * Drawn in the annotation idiom the bolt circle and the hole centres use —
+ * `currentColor`, thin, and dashed — because none of it is cut on the sheet.
+ */
+function EdgeMarks({ row, longest }) {
+  if (!row.bevels || !Object.keys(row.bevels).length) return null;
+  const blank = panelBlank(row.panel);
+  const marks = blankBevels(row.panel, row.bevels, blank);
+  if (!marks.length) return null;
+  const inset = Math.max(2, Math.min(10, Math.min(blank.length, blank.width) * 0.08));
+  const size = Math.min(longest * 0.026, Math.min(blank.length, blank.width) * 0.1);
+  const inward = { top: [0, 1], bottom: [0, -1], left: [1, 0], right: [-1, 0] };
+  return (
+    <g className="edge-marks" stroke="currentColor" opacity="0.75">
+      {marks.map((m) => {
+        const [[x1, y1], [x2, y2]] = m.seg;
+        const [ix, iy] = inward[m.side];
+        const [ax, ay] = [x1 + ix * inset + Math.sign(x2 - x1) * inset, y1 + iy * inset + Math.sign(y2 - y1) * inset];
+        const [bx, by] = [x2 + ix * inset + Math.sign(x1 - x2) * inset, y2 + iy * inset + Math.sign(y1 - y2) * inset];
+        const [tx, ty] = [(x1 + x2) / 2 + ix * (inset + size), (y1 + y2) / 2 + iy * (inset + size)];
+        const down = m.side === "left" || m.side === "right";
+        return (
+          <g key={m.side}>
+            <line x1={ax} y1={ay} x2={bx} y2={by} strokeWidth={longest * 0.004}
+              strokeDasharray={`${longest * 0.014} ${longest * 0.007}`} />
+            <text x={tx} y={ty} textAnchor="middle" dominantBaseline="middle" stroke="none"
+              fill="currentColor" fontSize={size}
+              transform={down ? `rotate(-90 ${tx} ${ty})` : undefined}>{bevelLabel(m)}</text>
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/** The same three treatments, in the app's shorter voice. */
+const bevelLabel = (b) => (b.type === "mitre" ? "45° mitre"
+  : b.type === "fillet" ? `R${fmt(b.radius)} round` : `${fmt(b.radius)} chamfer`);
 
 /**
  * §10: "without cutouts the part templates are rectangles and not worth

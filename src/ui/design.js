@@ -494,7 +494,9 @@ export function derive(design) {
       const rebate = notchNote(r.panel);
       const row = rebate ? { ...r, rebateNote: rebate, rebate: notchSpec(r.panel) } : r;
       return on.length
-        ? { ...row, fittings: on, fittingNote: fittingNote(on) }
+        // §48 The note is about this board, so it is told which board: a bolt
+        // depth is only worth saying where the hole stops inside it.
+        ? { ...row, fittings: on, fittingNote: fittingNote(on, r.thickness) }
         : { ...row, fittings: [], fittingNote: "" };
     });
   const sheets = nest(rows, {

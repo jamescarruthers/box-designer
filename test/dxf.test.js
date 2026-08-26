@@ -7,7 +7,9 @@
  */
 import { describe, it, expect } from "vitest";
 import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
-import { sheetsDxf, placeOnSheet, partHoles, partRebates, LAYERS, SHEET_GAP } from "../src/cutlist/dxf.js";
+import { sheetsDxf, placeOnSheet, partHoles, partRebates, partEdgeMarks, partNotes,
+  fittingNotes, bevelText, LAYERS, SHEET_GAP, DIA, DEG } from "../src/cutlist/dxf.js";
+import { blankBevels } from "../src/model/bevel.js";
 import { blankNotches } from "../src/model/rebate.js";
 import { panelBlank } from "../src/model/solver.js";
 import { PROMINENCE_PRESETS } from "../src/model/constants.js";
@@ -110,11 +112,18 @@ describe("§14 what is in it is what gets cut", () => {
   });
 
   it("puts nothing on the cutting layers but geometry", () => {
+    // §48 The rule that lets a shop import the cutting layers and machine them:
+    // OUTLINE, HOLES and REBATE are paths and nothing else, and every word in
+    // the file is on LABEL or NOTES, neither of which is cut.
     const dxf = dxfOf(withDriver());
-    for (const e of dxf.entities.filter((x) => x.layer === "OUTLINE" || x.layer === "HOLES")) {
-      expect(e.type === "POLYLINE" || e.type === "CIRCLE").toBe(true);
+    for (const e of dxf.entities.filter((x) => ["OUTLINE", "HOLES", "REBATE"].includes(x.layer))) {
+      expect(e.type === "POLYLINE" || e.type === "CIRCLE" || e.type === "VERTEX"
+        || e.type === "SEQEND").toBe(true);
     }
-    for (const e of dxf.entities.filter((x) => x.type === "TEXT")) expect(e.layer).toBe("LABEL");
+    for (const e of dxf.entities.filter((x) => x.type === "TEXT")) {
+      expect(["LABEL", "NOTES"]).toContain(e.layer);
+    }
+    for (const e of dxf.entities.filter((x) => x.type === "LINE")) expect(e.layer).toBe("NOTES");
   });
 });
 
@@ -282,3 +291,182 @@ describe("§45 rebates in the file", () => {
     expect(partRebates(part, 2440)[0].points).toContainEqual(corner);
   });
 });
+
+describe("§48 the edge treatments, marked on the edge they are on", () => {
+  const VERTICALS = ["front|left", "back|left", "front|right", "back|right"];
+  const mitred = (extra = {}) => derive({ ...DEFAULT_DESIGN,
+    edge: { type: "none", radius: 12, perEdge: true,
+      by: { ...Object.fromEntries(VERTICALS.map((k) => [k, { type: "mitre", radius: 18 }])), ...extra } } });
+
+  it("puts a treatment on the blank edge it actually falls on", () => {
+    // The mapping, on its own: a bevel is named by the face across the corner
+    // from it, and a blank has two ends and two long edges. `toBlank` flips the
+    // width axis so a template is not mirrored, which puts the *high* end of
+    // that axis at the top of the blank — the one thing here worth a test.
+    const panel = { face: "front", box: { x: [0, 300], y: [0, 18], z: [0, 200] } };
+    const blank = panelBlank(panel);              // 300 along x, 200 across z
+    const sides = blankBevels(panel, {
+      left: { type: "mitre", radius: 18 },
+      right: { type: "chamfer", radius: 6 },
+      top: { type: "fillet", radius: 8 },
+      bottom: { type: "mitre", radius: 18 },
+    }, blank);
+    expect(sides.map((s) => `${s.side}:${s.face}`))
+      .toEqual(["top:top", "bottom:bottom", "left:left", "right:right"]);
+    // Each mark runs along its own edge and nowhere else.
+    const seg = (side) => sides.find((s) => s.side === side).seg;
+    expect(seg("top")).toEqual([[0, 0], [300, 0]]);
+    expect(seg("bottom")).toEqual([[0, 200], [300, 200]]);
+    expect(seg("left")).toEqual([[0, 0], [0, 200]]);
+    expect(seg("right")).toEqual([[300, 0], [300, 200]]);
+  });
+
+  it("marks a mitre on the sheet, inside the part it belongs to", () => {
+    const d = mitred();
+    const marked = d.rows.filter((r) => Object.keys(r.bevels ?? {}).length);
+    expect(marked.length).toBeGreaterThan(0);
+
+    let seen = 0;
+    for (const sheet of d.sheets) {
+      for (const part of sheet.parts) {
+        const marks = partEdgeMarks(part, sheet.stock[1]);
+        expect(marks).toHaveLength(Object.keys(part.row.bevels ?? {}).length);
+        for (const m of marks) {
+          seen++;
+          expect(m.text).toBe(`MITRE 45${DEG} THIS EDGE`);
+          // The mark and its words are on the board, not beside it.
+          for (const [x, y] of [...m.points, m.at]) {
+            expect(x).toBeGreaterThanOrEqual(part.x - 1e-6);
+            expect(x).toBeLessThanOrEqual(part.x + part.w + 1e-6);
+            expect(y).toBeGreaterThanOrEqual(sheet.stock[1] - (part.y + part.h) - 1e-6);
+            expect(y).toBeLessThanOrEqual(sheet.stock[1] - part.y + 1e-6);
+          }
+        }
+      }
+    }
+    expect(seen).toBe(marked.reduce((a, r) => a + Object.keys(r.bevels).length, 0));
+  });
+
+  it("turns the mark with the part, the way the holes turn", () => {
+    const d = mitred();
+    const row = d.rows.find((r) => Object.keys(r.bevels ?? {}).length);
+    const marks = (rotated) => partEdgeMarks({ row, x: 60, y: 30,
+      w: rotated ? row.width : row.length, h: rotated ? row.length : row.width, rotated }, 2440);
+    const flat = marks(false), turned = marks(true);
+    expect(turned).toHaveLength(flat.length);
+    // A mark that ran across the sheet now runs down it, and the other way
+    // round: a quarter turn is a quarter turn.
+    for (let i = 0; i < flat.length; i++) {
+      const run = (m) => Math.abs(m.points[1][0] - m.points[0][0]);
+      const rise = (m) => Math.abs(m.points[1][1] - m.points[0][1]);
+      expect(run(turned[i])).toBeCloseTo(rise(flat[i]), 6);
+      expect(rise(turned[i])).toBeCloseTo(run(flat[i]), 6);
+      expect(Math.abs(turned[i].rotation - flat[i].rotation)).toBeCloseTo(90, 6);
+    }
+  });
+
+  it("never writes a note upside down", () => {
+    const d = mitred();
+    for (const sheet of d.sheets) {
+      for (const part of sheet.parts) {
+        for (const m of partEdgeMarks(part, sheet.stock[1])) {
+          expect(m.rotation).toBeGreaterThan(-90.001);
+          expect(m.rotation).toBeLessThanOrEqual(90.001);
+        }
+      }
+    }
+  });
+
+  it("says which treatment it is, in the words a shop uses", () => {
+    expect(bevelText({ type: "mitre", radius: 18 })).toBe(`MITRE 45${DEG} THIS EDGE`);
+    expect(bevelText({ type: "fillet", radius: 8 })).toBe("R8 ROUND THIS EDGE");
+    expect(bevelText({ type: "chamfer", radius: 6 })).toBe("6 CHAMFER THIS EDGE");
+  });
+
+  it("writes the mark into the file, on the layer that cuts nothing", () => {
+    const dxf = readDxf(sheetsDxf(mitred().sheets));
+    const lines = dxf.entities.filter((e) => e.type === "LINE");
+    expect(lines.length).toBeGreaterThan(0);
+    for (const l of lines) expect(l.layer).toBe("NOTES");
+    expect(dxf.entities.some((e) => e.type === "TEXT" && e.text === `MITRE 45${DEG} THIS EDGE`)).toBe(true);
+  });
+});
+
+describe("§48 what each hole is", () => {
+  const driverAt = (extra = {}) => ({ ...driver, boltDeep: null, ...extra });
+  const withFittings = (fittings) => derive({ ...DEFAULT_DESIGN, fittings });
+  const notesOf = (d, face = "front") =>
+    fittingNotes(d.rows.find((r) => r.face === face && r.layer === "shell")).flatMap((f) => f.lines);
+
+  it("gives a diameter, and says the hole goes through", () => {
+    const lines = notesOf(withFittings([driverAt()]));
+    expect(lines[0]).toBe(`${DIA}116 CUTOUT THRU`);
+    expect(lines).toContain(`5 x ${DIA}5 THRU ON ${DIA}147 PCD`);
+  });
+
+  it("gives a blind hole its depth instead", () => {
+    // §36 A bolt hole drilled 12 into an 18 mm board is not a through hole, and
+    // a file that says THRU has told the shop to drill the bench.
+    const lines = notesOf(withFittings([driverAt({ boltDeep: 12 })]));
+    expect(lines).toContain(`5 x ${DIA}5 12 DEEP ON ${DIA}147 PCD`);
+    expect(lines.join(" ")).not.toMatch(/5 x .*THRU/);
+  });
+
+  it("reads a depth at or past the board as through, because that is what it is", () => {
+    // §36 hands on the overshoot rather than clamping it: 24 into an 18 mm
+    // board is a through hole, and it should read like one.
+    const lines = notesOf(withFittings([driverAt({ boltDeep: 24 })]));
+    expect(lines).toContain(`5 x ${DIA}5 THRU ON ${DIA}147 PCD`);
+  });
+
+  it("names a port's bore and a driver's flare", () => {
+    const port = withFittings([{ id: "p1", type: "port", face: "back",
+      at: { a: 108.85, b: 80 }, diameter: 68, length: 150, wall: 3 }]);
+    expect(notesOf(port, "back")).toEqual([`${DIA}68 BORE THRU`]);
+
+    const flared = withFittings([driverAt({ flare: { type: "fillet", radius: 8 } })]);
+    expect(notesOf(flared)).toContain("R8 FILLET IN BACK OF CUTOUT");
+  });
+
+  it("says nothing about a hole this panel does not have", () => {
+    // §33 A cutout that goes through the baffle and no further leaves the
+    // doubler behind it bare — and a note about bolt holes that are not there
+    // is worse than no note at all.
+    const d = derive({ ...DEFAULT_DESIGN,
+      doubler: { front: { material: "birch", thickness: 18 } },
+      fittings: [driverAt({ boltsThrough: 1 })] });
+    const doubler = d.rows.find((r) => r.face === "front" && r.layer === "doubler");
+    const lines = fittingNotes(doubler).flatMap((f) => f.lines);
+    expect(lines).toEqual([`${DIA}116 CUTOUT THRU`]);
+  });
+
+  it("writes the size of the board under its number, and the groove's depth along it", () => {
+    const d = derive({ ...DEFAULT_DESIGN, preset: "sides", order: PROMINENCE_PRESETS[1].order,
+      rebate: { front: { depth: 6, sides: { left: true, right: true, top: true, bottom: true } } } });
+    const sheet = d.sheets[0];
+    const part = sheet.parts.find((p) => p.row.panel.notches?.length);
+    const notes = partNotes(part, sheet.stock[1]);
+    expect(notes[0].text).toBe(`${fmtOf(part.row.length)} x ${fmtOf(part.row.width)} x ${fmtOf(part.row.thickness)}`);
+    const groove = notes.find((t) => /GROOVE/.test(t.text));
+    expect(groove.text).toBe("GROOVE 6 DEEP");
+    // Along the groove, which for a groove taller than it is wide means turned.
+    expect([0, 90]).toContain(groove.rotation);
+  });
+
+  it("keeps every note on the sheet it belongs to", () => {
+    const d = derive({ ...DEFAULT_DESIGN, fittings: [driverAt({ boltDeep: 12 })] });
+    for (const sheet of d.sheets) {
+      for (const part of sheet.parts) {
+        for (const t of partNotes(part, sheet.stock[1])) {
+          expect(t.x).toBeGreaterThanOrEqual(0);
+          expect(t.x).toBeLessThanOrEqual(sheet.stock[0]);
+          expect(t.y).toBeGreaterThanOrEqual(0);
+          expect(t.y).toBeLessThanOrEqual(sheet.stock[1]);
+        }
+      }
+    }
+  });
+});
+
+/** The cut list's own number formatting, which the notes share. */
+const fmtOf = (v) => (Math.abs(v - Math.round(v)) < 1e-9 ? String(Math.round(v)) : v.toFixed(1));

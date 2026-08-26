@@ -220,3 +220,44 @@ export function panelEdgeNote(bevels) {
     // A panel has four sides; all four alike is the common case and reads better short.
     `${k} ${sides.length === 4 ? "all" : sides.join(", ")}`).join("; ");
 }
+
+/**
+ * §48 Which edge of the blank each of a panel's treatments falls on.
+ *
+ * A bevel is named by the face across the corner from it, which is how the box
+ * thinks about it and no use at all to somebody holding the board. A blank is a
+ * rectangle with two ends and two long edges, and what they need to know is
+ * which of the four the saw is set over for.
+ *
+ * The blank's frame is `toBlank`'s (§10): x along the length from the low end
+ * of the length axis, y **down** from the top. That y is flipped so a template
+ * laid on the board is not mirrored — which means the *high* end of the width
+ * axis is the top of the blank, and this is the one place that has to remember
+ * it.
+ *
+ * Returns each treatment with the side it lands on and the segment it runs
+ * along, in blank coordinates, so a drawing can mark the edge rather than
+ * describe it.
+ */
+export function blankBevels(panel, bevels, blank) {
+  const order = { top: 0, bottom: 1, left: 2, right: 3 };
+  const out = [];
+  for (const [face, t] of Object.entries(bevels ?? {})) {
+    if (!t || t.type === "none") continue;
+    const [axis, sign] = AXIS[face] ?? [];
+    const side = axis === blank.lengthAxis ? (sign < 0 ? "left" : "right")
+      : axis === blank.widthAxis ? (sign > 0 ? "top" : "bottom")
+      : null;
+    // A panel's own thickness axis has no edge on the blank — nothing is ever
+    // filed under it, and a treatment that somehow named it is not this
+    // board's business.
+    if (!side) continue;
+    const { length: L, width: W } = blank;
+    const seg = side === "top" ? [[0, 0], [L, 0]]
+      : side === "bottom" ? [[0, W], [L, W]]
+      : side === "left" ? [[0, 0], [0, W]]
+      : [[L, 0], [L, W]];
+    out.push({ side, face, type: t.type, radius: t.radius, seg });
+  }
+  return out.sort((a, b) => order[a.side] - order[b.side]);
+}
