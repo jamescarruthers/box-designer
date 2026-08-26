@@ -12,7 +12,8 @@ const lines = fs.readFileSync(inFile, "utf8").split("\n");
 const pairs = [];
 for (let i = 0; i + 1 < lines.length; i += 2) pairs.push([Number(lines[i]), lines[i + 1]]);
 
-const COLOUR = { OUTLINE: "#e8eef4", HOLES: "#e8703a", SHEET: "#5a6b7c", LABEL: "#7fd18a" };
+const COLOUR = { OUTLINE: "#e8eef4", HOLES: "#e8703a", SHEET: "#5a6b7c", LABEL: "#7fd18a",
+  REBATE: "#3fb6c4", NOTES: "#e8b84b" };
 const entities = [];
 let section = null, e = null;
 for (let i = 0; i < pairs.length; i++) {
@@ -25,7 +26,10 @@ for (let i = 0; i < pairs.length; i++) {
   if (code === 8) e.layer = value;
   else if (code === 10) e.x = Number(value);
   else if (code === 20) e.y = Number(value);
+  else if (code === 11) e.x2 = Number(value);
+  else if (code === 21) e.y2 = Number(value);
   else if (code === 40) e.r = Number(value);
+  else if (code === 50) e.rot = Number(value);
   else if (code === 1) e.text = value;
 }
 const shapes = [];
@@ -34,8 +38,12 @@ for (const x of entities) {
   else if (x.type !== "SEQEND") shapes.push(x);
 }
 
-const xs = shapes.flatMap((s) => (s.v.length ? s.v.map((p) => p[0]) : [s.x - (s.r ?? 0), s.x + (s.r ?? 0)]));
-const ys = shapes.flatMap((s) => (s.v.length ? s.v.map((p) => p[1]) : [s.y - (s.r ?? 0), s.y + (s.r ?? 0)]));
+const rad = (s) => (s.type === "CIRCLE" ? s.r ?? 0 : 0);
+// A third argument of "parts" frames the parts rather than the stock, which is
+// how you look at the annotation on a nest that fills a tenth of a sheet.
+const framed = process.argv[4] === "parts" ? shapes.filter((s) => s.layer !== "SHEET") : shapes;
+const xs = framed.flatMap((s) => (s.v.length ? s.v.map((p) => p[0]) : [s.x - rad(s), s.x + rad(s)]));
+const ys = framed.flatMap((s) => (s.v.length ? s.v.map((p) => p[1]) : [s.y - rad(s), s.y + rad(s)]));
 const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
 const pad = 80;
 const svg = [`<svg xmlns="http://www.w3.org/2000/svg" width="1400" viewBox="${x0 - pad} ${-y1 - pad} ${x1 - x0 + pad * 2} ${y1 - y0 + pad * 2}">`,
@@ -46,9 +54,16 @@ for (const s of shapes) {
     svg.push(`<polygon points="${s.v.map(([x, y]) => `${x},${-y}`).join(" ")}" fill="none" stroke="${c}" stroke-width="4"/>`);
   } else if (s.type === "CIRCLE") {
     svg.push(`<circle cx="${s.x}" cy="${-s.y}" r="${s.r}" fill="none" stroke="${c}" stroke-width="4"/>`);
+  } else if (s.type === "LINE") {
+    svg.push(`<line x1="${s.x}" y1="${-s.y}" x2="${s.x2}" y2="${-s.y2}" stroke="${c}" stroke-width="3"/>`);
   } else if (s.type === "TEXT") {
-    svg.push(`<text x="${s.x}" y="${-s.y}" fill="${c}" font-size="${28}" text-anchor="middle" font-family="monospace">${
-      s.text.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</text>`);
+    // §48 R12's escapes, drawn as what they mean. A rotation is anticlockwise
+    // in DXF and clockwise in SVG, so it changes sign with the flip.
+    const value = s.text.replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/%%C/g, "\u2300").replace(/%%D/g, "\u00b0");
+    const turn = s.rot ? ` transform="rotate(${-s.rot} ${s.x} ${-s.y})"` : "";
+    svg.push(`<text x="${s.x}" y="${-s.y}" fill="${c}" font-size="${s.r ?? 28}" text-anchor="middle"`
+      + ` dominant-baseline="middle" font-family="monospace"${turn}>${value}</text>`);
   }
 }
 svg.push("</svg>");

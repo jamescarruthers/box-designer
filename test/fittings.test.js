@@ -277,6 +277,21 @@ describe("through the app", () => {
     expect(describeFitting(design.fittings[0])).toBe("Driver ⌀116 in a ⌀162 frame, 78 deep, 5 × ⌀5 on 147 PCD");
     expect(describeFitting(design.fittings[1])).toBe("Port ⌀68 × 150");
   });
+
+  it("§48 says how deep a bolt hole goes only where it stops inside the board", () => {
+    const drilled = (boltDeep) => ({ ...design.fittings[0], boltDeep });
+    // A through hole says nothing, as it always has.
+    expect(describeFitting(drilled(null), 18)).toMatch(/5 × ⌀5 on 147 PCD$/);
+    // A blind one says how deep, because that is a different operation.
+    expect(describeFitting(drilled(12), 18)).toMatch(/5 × ⌀5 × 12 deep on 147 PCD$/);
+    // §36 hands a panel the depth that is left rather than clamping it, so a
+    // depth at or past the board is a through hole however it was typed.
+    expect(describeFitting(drilled(18), 18)).toMatch(/5 × ⌀5 on 147 PCD$/);
+    expect(describeFitting(drilled(24), 18)).toMatch(/5 × ⌀5 on 147 PCD$/);
+    // Told no board — the sidebar, where the depth is the user's own figure
+    // from the mounting face — it says what it was given.
+    expect(describeFitting(drilled(24))).toMatch(/5 × ⌀5 × 24 deep on 147 PCD$/);
+  });
 });
 
 /**
