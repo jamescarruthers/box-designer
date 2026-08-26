@@ -173,6 +173,21 @@ export function colourName(materialId, hex) {
   return found?.name ?? null;
 }
 
+/**
+ * §50 Which colour splits the stock, and which is only a finish.
+ *
+ * Valchromat in green and valchromat in red are two different sheets: parts in
+ * one cannot be nested with parts in the other, and a cut list that does not
+ * say which is which cannot be taken to a merchant. Birch ply painted red is
+ * one sheet and a tin of paint, and splitting the nest for it would waste
+ * board for nothing.
+ *
+ * So a colour is part of the stock exactly where the material is sold in a
+ * range of them.
+ */
+export const stockColour = (materialId, colour) =>
+  (paletteFor(materialId) ? String(colour ?? "").toLowerCase() : "");
+
 export const materialById = (id) =>
   MATERIALS.find((m) => m.id === id) ?? LAGGINGS.find((m) => m.id === id) ?? MATERIALS[0];
 

@@ -3502,3 +3502,42 @@ rays along the view direction and comparing what they meet first: no panel is
 painted in front of one it is behind. The layout was checked over 75 sheets:
 the isometric never leaves its cell, never touches another view, never reaches
 the title block.
+
+## §50 The colour in the cut list
+
+The cut list said what each part was made of and never which colour it was. On
+birch ply that is nothing to say. On Valchromat, which is sold in twelve, it is
+half the order.
+
+### A column, and a chip of the board
+
+Beside the material: the name a merchant will answer to — `Green Mint`, `Red` —
+with a small square of the colour itself, so the list reads at a glance as well
+as by name. It is in the CSV too, because that is the sheet somebody takes to
+the counter.
+
+What goes in the cell depends on what the colour *is*:
+
+- **A colour the sheet is sold in** → its name.
+- **A colour it is not** → the hex. There is no name for it, and a number is the
+  only honest answer for a panel somebody has painted.
+- **A sheet that comes as it comes** → nothing. "Birch" in the colour column of a
+  list whose material column already says Birch ply is a column doing no work.
+
+### The part that is not cosmetic
+
+Adding the column showed up something worse underneath: the nest grouped parts
+by material and thickness alone. A box with a green carcass and a red front
+came out as six parts on one sheet — a layout nobody can cut to, because a green
+board and a red board are two boards.
+
+So a colour is part of the stock **exactly where the material is sold in a range
+of them**. `stockColour` says which is which, and one `stockKey` — material,
+thickness, colour — now groups the nest, the sheet captions and the tally alike.
+Valchromat in two colours is two sheets and two orders. Birch ply painted red is
+one sheet and a tin of paint, and splitting the nest for it would waste board
+for nothing.
+
+The sheet captions carry it through to the end: `Sheet 2 · Valchromat 19 mm Red`
+on screen, `SHEET 2 — Valchromat RED 19mm` in the DXF. A shop with two boards on
+the rack needs to be told which one goes on the bed.
