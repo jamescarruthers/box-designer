@@ -4,7 +4,7 @@ import { EDGES, FACES, FACE_LABEL, MATERIALS, LAGGINGS, PROMINENCE_PRESETS, DEFA
 import { solve, wallOf, boardOf, fillFaces, skinOf, boxVolume, panelThickness, DEFAULT_RATIO, DEFAULT_ROUND } from "../model/solver.js";
 import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, partialEdgeIssues, panelBevels } from "../model/bevel.js";
 import { mitreCheck, resolveMitres, applyMitres, mitreIssues, mitreLoss } from "../model/mitre.js";
-import { applyRebates, panelVolume, panelSolidVolume, notchNote, notchSpec, rebateSides, newRebate, rebateProblems } from "../model/rebate.js";
+import { applyRebates, panelVolume, panelSolidVolume, notchNote, notchSpec, rebateSides, newRebate, rebateProblems, rebateLabel } from "../model/rebate.js";
 import { validate } from "../model/validate.js";
 import { fittingOwners, innermostOn, fittingIssues, fittingNote, hasTube, resolveFittings,
   driverDisplacement, portDisplacement, hasDisplacement, cutoutFlare, largestFlare,
@@ -486,9 +486,11 @@ export function derive(design) {
     // §42 A rebate that cannot be cut says so, once. §43 And it says which
     // sides it is talking about, because "only front and back happened" is the
     // question the message has to answer.
-    ...rebateProblems(rebateRejected).map(({ face, sides, why }) => ({
+    // §46 And which panel it is talking about, now that a doubler can be
+    // rebated as well as a carcass panel and "front" alone names two boards.
+    ...rebateProblems(rebateRejected).map(({ layer, face, sides, why }) => ({
       level: "warning",
-      text: `Rebate: ${FACE_LABEL[face] ?? face}${sides.length ? ` (${sides.join(", ")})` : ""} — ${why}.`,
+      text: `Rebate: ${rebateLabel(layer, face)}${sides.length ? ` (${sides.join(", ")})` : ""} — ${why}.`,
     })),
   ];
   // §27 What is left for the air. A driver's basket and motor stand in the

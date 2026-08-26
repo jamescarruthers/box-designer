@@ -687,6 +687,36 @@ describe("the app", () => {
       expect(row.children[at].textContent).toBe("");
   });
 
+  it("§46 rebates a doubler, and says which board it means", () => {
+    const { container } = render(<App />);
+    // Nothing but carcass panels to rebate until there is another board.
+    const add = () => screen.getByLabelText("Add a rebate");
+    const options = () => [...add().options].map((o) => o.textContent);
+    expect(options()).not.toContain("Top doubler");
+
+    fireEvent.change(screen.getByLabelText("Add doublers"), { target: { value: "top" } });
+    expect(options()).toContain("Top doubler");
+
+    fireEvent.change(add(), { target: { value: "doubler|top" } });
+    fireEvent.click(screen.getByLabelText("Top doubler rebate all sides"));
+    expect(container.querySelector(".rebate h3").textContent).toBe("Top doubler");
+    expect(container.querySelector(".rebate .note").textContent)
+      .toMatch(/Let in 6 mm on front, back, left, right/);
+    // The doubler is inside the carcass whichever way the box is wrapped, so
+    // this one needs no help from the prominence order.
+    fireEvent.change(screen.getByLabelText("Top doubler rebate depth"), { target: { value: "9" } });
+    expect(container.querySelector(".rebate .note").textContent).toMatch(/Let in 9 mm/);
+
+    // The carcass panels beside it carry the groove, and the box still closes.
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    const head = [...container.querySelectorAll("table.cuts thead th")].map((t) => t.textContent);
+    const at = head.indexOf("Rebate");
+    const cells = [...container.querySelectorAll("table.cuts tbody tr")]
+      .map((r) => r.children[at].textContent);
+    expect(cells.filter(Boolean)).toHaveLength(4);
+    expect(within(container.querySelector(".totals")).getByText("exact")).toBeTruthy();
+  });
+
   it("§14 offers a DXF of the sheet layouts", () => {
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));

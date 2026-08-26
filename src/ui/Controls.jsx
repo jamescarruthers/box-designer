@@ -5,7 +5,8 @@ import { FACES, FACE_LABEL, MATERIALS, LAGGINGS, PROMINENCE_PRESETS, EDGES, edge
 import { ROUND_STEPS } from "../model/solver.js";
 import { setIn, freeFaces, addPanel, removePanel, editPanel, setProjectMaterial, setProjectThickness, setEdgeTreatment, treatedEdges } from "./design.js";
 import { largestBevel, largestBevelAt } from "../model/bevel.js";
-import { rebateSides, newRebate, rebateProblems } from "../model/rebate.js";
+import { rebateSides, newRebate, rebateProblems, rebateKey, readRebateKey, rebateLabel, REBATABLE }
+  from "../model/rebate.js";
 import { Group, Num, Colour, Segmented, FaceSwatch, StockThicknesses } from "./fields.jsx";
 import { FittingList } from "./FittingEditor.jsx";
 import { fmt } from "../cutlist/cutlist.js";
@@ -153,7 +154,7 @@ export default function Controls({ design, set, derived, colourByFace }) {
       {/* §42 Its own group: a rebate is a joint, not a layer. What it changes
           is where one panel stops and what is cut out of the ones it runs
           into, which is nothing like adding a board to a face. */}
-      <Group title="Rebate" note="A panel let into the ones around it: it runs on past where it stopped, and a groove is cut in every panel it runs into. The board gets bigger, the ones beside it get a groove, and the box stays the size it was.">
+      <Group title="Rebate" note="A board let into the ones around it: it runs on past where it stopped, and a groove is cut in every panel it runs into. The board gets bigger, the ones beside it get a groove, and the box stays the size it was. Any board can be rebated — carcass, doubler or cladding — into whatever is beside it.">
         <RebateStack design={design} set={set} derived={derived} />
       </Group>
 
@@ -376,23 +377,32 @@ function Prominence({ design, set, colourByFace }) {
 
 /** A list of added panels for one layer, plus a side picker to add another. */
 /**
- * §42 Which faces are rebated, on which sides, and how deep.
+ * §42 Which panels are rebated, on which sides, and how deep.
  *
- * A face is added the way a cladding panel is, because the shape of the thing
- * is the same — a handful of faces, each with its own numbers — and one idiom
+ * A panel is added the way a cladding panel is, because the shape of the thing
+ * is the same — a handful of panels, each with its own numbers — and one idiom
  * in the sidebar is worth more than a bespoke control for every feature.
  *
  * The sides offered are the four that meet the face: a front panel has no
  * front side to be let into. "All" is the case somebody wants nine times out
  * of ten, so it is a button rather than four clicks.
+ *
+ * §46 And a panel is any board in the box, not just a carcass one, so the list
+ * is keyed by layer and face together.
  */
 function RebateStack({ design, set, derived }) {
   const entries = Object.entries(design.rebate ?? {});
-  const free = FACES.filter((f) => !design.rebate?.[f]);
-  const put = (face, next) => set(setIn(design, ["rebate", face], next));
-  const drop = (face) => {
+  // §46 What there is to rebate: every board in the box — carcass, doubler or
+  // cladding — listed from the outside in, and only the ones that exist. A
+  // doubler is a board like any other, so it is offered like any other.
+  const panels = REBATABLE.flatMap((layer) => FACES
+    .filter((face) => derived.sol.panels.some((p) => p.layer === layer && p.face === face))
+    .map((face) => ({ layer, face, key: rebateKey(layer, face), label: rebateLabel(layer, face) })));
+  const free = panels.filter((p) => !design.rebate?.[p.key]);
+  const put = (key, next) => set(setIn(design, ["rebate", key], next));
+  const drop = (key) => {
     const rest = { ...design.rebate };
-    delete rest[face];
+    delete rest[key];
     set({ ...design, rebate: rest });
   };
   return (
@@ -401,41 +411,43 @@ function RebateStack({ design, set, derived }) {
         <h3>Rebated panels</h3>
         <select className="add" value="" disabled={!free.length} aria-label="Add a rebate"
           onChange={(e) => { if (e.target.value) put(e.target.value, newRebate()); }}>
-          <option value="">{free.length ? "Add a panel…" : "All faces rebated"}</option>
-          {free.map((f) => <option key={f} value={f}>{FACE_LABEL[f]}</option>)}
+          <option value="">{free.length ? "Add a panel…" : "All panels rebated"}</option>
+          {free.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
         </select>
       </div>
       {entries.length === 0 ? (
         <p className="empty">None.</p>
-      ) : entries.map(([face, rebate]) => {
+      ) : entries.map(([key, rebate]) => {
+        const { layer, face } = readRebateKey(key);
+        const label = rebateLabel(layer, face);
         const sides = rebateSides(face);
         const all = sides.every((g) => rebate.sides?.[g]);
-        const cut = derived.rebated?.[face]?.sides ?? [];
+        const cut = derived.rebated?.[key]?.sides ?? [];
         // §43 Why the sides that did not happen did not happen — shown even
         // when the others did, which is the whole point: a rebate cut on two
         // sides of four has to account for the other two.
-        const refused = rebateProblems(derived.rebateRejected).filter((p) => p.face === face);
+        const refused = rebateProblems(derived.rebateRejected).filter((p) => p.key === key);
         return (
-          <div className="rebate" key={face}>
+          <div className="rebate" key={key}>
             <div className="stack-head">
-              <h3>{FACE_LABEL[face]}</h3>
-              <button type="button" className="linkish" onClick={() => drop(face)}>Remove</button>
+              <h3>{label}</h3>
+              <button type="button" className="linkish" onClick={() => drop(key)}>Remove</button>
             </div>
             <div className="chip-group">
               <button type="button" className={all ? "on" : ""}
-                aria-label={`${FACE_LABEL[face]} rebate all sides`}
-                onClick={() => put(face, { ...rebate,
+                aria-label={`${label} rebate all sides`}
+                onClick={() => put(key, { ...rebate,
                   sides: all ? {} : Object.fromEntries(sides.map((g) => [g, true])) })}>All</button>
               {sides.map((g) => (
                 <button type="button" key={g} className={rebate.sides?.[g] ? "on" : ""}
-                  aria-label={`${FACE_LABEL[face]} rebate ${g}`}
-                  onClick={() => put(face, { ...rebate,
+                  aria-label={`${label} rebate ${g}`}
+                  onClick={() => put(key, { ...rebate,
                     sides: { ...rebate.sides, [g]: !rebate.sides?.[g] } })}>{FACE_LABEL[g]}</button>
               ))}
             </div>
             <Num label="Depth" suffix="mm" step={0.5} value={rebate.depth}
-              aria={`${FACE_LABEL[face]} rebate depth`}
-              onChange={(v) => put(face, { ...rebate, depth: v })} />
+              aria={`${label} rebate depth`}
+              onChange={(v) => put(key, { ...rebate, depth: v })} />
             {/* What was actually cut, which is not always what was asked for —
                 the reason is in the messages, and this is the tally. */}
             {cut.length ? (
@@ -443,9 +455,9 @@ function RebateStack({ design, set, derived }) {
                 Let in {fmt(rebate.depth)} mm on {cut.map((g) => FACE_LABEL[g].toLowerCase()).join(", ")}.
               </p>
             ) : refused.length ? null : <p className="note">No sides chosen yet.</p>}
-            {refused.map(({ sides, why }) => (
+            {refused.map(({ sides: bad, why }) => (
               <p className="note bad" key={why}>
-                {sides.length ? `${sides.map((g) => FACE_LABEL[g]).join(", ")}: ` : ""}{why}.
+                {bad.length ? `${bad.map((g) => FACE_LABEL[g]).join(", ")}: ` : ""}{why}.
               </p>
             ))}
           </div>

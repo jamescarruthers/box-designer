@@ -11,7 +11,7 @@
 // A rebate that could not be cut is one whose slab lands somewhere other than
 // in another panel, and that is refused rather than fudged.
 
-import { FACES, AXIS, AXES } from "./constants.js";
+import { FACES, AXIS, AXES, FACE_LABEL, LAYER_LABEL } from "./constants.js";
 import { boxVolume } from "./solver.js";
 import { mitredCells, polyArea } from "./mitre.js";
 
@@ -19,6 +19,32 @@ const EPS = 1e-9;
 
 /** The sides of a panel on `face`: the four faces that meet it. */
 export const rebateSides = (face) => FACES.filter((f) => AXIS[f][0] !== AXIS[face][0]);
+
+/**
+ * §46 The layers a rebate can be cut in: the boards, and not the lining.
+ *
+ * A rebate is a joint between two boards, and felt is not a board — a groove
+ * in a lining is a dent, and a lining let into a groove is a lining folded
+ * over. Everything else about the machinery is layer-blind, so a doubler is
+ * rebated by the same rule a carcass panel is and into whatever happens to be
+ * beside it, carcass or doubler or cladding.
+ */
+export const REBATABLE = ["cladding", "shell", "doubler"];
+
+/** Which panel a rebate names. A bare face is the carcass, as it was in §42. */
+export const rebateKey = (layer, face) => (layer === "shell" ? face : `${layer}|${face}`);
+
+export function readRebateKey(key) {
+  const parts = String(key).split("|");
+  return parts.length > 1 && REBATABLE.includes(parts[0])
+    ? { layer: parts[0], face: parts[1] }
+    : { layer: "shell", face: parts[0] };
+}
+
+/** §46 What a rebated panel is called where a person reads it. */
+export const rebateLabel = (layer, face) => (layer === "shell"
+  ? FACE_LABEL[face] ?? face
+  : `${FACE_LABEL[face] ?? face} ${(LAYER_LABEL[layer] ?? layer).toLowerCase()}`);
 
 export const DEFAULT_REBATE_DEPTH = 6;
 
@@ -167,7 +193,7 @@ export function rebateSlab(panel, side, depth) {
  * moves. A rebate deeper than the thinnest panel it cuts is refused too: that
  * is not a groove, it is a hole.
  */
-export function applyRebates(panels, rebates, layer = "shell") {
+export function applyRebates(panels, rebates) {
   // Deep enough to grow: the boxes are edited in place below, and the solve
   // they came from is nobody's to change.
   const out = panels.map((p) => ({
@@ -177,13 +203,23 @@ export function applyRebates(panels, rebates, layer = "shell") {
   }));
   const applied = {}, rejected = new Map();
 
-  for (const face of FACES) {
-    const rebate = rebates?.[face];
+  // §46 Outermost first, so a rebate cut in the cladding is cut into the
+  // cladding as it stands and a doubler's is cut into a carcass that has
+  // already grown for its own. Layers settle from the outside in, and so do
+  // the joints between them.
+  const keys = Object.keys(rebates ?? {})
+    .map((key) => ({ key, ...readRebateKey(key) }))
+    .filter((k) => REBATABLE.includes(k.layer))
+    .sort((a, b) => REBATABLE.indexOf(a.layer) - REBATABLE.indexOf(b.layer)
+      || FACES.indexOf(a.face) - FACES.indexOf(b.face));
+
+  for (const { key, layer, face } of keys) {
+    const rebate = rebates[key];
     if (!rebate) continue;
     const depth = Number(rebate.depth);
     const panel = out.find((p) => p.face === face && p.layer === layer);
-    if (!panel) { rejected.set(face, "there is no panel on that face to rebate"); continue; }
-    if (!(depth > 0)) { rejected.set(face, "a rebate needs a depth"); continue; }
+    if (!panel) { rejected.set(key, "there is no panel on that face to rebate"); continue; }
+    if (!(depth > 0)) { rejected.set(key, "a rebate needs a depth"); continue; }
 
     const done = [];
     for (const side of rebateSides(face)) {
@@ -192,7 +228,7 @@ export function applyRebates(panels, rebates, layer = "shell") {
       // board cannot have both on one edge: the mitre runs the panel out to
       // the corner, which is the material the rebate wants to slide into.
       if ((panel.mitres ?? []).some((m) => m.side === side)) {
-        rejected.set(`${face}|${side}`,
+        rejected.set(`${key}|${side}`,
           `that joint is mitred, and a mitre and a rebate are two different joints — take the mitre off the edge to rebate into it`);
         continue;
       }
@@ -203,20 +239,27 @@ export function applyRebates(panels, rebates, layer = "shell") {
       const grows = AXIS[side][0];
       const stretched = (panel.mitres ?? []).find((m) => mitreRun(panel, m.side) === grows);
       if (stretched) {
-        rejected.set(`${face}|${side}`,
+        rejected.set(`${key}|${side}`,
           `it would make the ${face}/${stretched.side} mitre longer than the panel it is mitred to`);
         continue;
       }
       const slab = rebateSlab(panel, side, depth);
-      const hits = out.filter((p) => p !== panel && overlaps(p.box, slab));
-      const why = `${face}|${side}`;
+      // §46 Only boards are rebated into. A lining in the way is not backing:
+      // the tongue would land in felt, and the coverage test below refuses it
+      // for exactly that reason rather than cutting a groove in the lagging.
+      // The layers nest, so in a solved box what is beside a board at its own
+      // depth is another board — this is the rule written down, not a case
+      // anybody meets.
+      const hits = out.filter((p) =>
+        p !== panel && REBATABLE.includes(p.layer) && overlaps(p.box, slab));
+      const why = `${key}|${side}`;
       // The reasons that are about the panel rather than about one of its
       // sides are worded that way on purpose: a rebate on four sides that all
       // fail for the same reason is one thing wrong, and the messages say it
       // once. The mitre is the exception, being a fact about one joint.
       if (!hits.length) {
         rejected.set(why,
-          `the ${face} panel already runs past the panels beside it, so there is nothing there to rebate into — move it down the prominence order to let it in`);
+          `the ${rebateLabel(layer, face)} panel already runs past the panels beside it, so there is nothing there to rebate into — move it down the prominence order to let it in`);
         continue;
       }
       // Deepest first, because "it goes right through the panel beside it" is
@@ -235,7 +278,7 @@ export function applyRebates(panels, rebates, layer = "shell") {
         .reduce((a, c) => a + boxVolume(c), 0);
       if (uncovered > 1e-6 * Math.max(1, boxVolume(slab))) {
         rejected.set(why,
-          `the ${face} panel is not backed by board along the whole of that edge — part of the rebate would be cut into thin air`);
+          `the ${rebateLabel(layer, face)} panel is not backed by board along the whole of that edge — part of the rebate would be cut into thin air`);
         continue;
       }
 
@@ -251,7 +294,7 @@ export function applyRebates(panels, rebates, layer = "shell") {
       for (const p of hits) p.notches.push(intersect(p.box, slab));
       done.push(side);
     }
-    if (done.length) applied[face] = { depth, sides: done };
+    if (done.length) applied[key] = { depth, sides: done, layer, face };
   }
 
   // Three sides of one rebate cut one groove down the panel beside them, not
@@ -273,11 +316,17 @@ export function applyRebates(panels, rebates, layer = "shell") {
  */
 export function rebateProblems(rejected) {
   const out = [];
-  for (const [key, why] of rejected ?? []) {
-    const [face, side] = key.split("|");
-    const found = out.find((p) => p.face === face && p.why === why);
+  for (const [full, why] of rejected ?? []) {
+    // §46 A key is the panel, optionally with the side it went wrong on, and
+    // the panel is itself one part or two. Layers and faces are named from
+    // disjoint lists, so the first part says which shape this is.
+    const parts = String(full).split("|");
+    const hasSide = parts.length === 3 || (parts.length === 2 && !REBATABLE.includes(parts[0]));
+    const side = hasSide ? parts.pop() : null;
+    const key = parts.join("|");
+    const found = out.find((p) => p.key === key && p.why === why);
     if (found) { if (side) found.sides.push(side); continue; }
-    out.push({ face, why, sides: side ? [side] : [] });
+    out.push({ key, ...readRebateKey(key), why, sides: side ? [side] : [] });
   }
   return out;
 }

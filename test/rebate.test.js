@@ -6,12 +6,13 @@ import { noEdges } from "../src/model/bevel.js";
 import {
   applyRebates, subtractBoxes, panelVolume, rebateSlab, rebateSides, notchNote, intersect, newRebate,
   rebateProblems, mitreRun, panelSolidVolume, blankNotches, notchSpec,
+  rebateKey, readRebateKey, rebateLabel, REBATABLE,
 } from "../src/model/rebate.js";
 import { panelPositions, notchDepth } from "../src/three/panelGeometry.js";
 import { panelBlank } from "../src/model/solver.js";
 import { cutListCsv } from "../src/cutlist/cutlist.js";
 import { ACCENT, REBATE } from "../src/three/palette.js";
-import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
+import { DEFAULT_DESIGN, derive, addPanel } from "../src/ui/design.js";
 
 const box = (x, y, z) => ({ x, y, z });
 /** A box that is inset on every side of its front panel: something to let it in to. */
@@ -310,9 +311,9 @@ describe("§43 rebating into a mitred box", () => {
       ["top|left", "a"], ["top|right", "a"], ["top|front", "b"], ["back", "c"],
     ]);
     expect(rebateProblems(rejected)).toEqual([
-      { face: "top", why: "a", sides: ["left", "right"] },
-      { face: "top", why: "b", sides: ["front"] },
-      { face: "back", why: "c", sides: [] },
+      { key: "top", layer: "shell", face: "top", why: "a", sides: ["left", "right"] },
+      { key: "top", layer: "shell", face: "top", why: "b", sides: ["front"] },
+      { key: "back", layer: "shell", face: "back", why: "c", sides: [] },
     ]);
   });
 });
@@ -473,5 +474,136 @@ describe("§45 rebates where a part is drawn flat", () => {
     // across the room that is the distinction worth being able to make.
     expect(REBATE).not.toBe(ACCENT);
     expect(REBATE).toMatch(/^#[0-9a-f]{6}$/i);
+  });
+});
+
+describe("§46 rebating a doubler", () => {
+  const FACES = ["front", "back", "left", "right", "top", "bottom"];
+  const every = (depth = 6) => ({ depth,
+    sides: Object.fromEntries(FACES.map((s) => [s, true])) });
+  /** A box with a doubler on each of the named faces. */
+  const lined = (faces, rest = {}) => {
+    let d = { ...DEFAULT_DESIGN, preset: "sides", order: PROMINENCE_PRESETS[1].order, ...rest };
+    for (const f of faces) d = addPanel(d, "doubler", f);
+    return d;
+  };
+
+  it("names a carcass panel by its face and anything else by both", () => {
+    // §42 keyed a rebate by face alone, and those designs are still on disk.
+    expect(rebateKey("shell", "front")).toBe("front");
+    expect(rebateKey("doubler", "top")).toBe("doubler|top");
+    expect(readRebateKey("front")).toEqual({ layer: "shell", face: "front" });
+    expect(readRebateKey("doubler|top")).toEqual({ layer: "doubler", face: "top" });
+    expect(rebateLabel("shell", "front")).toBe("Front");
+    expect(rebateLabel("doubler", "top")).toBe("Top doubler");
+    // The lining is not a board, and a groove in it is a dent.
+    expect(REBATABLE).not.toContain("lagging");
+  });
+
+  it("lets a doubler into the doublers around it, and closes on volume", () => {
+    const d = lined(FACES);
+    const plain = derive(d);
+    const cut = derive({ ...d, rebate: { "doubler|top": every(6) } });
+    expect(cut.rebated["doubler|top"].sides).toEqual(["front", "back", "left", "right"]);
+    expect(cut.rebateRejected.size).toBe(0);
+    expect(cut.sol.closureExact).toBe(true);
+    expect(cut.totals.closure).toBe("exact");
+    // The box is the size it was: a rebate moves material, it does not add it.
+    expect(cut.sol.E).toEqual(plain.sol.E);
+
+    const row = (out, layer, face) =>
+      out.rows.find((r) => r.panel.layer === layer && r.panel.face === face);
+    expect(row(cut, "doubler", "top").length)
+      .toBeCloseTo(row(plain, "doubler", "top").length + 12, 6);
+    expect(row(cut, "doubler", "top").width)
+      .toBeCloseTo(row(plain, "doubler", "top").width + 12, 6);
+    // The doublers it goes into are the same blank with a groove noted in it.
+    expect(row(cut, "doubler", "left").length).toBe(row(plain, "doubler", "left").length);
+    expect(row(cut, "doubler", "left").rebate).toMatch(/^6 × 18/);
+    // And the carcass, which the tongue never reaches, is untouched.
+    expect(row(cut, "shell", "left").rebate).toBeUndefined();
+  });
+
+  it("lets a lone doubler into the carcass beside it", () => {
+    // Nothing says the two panels of a rebate are in the same layer: with no
+    // doubler on the sides, what is beside the top doubler is the carcass.
+    const d = lined(["top"]);
+    const cut = derive({ ...d, rebate: { "doubler|top": every(6) } });
+    expect(cut.rebated["doubler|top"].sides).toEqual(["front", "back", "left", "right"]);
+    expect(cut.sol.closureExact).toBe(true);
+    expect(cut.rows.find((r) => r.panel.layer === "shell" && r.panel.face === "left").rebate)
+      .toMatch(/^6 × 18/);
+  });
+
+  it("closes on volume for a doubler on any face, mitred or not", () => {
+    const VERTICALS = ["front|left", "back|left", "front|right", "back|right"];
+    const mitred = (keys) => ({ type: "none", radius: 12, perEdge: true,
+      by: Object.fromEntries(keys.map((k) => [k, { type: "mitre", radius: 18 }])) });
+    for (const keys of [[], VERTICALS]) {
+      const d = lined(FACES, { edge: mitred(keys) });
+      for (const face of FACES) {
+        const out = derive({ ...d, rebate: { [`doubler|${face}`]: every(6) } });
+        expect(out.sol.closureExact, `${face} with ${keys.length} mitres`).toBe(true);
+        expect(out.totals.closure).toBe("exact");
+      }
+    }
+  });
+
+  it("cuts the layers from the outside in, so each is let into a settled one", () => {
+    // The cladding, the carcass panel under it and the doubler behind that,
+    // all rebated at once: each is let into its own layer's neighbours, and
+    // the three grooves do not tread on each other.
+    let d = lined(FACES, { preset: PROMINENCE_PRESETS[0].id, order: PROMINENCE_PRESETS[0].order });
+    for (const f of FACES) d = addPanel(d, "cladding", f);
+    const out = derive({ ...d,
+      rebate: { top: every(6), "cladding|top": every(6), "doubler|top": every(6) } });
+    for (const key of ["top", "cladding|top", "doubler|top"]) {
+      expect(out.rebated[key].sides, key).toEqual(["front", "back", "left", "right"]);
+    }
+    expect(out.rebateRejected.size).toBe(0);
+    expect(out.sol.closureExact).toBe(true);
+  });
+
+  it("lets a doubler in whichever way the box is wrapped", () => {
+    // A doubler is inside the carcass whatever the prominence order does, so
+    // there is always board beside it to be let into — which is not true of a
+    // carcass panel, and is the reason this one never needs the order changing.
+    for (const preset of PROMINENCE_PRESETS) {
+      const d = lined(FACES, { preset: preset.id, order: preset.order });
+      const out = derive({ ...d, rebate: { "doubler|top": every(6) } });
+      expect(out.rebated["doubler|top"].sides, preset.id)
+        .toEqual(["front", "back", "left", "right"]);
+      expect(out.sol.closureExact, preset.id).toBe(true);
+    }
+  });
+
+  it("will not cut a groove in the lining", () => {
+    // The layers nest, so nothing but board is ever beside a board at its own
+    // depth — but the rule is the rule, and a lining backing a rebate is not
+    // backing at all.
+    const panel = (layer, face, box) => ({ layer, face, box, mitres: [], notches: [] });
+    const front = panel("shell", "front", { x: [18, 82], y: [0, 18], z: [18, 82] });
+    const felt = panel("lagging", "left", { x: [0, 18], y: [0, 18], z: [0, 100] });
+    const { applied, rejected } = applyRebates([front, felt],
+      { front: { depth: 6, sides: { left: true } } });
+    expect(applied.front).toBeUndefined();
+    expect([...rejected.values()][0]).toMatch(/nothing there to rebate into|thin air/);
+    expect(felt.notches).toHaveLength(0);
+  });
+
+  it("says which panel a refusal is about", () => {
+    // "Top" named one board when §42 wrote it and names three now, so a
+    // refusal that says only "Top" says nothing.
+    let d = lined([], { preset: PROMINENCE_PRESETS[2].id, order: PROMINENCE_PRESETS[2].order });
+    for (const f of FACES) d = addPanel(d, "cladding", f);
+    // Top & bottom wrap, so the top cladding runs out past the sides: it is
+    // the outermost board on that face and there is nothing to let it into.
+    const out = derive({ ...d, rebate: { "cladding|top": every(6) } });
+    expect(out.rebated["cladding|top"]).toBeUndefined();
+    const warnings = out.messages.filter((m) => /^Rebate:/.test(m.text));
+    expect(warnings.length).toBeGreaterThan(0);
+    for (const w of warnings) expect(w.text).toMatch(/^Rebate: Top cladding/);
+    const problems = rebateProblems(out.rebateRejected);
+    expect(problems.every((p) => p.key === "cladding|top" && p.layer === "cladding")).toBe(true);
   });
 });
