@@ -328,11 +328,23 @@ table.cuts .rebate-cell { color: var(--rebate); white-space: nowrap; }
 .stack + .stack { margin-top: 10px; }
 
 /* §42 One rebated panel: the sides it is let into, how deep, and what was cut. */
-.rebate { margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--line); }
-.rebate .stack-head { margin-bottom: 4px; }
+/* §47 One board's rebate, in that board's inspector — so no rule above it to
+   divide it from the one before, because there is never one before. */
 .rebate .chip-group { flex-wrap: wrap; margin-bottom: 5px; }
 .rebate .note { margin: 4px 0 0; color: var(--ink-3); font-size: 10.5px; }
 .rebate .note.bad { color: var(--warning); }
+/* §47 The sidebar's summary of the boards, and the way into each of them. */
+.panel-picker { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 7px; }
+.panel-chip {
+  display: flex; align-items: center; gap: 4px; width: auto;
+  padding: 3px 7px; font-size: 10.5px; color: var(--ink-2);
+  background: var(--bg-3); border: 1px solid var(--line); border-radius: 3px;
+}
+.panel-chip:hover { color: var(--ink); border-color: var(--ink-3); }
+.panel-summary dd { display: flex; flex-wrap: wrap; gap: 2px 8px; justify-content: flex-end; }
+.panel-summary dd .none { color: var(--ink-3); }
+.panel-summary .linkish { width: auto; padding: 0; font-size: 10.5px; }
+
 .stack-head { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
 .stack-head h3 {
   margin: 0; flex: 1; font-size: 10.5px; font-weight: 400;

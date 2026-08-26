@@ -4,7 +4,7 @@ import { EDGES, FACES, FACE_LABEL, MATERIALS, LAGGINGS, PROMINENCE_PRESETS, DEFA
 import { solve, wallOf, boardOf, fillFaces, skinOf, boxVolume, panelThickness, DEFAULT_RATIO, DEFAULT_ROUND } from "../model/solver.js";
 import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, partialEdgeIssues, panelBevels } from "../model/bevel.js";
 import { mitreCheck, resolveMitres, applyMitres, mitreIssues, mitreLoss } from "../model/mitre.js";
-import { applyRebates, panelVolume, panelSolidVolume, notchNote, notchSpec, rebateSides, newRebate, rebateProblems } from "../model/rebate.js";
+import { applyRebates, panelVolume, panelSolidVolume, notchNote, notchSpec, rebateSides, newRebate, rebateProblems, rebateLabel } from "../model/rebate.js";
 import { validate } from "../model/validate.js";
 import { fittingOwners, innermostOn, fittingIssues, fittingNote, hasTube, resolveFittings,
   driverDisplacement, portDisplacement, hasDisplacement, cutoutFlare, largestFlare,
@@ -166,6 +166,31 @@ export function setFaceThickness(design, face, thickness) {
  */
 export function setFaceColour(design, face, hex) {
   return { ...design, perPanelColour: true, colourBy: { ...design.colourBy, [face]: hex } };
+}
+
+/**
+ * §47 Turning one side of a panel's rebate on or off, from the inspector.
+ *
+ * A rebate exists because a side is chosen and stops existing when the last one
+ * is cleared. There is no empty rebate to add first and fill in later: the
+ * sidebar's list needed one to hang a row on, and the inspector does not — the
+ * panel is already on the screen, and its four sides are four buttons.
+ */
+export function setRebateSides(design, key, sides) {
+  const on = Object.fromEntries(Object.entries(sides ?? {}).filter(([, v]) => v));
+  const rest = { ...design.rebate };
+  if (!Object.keys(on).length) {
+    delete rest[key];
+    return { ...design, rebate: rest };
+  }
+  const cur = design.rebate?.[key] ?? newRebate();
+  return { ...design, rebate: { ...rest, [key]: { ...cur, sides: on } } };
+}
+
+/** The depth of a rebate that exists. Nothing to set on a panel with no sides chosen. */
+export function setRebateDepth(design, key, depth) {
+  if (!design.rebate?.[key]) return design;
+  return setIn(design, ["rebate", key], { ...design.rebate[key], depth });
 }
 
 /**
@@ -486,9 +511,11 @@ export function derive(design) {
     // §42 A rebate that cannot be cut says so, once. §43 And it says which
     // sides it is talking about, because "only front and back happened" is the
     // question the message has to answer.
-    ...rebateProblems(rebateRejected).map(({ face, sides, why }) => ({
+    // §46 And which panel it is talking about, now that a doubler can be
+    // rebated as well as a carcass panel and "front" alone names two boards.
+    ...rebateProblems(rebateRejected).map(({ layer, face, sides, why }) => ({
       level: "warning",
-      text: `Rebate: ${FACE_LABEL[face] ?? face}${sides.length ? ` (${sides.join(", ")})` : ""} — ${why}.`,
+      text: `Rebate: ${rebateLabel(layer, face)}${sides.length ? ` (${sides.join(", ")})` : ""} — ${why}.`,
     })),
   ];
   // §27 What is left for the air. A driver's basket and motor stand in the

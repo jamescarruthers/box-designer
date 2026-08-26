@@ -9,21 +9,27 @@
 //
 // So selecting a panel opens a second panel on the other side, about that face
 // and nothing else. Its blank size, the sheet it is cut from, where it sits in
-// the prominence order, its four edges, the fittings on it, and whether it
-// carries cladding or a doubler. The same controls the sidebar uses, asked
-// about one face instead of six.
+// the prominence order, its four edges, its rebate, the fittings on it, and
+// whether it carries cladding or a doubler.
+//
+// §47 And only here: the sidebar's copies of all of that are gone, so there is
+// one place to change a board and it is the place where the board is on the
+// screen. What the sidebar keeps is what is true of the box.
 
 import React from "react";
 import {
-  FACE_LABEL, LAYER_LABEL, MATERIALS, materialById, edgesOfFace, otherFace, edgeAxis,
+  FACE_LABEL, LAYER_LABEL, MATERIALS, LAGGINGS, materialById, edgesOfFace, otherFace, edgeAxis,
 } from "../model/constants.js";
 import { fmt } from "../cutlist/cutlist.js";
 import { Group, Num, Colour, FaceSwatch } from "./fields.jsx";
 import { FittingList } from "./FittingEditor.jsx";
 import { largestBevelAt } from "../model/bevel.js";
 import {
+  rebateSides, rebateKey, rebateLabel, rebateProblems, REBATABLE, DEFAULT_REBATE_DEPTH,
+} from "../model/rebate.js";
+import {
   setFaceThickness, setFaceColour, moveFace, addPanel, removePanel, editPanel,
-  setEdgeTreatment, authoredEdge,
+  setEdgeTreatment, authoredEdge, setRebateSides, setRebateDepth,
 } from "./design.js";
 
 
@@ -124,12 +130,74 @@ export default function Inspector({ design, set, derived, row, colourByFace, onS
           <FaceEdges design={design} set={set} derived={derived} face={face} />
         </Group>
 
+        {/* §47 Beside the edges, because a rebate is the other way of joining
+            this board to the ones around it. */}
+        <Group title="Rebate"
+          note="The sides of this board that are let into the panels beside them. The board grows by the depth on each side chosen, and a groove is cut in whatever it runs into.">
+          <Rebate design={design} set={set} derived={derived} row={row} />
+        </Group>
+
         <Group title="Fittings on this face"
           note="Cut through every panel on the face, positioned on the outermost one.">
           <FittingList design={design} set={set} derived={derived} face={face} />
         </Group>
       </div>
     </aside>
+  );
+}
+
+/**
+ * §46 The rebate on this board: which of its four sides are let in, and how deep.
+ *
+ * §47 moved it here from the sidebar, where it had to name the panel it was
+ * about before it could ask anything. Here the panel is the thing on the
+ * screen, so the control is four buttons and a number — and a rebate exists
+ * because a side is chosen rather than because it was added to a list.
+ *
+ * What was cut and what was refused are both shown, because a rebate asked for
+ * on four sides and cut on two has to account for the other two.
+ */
+function Rebate({ design, set, derived, row }) {
+  const { face, layer } = row;
+  if (!REBATABLE.includes(layer)) {
+    return <p className="note">A lining is not a board: a groove in felt is a dent, and felt let into a groove is felt folded over.</p>;
+  }
+  const label = rebateLabel(layer, face);
+  const key = rebateKey(layer, face);
+  const rebate = design.rebate?.[key];
+  const sides = rebateSides(face);
+  const chosen = rebate?.sides ?? {};
+  const all = sides.every((g) => chosen[g]);
+  const depth = rebate?.depth ?? DEFAULT_REBATE_DEPTH;
+  const cut = derived.rebated?.[key]?.sides ?? [];
+  const refused = rebateProblems(derived.rebateRejected).filter((p) => p.key === key);
+  const put = (next) => set(setRebateSides(design, key, next));
+  return (
+    <div className="rebate">
+      <div className="chip-group">
+        <button type="button" className={all ? "on" : ""}
+          aria-label={`${label} rebate all sides`}
+          onClick={() => put(all ? {} : Object.fromEntries(sides.map((g) => [g, true])))}>All</button>
+        {sides.map((g) => (
+          <button type="button" key={g} className={chosen[g] ? "on" : ""}
+            aria-label={`${label} rebate ${g}`}
+            onClick={() => put({ ...chosen, [g]: !chosen[g] })}>{FACE_LABEL[g]}</button>
+        ))}
+      </div>
+      <Num label="Depth" suffix="mm" step={0.5} value={depth} disabled={!rebate}
+        aria={`${label} rebate depth`}
+        onChange={(v) => set(setRebateDepth(design, key, v))} />
+      {cut.length ? (
+        <p className="note">
+          Let in {fmt(depth)} mm on {cut.map((g) => FACE_LABEL[g].toLowerCase()).join(", ")}.
+        </p>
+      ) : refused.length ? null : <p className="note">No sides chosen: this board stops where the panels beside it start.</p>}
+      {refused.map(({ sides: bad, why }) => (
+        <p className="note bad" key={why}>
+          {bad.length ? `${bad.map((g) => FACE_LABEL[g]).join(", ")}: ` : ""}{why}.
+        </p>
+      ))}
+    </div>
   );
 }
 
@@ -180,13 +248,16 @@ function Sheet({ design, set, row }) {
   const entry = design[layer]?.[face];
   if (!entry) return null;
   const name = LAYER_LABEL[layer];
+  // §30 A lining comes off a roll, not out of a sheet: felt and wadding and
+  // bitumen, and no birch ply among them.
+  const sheets = layer === "lagging" ? LAGGINGS : MATERIALS;
   return (
     <Group title="Sheet" note={`This ${name.toLowerCase()} carries its own sheet.`}>
       <label className="field">
         <span>Sheet</span>
         <select value={entry.material} aria-label={`${name} ${label} material`}
           onChange={(e) => set(editPanel(design, layer, face, { material: e.target.value }))}>
-          {MATERIALS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+          {sheets.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
         </select>
       </label>
       <Num label="Thickness" suffix="mm" step={0.5} value={entry.thickness}

@@ -1914,6 +1914,9 @@ prominence order, its four edges, the fittings on it, and whether it carries
 cladding or a doubler. Shown in every mode, because the cut list and the drawing
 select panels too and the same face is the same face from all three.
 
+(§21 added the inspector beside the sidebar and left both; §47 finished the job
+and moved every panel control out of the sidebar, so nothing is in two places.)
+
 ### The controls are the same controls
 
 `Num`, `Colour`, `Segmented`, `Group` and the fitting editor moved out of
@@ -3021,8 +3024,10 @@ on past where it stopped, and a groove is cut in each panel it runs into to
 receive it. One board comes out longer and wider, the others come out with a
 groove in them, and the box is the size it always was.
 
-Chosen per face — which of the four sides that meet it are let in, and how deep.
-Four sides is the common case, so "All" is a button rather than four clicks.
+Chosen per panel — which of the four sides that meet it are let in, and how
+deep. Four sides is the common case, so "All" is a button rather than four
+clicks. (§42 said *per face*, which was only enough while a rebate meant a
+carcass panel; §46 makes it any board.)
 
 ### No material appears or disappears
 
@@ -3249,3 +3254,119 @@ is its own operation: a groove is cut to a depth with the board still whole, and
 a machine that runs it at the profile depth has made scrap. The layer is
 declared whether or not anything is on it, so a template that switches layers on
 and off does not find one appearing from nowhere between one job and the next.
+
+## §46 Rebating anything that is a board
+
+§42 asked for "a panel", and what got built was a rebate on a *carcass* panel:
+the design kept them in a map keyed by face, one entry per side of the box,
+which is only enough to name a board when there is one board per face. There is
+not. A face can carry cladding on the outside, the carcass panel, a doubler
+behind it and a lining inside that, and "front" names three of those.
+
+So the key is the panel and not the face: `front` still, for the carcass —
+designs saved by §42 are on disk and they mean the carcass panel — and
+`doubler|top`, `cladding|front` for the rest. One function writes the key and
+one reads it, and the reader takes a bare face to mean the carcass, which is
+what makes the old files load.
+
+### Which layers, and why not the fourth
+
+Cladding, carcass, doubler. Not lagging: **a rebate is a joint between two
+boards**, and felt is not a board — a groove in a lining is a dent, and a lining
+let into a groove is a lining folded over. The same rule applies to what a
+rebate is cut *into*, so a lining in the way of a tongue does not count as
+backing and the rebate is refused rather than machined into the felt. In a
+solved box that never comes up: the layers nest, so what is beside a board at
+its own depth is another board. It is the rule written down, not a case anybody
+meets.
+
+### Nothing else needed changing, which is the point
+
+The machinery of §42–§44 never knew what a carcass panel was. It grows a box,
+it takes the slab out of whatever boxes it lands in, and it refuses what it
+cannot cut. Handed a doubler it does the same thing to the doubler, and the
+panels the tongue reaches are whatever is beside it — the doublers on the
+neighbouring faces, or the carcass itself where those faces have no doubler.
+The cut list, the templates, the nest, the DXF, the section, the isometric and
+the kernel solids all read `panel.notches` and none of them asked which layer
+the panel was in.
+
+Two things did have to change, and both are about what a person reads. The
+warnings now name the board — `Rebate: Top doubler — …`, because "Top" names
+three panels and a warning that could be about any of them is not a warning.
+And the sidebar lists boards rather than faces, in the order they are stacked
+from the outside in.
+
+### Outermost first
+
+Where more than one layer on a face is rebated, they are cut from the outside
+in: the cladding, then the carcass, then the doubler. Each layer is let into its
+neighbours as they stand once the layer outside it has settled, which is the
+order the box would be assembled in and the only order in which every rebate is
+cut against a panel that has stopped moving.
+
+### A doubler can always be let in
+
+Worth knowing before reaching for the prominence order: a carcass panel can only
+be rebated if the panels beside it wrap past it, so a let-in baffle needs the
+box wrapped a particular way. A doubler is *inside* the carcass however the box
+is wrapped, so there is always board beside it. Every preset, every face, all
+four sides — and the closure comes out exact each time, which is the invariant
+that says no material appeared or vanished on the way.
+
+
+## §47 The sidebar is the box, the inspector is the board
+
+§21 built the inspector and left the sidebar as it was, so for two years a
+panel could be changed in either — its thickness in a six-cell grid behind a
+switch, or in the panel itself; a doubler added from a face dropdown, or from
+the face. Two controls for one fact is two places for it to drift, and the one
+in the sidebar is always the worse of the two, because it has to name the face
+before it can ask anything.
+
+So the split is now a rule, and the rule is: **anything keyed to one board is in
+the inspector, and the sidebar is what is true of the box.**
+
+Out of the sidebar went the per-face thickness grid, the per-panel colour grid,
+the cladding and doubler and lagging stacks, the rebate list and the list of
+every fitting. What stayed is the box: its size, its sheet, its prominence
+order, its twelve edges, and what the drawing shows.
+
+### A rebate is four buttons now
+
+It was the control that made the case. In the sidebar a rebate had to be
+*added* — pick a panel from a dropdown of every board in the box, get a row,
+then choose sides on it — because a list needs a row to hang the sides on.
+In the inspector the panel is already the thing on the screen, so a rebate is
+four buttons and a number, and it exists because a side is chosen rather than
+because it was added. Clear the last side and the panel simply stops being a
+rebated panel.
+
+It sits beside the edges, because that is what it is: the other way of joining
+this board to the ones around it. A lining gets the rule instead of the
+buttons — a groove in felt is a dent.
+
+### What the sidebar says instead
+
+Not nothing: a summary of what the box carries, which is a box-level fact and
+was never actually visible before. Six chips for the carcass, then a line each
+for cladding, doublers, lagging, rebates and fittings, naming the faces that
+have one. Every name opens that board's inspector, so the summary is both the
+answer to "what is on this box" and the way to change it — and a panel is
+reachable from the sidebar in every mode, not only from the 3D view.
+
+The two overrides say where they are: with the grids gone, what the sidebar can
+usefully say about a per-face thickness is *which faces depart from the project
+sheet* and how to end the departure. Setting a face's thickness in the inspector
+switches the override on, as it always did; "Back to one thickness" is the way
+out, and it is the only control of its kind left in the sidebar because it is
+the only one that is about all six at once.
+
+### What it caught
+
+Moving the lagging editor into the inspector found a real bug: the inspector's
+sheet picker offered every *sheet* for any added panel, so a face lined in felt
+was offered birch ply. It had been unreachable in practice because the sidebar's
+lagging stack was the one anybody used, and it was passed the linings. The
+inspector now picks from the linings for a lagging panel, and a test holds it
+there.
