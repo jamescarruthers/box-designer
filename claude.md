@@ -63,6 +63,10 @@ Presets worth shipping:
 **Reordering prominence changes every panel size and no internal dimension.**
 State this in the UI. It is a joinery choice, not a tuning knob.
 
+§53 makes the rank a property of a *layer* rather than only of the box: a layer
+that is not given one of its own follows the box's, which is what one order for
+the whole box always meant.
+
 ### 2.2 One rule, applied three times
 
 The box is three nested layers, each tiling the walls of the previous layer's
@@ -3596,3 +3600,101 @@ The two 3D views keep their own camera *angles* — those are set up per view, a
 pulled apart and whether it is drawn in perspective are not that: they are
 facts about the box being looked at, so both views share them and a slider moved
 in one is moved in the other.
+
+## §52 The design as a file
+
+§13 put the design in `localStorage`, which is what stops the tab being shut on
+an afternoon's work. It is not what stops a *browser* being shut on it, and it
+holds exactly one box. There was no way to keep the two cabinets you were
+choosing between, to send one to somebody, or to put one in a repository beside
+the drawings it produced. **Open…** and **Save** in the sidebar footer do all
+three, and what they move is the same design storage holds.
+
+### JSON, and a line saying what it is
+
+A box is a hundred numbers, a person may reasonably want to read them, and a
+format nobody else can open is a format that loses the work the first time this
+app is not to hand. So the file is JSON, indented, with the design under a name:
+
+```json
+{ "format": "sheet-box-designer/design", "version": 1, "design": { … } }
+```
+
+The wrapper is there so the file can say what it is. A bare design is an object
+of short keys that could be anything; `format` is the line that tells the next
+reader — a person, a script, this app in five years — what they are holding.
+
+### What makes a file openable is not its wrapper
+
+`format` is *written* and never *required*. Anybody can copy a design out of
+localStorage or write one by hand, and refusing those would be refusing a design
+because of its envelope. So opening is the same rule §13 reads storage by:
+unwrap `design` if it is wrapped, keep the keys the defaults have, drop the rest,
+and refuse only when that leaves nothing at all. An old file opens in a new app
+and a new file opens in an old one, which is the whole reason for having files.
+
+Refusals are thrown, because there is one caller and it has to stop. What was
+*dropped* is returned and said out loud — "1 setting this version does not have
+was dropped: `extra`". A file written by a later version carries fields this one
+has never heard of, and losing them silently is how somebody opens a design,
+saves it, and finds the rebates gone.
+
+Opening replaces the box outright rather than merging into it: it is the same
+act as reloading the tab. The selected panel is let go of with it, because a
+panel index into the old box means nothing in the new one.
+
+### One door out
+
+The design is the fourth thing this app writes to disk, after the CSV, the DXF
+and the SVG, and there were three copies of the same eight-line `download`
+helper to prove it. There is one now, in `src/ui/file.js`, and everything leaves
+by it.
+
+## §53 A prominence of the doublers' own
+
+§2.1 made prominence a strict rank over the six faces, and applied it to every
+layer alike. That is right for a box whose layers are laminations of one wall,
+and wrong as soon as the doublers are a piece of joinery in their own right: a
+ring stiffening a baffle is fitted against the other doublers, not against the
+boards outside it, and which of them runs past which at a corner is a question
+asked again at that depth.
+
+So prominence is a property of a **layer**, defaulting to the box's:
+
+```js
+solve({ …, rank, ranks: { doubler: rankFromOrder(order) } })
+```
+
+`ranks[layer]` overrides `rank` for that layer and nothing else. Unstated, a
+layer follows the box — which is exactly what one order for the whole box always
+meant, so every design written before this says what it always said.
+
+### It stays contained, and that is the claim worth testing
+
+§2.2's one rule is applied four times, and each application tiles the cavity the
+one outside it left. That is what makes this safe: a layer laid out differently
+tiles the same cavity, so
+
+- the envelope, the carcass and every other layer are untouched;
+- **no internal dimension moves** — §2.4's third invariant, and the thing
+  prominence has never been allowed to change;
+- the volume closes exactly, for every pair of orders on every layer.
+
+Checked over all 100 combinations of the five presets against the four layers,
+and the residual is zero rather than small.
+
+### Where it lives, and what it says
+
+Prominence is true of the box, not of one board, so §47 puts it in the sidebar.
+The control appears once there is a doubler to order — the prominence of panels
+that do not exist is not a question — and stays while a departure is set, so
+taking off the last doubler never hides one. Switching it on **copies** the
+box's order rather than jumping to a preset: the departure is the point, and a
+control that reorders six panels the moment it is switched on hides where it
+began.
+
+The inspector had to be told too. It showed the rank of the face you were
+looking at, read from the box's order, on whatever panel was selected — which on
+a doubler laid out its own way is a number about some other board. It now shows
+the rank the panel is actually laid out by, and its arrows move it in that order:
+the box's while the doublers follow it, the doublers' own once they do not.

@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback, useEffect, Suspense, lazy } from "react";
+import React, { useMemo, useState, useRef, useCallback, useEffect, Suspense, lazy } from "react";
 import Controls from "./Controls.jsx";
 import Viewport, { RENDER_STYLES, VIEW_PRESETS } from "./Viewport.jsx";
 import CutListView from "./CutListView.jsx";
@@ -10,6 +10,8 @@ import DrawingView from "./DrawingView.jsx";
 const RenderView = lazy(() => import("./RenderView.jsx"));
 import { DEFAULT_DESIGN, derive, setEdgeTreatment } from "./design.js";
 import { loadDesign, saveDesign, forgetDesign } from "./storage.js";
+import { designFileText, designFileName, readDesignFile, openedNote, readFile, download,
+  FILE_ACCEPT, FILE_TYPE } from "./file.js";
 import { useKernelSolids } from "./useKernelSolids.js";
 import { kernelProgress } from "../occt/kernel.js";
 import { fmt } from "../cutlist/cutlist.js";
@@ -71,6 +73,11 @@ export default function App() {
   // than a hopeful one — and switching the engine off and on again to get it is
   // a trick you have to know.
   const [attempt, setAttempt] = useState(0);
+  // §52 What happened to the last file — opened, and what was dropped out of
+  // it, or why it would not open. Kept until the next one, because a file that
+  // half-opened is something to read at your own pace, not a flash.
+  const [fileNote, setFileNote] = useState(null);
+  const fileInput = useRef(null);
 
   const derived = useMemo(() => {
     try { return { ok: true, ...derive(design) }; }
@@ -80,6 +87,27 @@ export default function App() {
   // Saved after the render that used it, so a design that cannot be solved is
   // still kept — you can reload and carry on fixing it rather than losing it.
   useEffect(() => { saveDesign(design); }, [design]);
+
+  // §52 Out to a file, and back in from one. The design in the file is the
+  // design in storage: opening one is the same act as reloading the tab, so it
+  // replaces the box outright rather than merging into it, and the panel that
+  // was selected is let go of because it was an index into a different box.
+  const saveToDisk = useCallback(() => {
+    download(designFileText(design), designFileName(design.title), FILE_TYPE);
+    setFileNote({ ok: true, text: `Saved ${designFileName(design.title)}.` });
+  }, [design]);
+
+  const openFromDisk = useCallback(async (file) => {
+    if (!file) return;
+    try {
+      const read = readDesignFile(await readFile(file));
+      setDesign(read.design);
+      setSelected(null);
+      setFileNote({ ok: true, text: openedNote(file.name, read) });
+    } catch (e) {
+      setFileNote({ ok: false, text: e?.message ?? String(e) });
+    }
+  }, []);
 
   const onSelect = useCallback((i) => setSelected((cur) => (cur === i ? null : i)), []);
   const onEdgePick = useCallback((key) => {
@@ -117,8 +145,26 @@ export default function App() {
         <footer className="side-foot">
           {/* Forgets as well as resets: a design kept between visits that you
               cannot get rid of is a trap, not a convenience. */}
-          <button type="button" onClick={() => { forgetDesign(); setDesign(DEFAULT_DESIGN); }}>Reset</button>
+          <button type="button" onClick={() => {
+            forgetDesign(); setDesign(DEFAULT_DESIGN); setSelected(null); setFileNote(null);
+          }}>Reset</button>
+          {/* §52 The design as a file: the way to keep two boxes, to send one to
+              somebody, or to put one in a repository beside its drawings. The
+              input is hidden and driven by the button, because a bare file input
+              is the one control in a browser nobody can style and everybody
+              recognises as an afterthought. */}
+          <button type="button" onClick={() => fileInput.current?.click()}>Open…</button>
+          <button type="button" onClick={saveToDisk}>Save</button>
+          <input ref={fileInput} type="file" accept={FILE_ACCEPT} className="hidden-file"
+            aria-label="Open a design file"
+            onChange={(e) => { openFromDisk(e.target.files?.[0]); e.target.value = ""; }} />
         </footer>
+        {fileNote ? (
+          <p className={fileNote.ok ? "note file-note" : "note file-note bad"} role="status">
+            {fileNote.text}
+            <button type="button" className="linkish" onClick={() => setFileNote(null)}>dismiss</button>
+          </p>
+        ) : null}
       </aside>
 
       <main className="main">

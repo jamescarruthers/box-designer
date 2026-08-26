@@ -10,7 +10,8 @@
 import React, { useState } from "react";
 import { FACES, FACE_LABEL, LAYER_LABEL, MATERIALS, PROMINENCE_PRESETS, EDGES, edgeAxis, materialById } from "../model/constants.js";
 import { ROUND_STEPS } from "../model/solver.js";
-import { setIn, setProjectMaterial, setProjectThickness, setEdgeTreatment, treatedEdges } from "./design.js";
+import { setIn, setProjectMaterial, setProjectThickness, setEdgeTreatment, treatedEdges,
+  layerOrder, layerPreset, ownOrder, setLayerOrder, setOwnProminence } from "./design.js";
 import { largestBevel, largestBevelAt } from "../model/bevel.js";
 import { readRebateKey, rebateLabel } from "../model/rebate.js";
 import { Group, Num, Colour, Segmented, FaceSwatch, StockThicknesses } from "./fields.jsx";
@@ -294,47 +295,91 @@ function mitreAll(design, derived) {
 }
 
 /**
+ * The box's order, and then any layer that is not laid out by it.
+ *
+ * §53 A doubler ring is a different piece of joinery from the carcass around
+ * it, and the box's order is not always the answer to it. The control only
+ * appears once there is a doubler to order — the prominence of panels that do
+ * not exist is not a question — and stays while one is set, so a departure is
+ * never hidden by the last doubler being taken off.
+ */
+function Prominence({ design, set, colourByFace }) {
+  const own = ownOrder(design, "doubler");
+  const doublers = FACES.filter((f) => design.doubler?.[f]);
+  return (
+    <>
+      <OrderPicker design={design} set={set} colourByFace={colourByFace} layer="shell" />
+      {doublers.length || own ? (
+        <div className="layer-prominence">
+          <p className="note">
+            The doublers are laid out inside the carcass, and which of them runs past
+            which at a corner is asked again there.{" "}
+            {doublers.length < 2 ? "With one doubler there is nothing for it to run past yet." : ""}
+          </p>
+          <Segmented ariaLabel="Doubler prominence" value={own ? "own" : "follow"}
+            onChange={(v) => set(setOwnProminence(design, "doubler", v === "own"))}
+            options={[{ id: "follow", name: "As the carcass" }, { id: "own", name: "Their own order" }]} />
+          {own ? (
+            <OrderPicker design={design} set={set} colourByFace={colourByFace} layer="doubler" />
+          ) : null}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/**
  * A preset covers most boxes, so the six-face order stays folded away until it
  * is wanted. The summary line always shows the order in force, so folding it
  * back up never hides a hand-made one.
  */
-function Prominence({ design, set, colourByFace }) {
-  const [open, setOpen] = useState(design.preset === "custom");
+function OrderPicker({ design, set, colourByFace, layer }) {
+  const order = layerOrder(design, layer);
+  const preset = layerPreset(design, layer);
+  const [open, setOpen] = useState(preset === "custom");
+  const what = layer === "shell" ? "" : ` ${LAYER_LABEL[layer].toLowerCase()}`;
+  const name = (f) => `${FACE_LABEL[f]}${what}`;
+  // Two of these can be on screen at once, so each says which order it folds.
+  const fold = layer === "shell" ? "the order" : `the ${LAYER_LABEL[layer].toLowerCase()} order`;
   return (
     <>
       <label className="field">
-        <span>Preset</span>
-        <select value={design.preset}
+        {/* Named for the layer where there is more than one of these on screen:
+            two selects both labelled "Preset" is two ways to be wrong. */}
+        <span>{layer === "shell" ? "Preset" : `${LAYER_LABEL[layer]} preset`}</span>
+        <select value={preset}
           onChange={(e) => {
             const p = PROMINENCE_PRESETS.find((x) => x.id === e.target.value);
-            if (p) set({ ...design, preset: p.id, order: p.order });
+            if (p) set(setLayerOrder(design, layer, p.order));
           }}>
           {PROMINENCE_PRESETS.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          {design.preset === "custom" ? <option value="custom">Custom</option> : null}
+          {preset === "custom" ? <option value="custom">Custom</option> : null}
         </select>
       </label>
 
       {open ? (
-        <ol className="prominence">
-          {design.order.map((f, i) => (
+        <ol className={`prominence for-${layer}`}>
+          {order.map((f, i) => (
             <li key={f}>
               <span className="rank">{i}</span>
-              <FaceSwatch face={f} layer="shell" on={colourByFace} />
+              <FaceSwatch face={f} layer={layer} on={colourByFace} />
               <span className="name">{FACE_LABEL[f]}</span>
               <span className="moves">
-                <button type="button" aria-label={`Raise ${FACE_LABEL[f]}`} disabled={i === 0}
-                  onClick={() => move(design, set, i, -1)}>▲</button>
-                <button type="button" aria-label={`Lower ${FACE_LABEL[f]}`} disabled={i === 5}
-                  onClick={() => move(design, set, i, 1)}>▼</button>
+                <button type="button" aria-label={`Raise ${name(f)}`} disabled={i === 0}
+                  onClick={() => set(moveIn(design, layer, i, -1))}>▲</button>
+                <button type="button" aria-label={`Lower ${name(f)}`} disabled={i === 5}
+                  onClick={() => set(moveIn(design, layer, i, 1))}>▼</button>
               </span>
             </li>
           ))}
         </ol>
       ) : (
-        <ol className="rank-summary" aria-label="Prominence order, most prominent first">
-          {design.order.map((f) => (
+        <ol className={`rank-summary for-${layer}`}
+          aria-label={layer === "shell" ? "Prominence order, most prominent first"
+            : `${LAYER_LABEL[layer]} prominence order, most prominent first`}>
+          {order.map((f) => (
             <li key={f}>
-              <FaceSwatch face={f} layer="shell" on={colourByFace} />
+              <FaceSwatch face={f} layer={layer} on={colourByFace} />
               {FACE_LABEL[f]}
             </li>
           ))}
@@ -342,7 +387,7 @@ function Prominence({ design, set, colourByFace }) {
       )}
 
       <button type="button" className="linkish" onClick={() => setOpen(!open)}>
-        {open ? "Hide the order" : "Override the order…"}
+        {open ? `Hide ${fold}` : `Override ${fold}…`}
       </button>
     </>
   );
@@ -461,9 +506,9 @@ function Departures({ design, derived, set, on, by, uniform, label, undo, onInsp
   );
 }
 
-function move(design, set, i, d) {
-  const order = [...design.order];
+/** Swap two faces in the order that lays out `layer` — its own, or the box's. */
+function moveIn(design, layer, i, d) {
+  const order = [...layerOrder(design, layer)];
   [order[i], order[i + d]] = [order[i + d], order[i]];
-  const match = PROMINENCE_PRESETS.find((p) => p.order.join() === order.join());
-  set({ ...design, order, preset: match ? match.id : "custom" });
+  return setLayerOrder(design, layer, order);
 }

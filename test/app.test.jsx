@@ -2,7 +2,7 @@
  *  modes and change inputs, and assert nothing falls over. */
 import React from "react";
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, within, waitFor } from "@testing-library/react";
 
 vi.mock("three", async (importOriginal) => {
   const actual = await importOriginal();
@@ -24,7 +24,8 @@ import { ACCENT, REBATE } from "../src/three/palette.js";
 beforeAll(() => {
   global.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
   Element.prototype.setPointerCapture = () => {};
-  global.URL.createObjectURL = () => "blob:stub";
+  // §52 What the app hands the browser to save, kept so a test can read it.
+  global.URL.createObjectURL = (blob) => { saved.push(blob); return "blob:stub"; };
   global.URL.revokeObjectURL = () => {};
 });
 
@@ -32,7 +33,27 @@ afterEach(cleanup);
 
 // §13 The design lives in storage now, so every test starts from a fresh
 // browser rather than from whatever the last one left behind.
-beforeEach(() => localStorage.clear());
+beforeEach(() => { localStorage.clear(); saved.length = 0; });
+
+/** Every blob the app has asked the browser to save this test. */
+const saved = [];
+const lastSaved = () => new Promise((resolve, reject) => {
+  // jsdom's Blob has no text(), so read it the way a browser would.
+  const reader = new FileReader();
+  reader.onload = () => resolve(JSON.parse(String(reader.result)));
+  reader.onerror = reject;
+  reader.readAsText(saved[saved.length - 1]);
+});
+
+/** What the sidebar says about the last file, if it is saying anything. */
+const fileNote = () => document.querySelector(".file-note");
+
+/** Hand the sidebar's file input a file, the way the picker would. */
+async function openFile(name, text) {
+  const input = screen.getByLabelText("Open a design file");
+  fireEvent.change(input, { target: { files: [new File([text], name, { type: "application/json" })] } });
+  await waitFor(() => expect(fileNote()).toBeTruthy());
+}
 
 /**
  * §47 Open a board's inspector, which is where everything about one panel is
@@ -778,6 +799,118 @@ describe("the app", () => {
     // The download path is stubbed in this environment; that it builds without
     // throwing on a real derived design is the part worth asserting here.
     fireEvent.click(screen.getByRole("button", { name: "Export DXF" }));
+  });
+
+  // ---------------------------------------------------------------- §52 files
+
+  it("saves the design to a file named after the box", async () => {
+    render(<App />);
+    fireEvent.change(screen.getByLabelText("Drawing title"), { target: { value: "SUBWOOFER" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const file = await lastSaved();
+    expect(file.format).toBe("sheet-box-designer/design");
+    expect(file.design.title).toBe("SUBWOOFER");
+    expect(fileNote().textContent).toContain("subwoofer.json");
+  });
+
+  it("opens a design file over the box that was on screen", async () => {
+    render(<App />);
+    expect(screen.getByLabelText("Drawing title").value).toBe("SHEET BOX");
+
+    await openFile("mk-ii.json", JSON.stringify({
+      format: "sheet-box-designer/design", version: 1,
+      design: { title: "MK II", thickness: 12, kerf: 3.6 },
+    }));
+
+    expect(screen.getByLabelText("Drawing title").value).toBe("MK II");
+    expect(screen.getByLabelText("Thickness").value).toBe("12");
+    expect(fileNote().textContent).toContain("Opened mk-ii.json");
+  });
+
+  it("keeps the box it had when the file is not a design, and says why", async () => {
+    render(<App />);
+    await openFile("holiday.json", JSON.stringify({ nodes: [], links: [] }));
+
+    expect(screen.getByLabelText("Drawing title").value).toBe("SHEET BOX");
+    const note = fileNote();
+    expect(note.textContent).toContain("how to open");
+    expect(note.className).toContain("bad");
+
+    fireEvent.click(within(note).getByRole("button", { name: "dismiss" }));
+    expect(fileNote()).toBeNull();
+  });
+
+  it("saves what it opened, unchanged", async () => {
+    // The round trip somebody actually does: open a file, save it again. §52's
+    // whole claim is that a file is the design, so this has to come back equal.
+    render(<App />);
+    fireEvent.change(screen.getByLabelText("Drawing title"), { target: { value: "ROUND TRIP" } });
+    addLayer("Front", "doubler");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    const first = await lastSaved();
+
+    await openFile("round-trip.json", JSON.stringify(first));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await lastSaved()).toEqual(first);
+  });
+
+  // ----------------------------------------------------- §53 doubler prominence
+
+  it("offers the doublers an order of their own once there is a doubler", () => {
+    render(<App />);
+    expect(screen.queryByLabelText("Doubler prominence")).toBeNull();
+
+    addLayer("Front", "doubler");
+    fireEvent.click(screen.getByLabelText("Close the panel inspector"));
+    expect(screen.getByLabelText("Doubler prominence")).toBeTruthy();
+    expect(screen.queryByLabelText("Doubler preset")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Their own order" }));
+    expect(screen.getByLabelText("Doubler preset")).toBeTruthy();
+  });
+
+  it("reorders the doublers and leaves the carcass where it was", () => {
+    const { container } = render(<App />);
+    for (const f of ["Front", "Back", "Left", "Right", "Top", "Bottom"]) addLayer(f, "doubler");
+    fireEvent.click(screen.getByLabelText("Close the panel inspector"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    const sizes = (layer) => [...container.querySelectorAll("table.cuts tbody tr")]
+      .filter((r) => r.children[2].textContent === layer)
+      .map((r) => [...r.querySelectorAll(".num")].slice(0, 2).map((c) => c.textContent).join("×"))
+      .sort();
+    const carcass = sizes("Carcass"), doublers = sizes("Doubler");
+    expect(doublers).toHaveLength(6);
+
+    fireEvent.click(screen.getByRole("button", { name: "Their own order" }));
+    // Switching it on copies the box's order, so nothing has moved yet.
+    expect(sizes("Doubler")).toEqual(doublers);
+
+    fireEvent.change(screen.getByLabelText("Doubler preset"), { target: { value: "tb" } });
+    expect(sizes("Doubler")).not.toEqual(doublers);
+    expect(sizes("Carcass")).toEqual(carcass);
+
+    // And the box's own order is untouched, preset and all.
+    expect(screen.getByLabelText("Preset").value).toBe("fb");
+    expect([...container.querySelectorAll(".rank-summary.for-shell li")].map((li) => li.textContent))
+      .toEqual(["Front", "Back", "Left", "Right", "Top", "Bottom"]);
+  });
+
+  it("folds the two orders away separately", () => {
+    const { container } = render(<App />);
+    addLayer("Front", "doubler");
+    addLayer("Top", "doubler");
+    fireEvent.click(screen.getByLabelText("Close the panel inspector"));
+    fireEvent.click(screen.getByRole("button", { name: "Their own order" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Override the doubler order…" }));
+    expect(container.querySelectorAll(".prominence.for-doubler li")).toHaveLength(6);
+    expect(container.querySelector(".prominence.for-shell")).toBeNull();
+
+    fireEvent.click(screen.getByLabelText("Raise Left doubler"));
+    expect(screen.getByLabelText("Doubler preset").value).toBe("custom");
+    expect(screen.getByLabelText("Preset").value).toBe("fb");
   });
 
   it("reports the volume closure as exact", () => {

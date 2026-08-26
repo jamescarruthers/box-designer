@@ -42,6 +42,10 @@ export const DEFAULT_DESIGN = {
   thicknessBy: Object.fromEntries(FACES.map((f) => [f, materialById(DEFAULT_MATERIAL).thickness])),
   order: PROMINENCE_PRESETS[0].order,
   preset: PROMINENCE_PRESETS[0].id,
+  // §53 A layer that is ordered differently from the box. Null — or absent, in
+  // a design saved before this existed — means it follows the box, which is
+  // what one order for the whole box always meant.
+  prominence: { doubler: null },
   // Cladding and doublers are added a side at a time. Each entry carries its own
   // material and thickness, inherited from the project sheet and then editable.
   cladding: {},
@@ -194,20 +198,68 @@ export function setRebateDepth(design, key, depth) {
 }
 
 /**
+ * §53 Which prominence order a layer is laid out by: its own, or the box's.
+ *
+ * Everything that reads an order goes through here, so a layer that has not
+ * been given one of its own is not a special case anywhere — it is the box's
+ * order, the same object, and every design written before §53 says exactly
+ * what it always said.
+ */
+export const layerOrder = (design, layer) => design.prominence?.[layer]?.order ?? design.order;
+export const layerPreset = (design, layer) => design.prominence?.[layer]?.preset ?? design.preset;
+export const ownOrder = (design, layer) => Boolean(design.prominence?.[layer]?.order);
+
+/** The per-layer ranks for the solver: only the layers that depart from the box. */
+export const layerRanks = (design) => Object.fromEntries(
+  Object.entries(design.prominence ?? {})
+    .filter(([, v]) => Array.isArray(v?.order))
+    .map(([layer, v]) => [layer, rankFromOrder(v.order)]));
+
+const presetOf = (order) => PROMINENCE_PRESETS.find((p) => p.order.join() === order.join())?.id ?? "custom";
+
+/**
+ * Write an order back where it came from — the layer's own if it has one, the
+ * box's if it does not. A layer that follows the box and is then reordered from
+ * that layer's own control has not asked to stop following it.
+ */
+export function setLayerOrder(design, layer, order) {
+  const preset = presetOf(order);
+  if (!ownOrder(design, layer)) return { ...design, order, preset };
+  return { ...design, prominence: { ...design.prominence, [layer]: { preset, order } } };
+}
+
+/**
+ * §53 Give a layer its own order, or take it away again.
+ *
+ * It starts as a copy of the box's, so switching it on changes nothing about
+ * the box until something is moved — the departure is the point, and a control
+ * that reorders six panels the moment it is switched on hides where it began.
+ */
+export function setOwnProminence(design, layer, own) {
+  const cur = design.prominence ?? {};
+  if (!own) return { ...design, prominence: { ...cur, [layer]: null } };
+  if (ownOrder(design, layer)) return design;
+  return { ...design, prominence: { ...cur, [layer]: { preset: design.preset, order: [...design.order] } } };
+}
+
+/**
  * §21 Move one face up or down the prominence order.
  *
  * Prominence decides which panel runs past which at every corner, so it is as
  * much a property of the face you are looking at as its thickness is — and from
  * the inspector you are pointing at the face rather than at a row in a list.
+ *
+ * §53 In the order that lays out the layer you are pointing at: moving the top
+ * doubler up the box's order, while the doublers are ordered by their own,
+ * would move six other panels and leave the one on screen where it was.
  */
-export function moveFace(design, face, delta) {
-  const order = [...design.order];
+export function moveFace(design, face, delta, layer = "shell") {
+  const order = [...layerOrder(design, layer)];
   const i = order.indexOf(face);
   const j = i + delta;
   if (i < 0 || j < 0 || j >= order.length) return design;
   [order[i], order[j]] = [order[j], order[i]];
-  const match = PROMINENCE_PRESETS.find((p) => p.order.join() === order.join());
-  return { ...design, order, preset: match ? match.id : "custom" };
+  return setLayerOrder(design, layer, order);
 }
 
 export function editPanel(design, layer, face, patch) {
@@ -379,11 +431,13 @@ export function derive(design) {
   const doubler = layerThickness(design.doubler);
   const lagging = layerThickness(design.lagging);
   const rank = rankFromOrder(design.order);
+  // §53 And the layers that are not laid out by it.
+  const ranks = layerRanks(design);
   const wall = wallOf(cladding, thickness, doubler, lagging);
   // §30 What a bevel may be cut from is the board, not the board plus the felt.
   const board = boardOf(cladding, thickness, doubler);
 
-  const sol = solve({ start: design.start, thickness, cladding, doubler, lagging, rank, round: design.round });
+  const sol = solve({ start: design.start, thickness, cladding, doubler, lagging, rank, ranks, round: design.round });
 
   // §12 Mitres redistribute material between two panels: the one that butted
   // grows out to the corner and both are cut back 45°. Applied before anything

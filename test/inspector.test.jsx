@@ -159,6 +159,64 @@ describe("§21 prominence, from the face rather than from the list", () => {
   });
 });
 
+describe("§53 prominence from a doubler", () => {
+  /** Open a face's carcass, add a doubler, and inspect the doubler. */
+  const doubleFace = (face) => {
+    fireEvent.click(screen.getByLabelText(`Open the ${face} carcass`));
+    fireEvent.click(screen.getByRole("button", { name: "Add doubler" }));
+  };
+
+  it("shows the rank the panel is actually laid out by", () => {
+    render(<App />);
+    for (const f of ["Front", "Top"]) doubleFace(f);
+    fireEvent.click(screen.getByLabelText("Close the panel inspector"));
+
+    // Doublers of their own, ordered top first. The top doubler is rank 0 in
+    // that order and rank 4 in the box's — and it is the doubler on screen.
+    fireEvent.click(screen.getByRole("button", { name: "Their own order" }));
+    fireEvent.change(screen.getByLabelText("Doubler preset"), { target: { value: "tb" } });
+
+    fireEvent.click(screen.getByLabelText("Open the Top doubler"));
+    const inspector = document.querySelector(".inspector");
+    expect(within(inspector).getByText("Runs past all five")).toBeTruthy();
+
+    // The carcass on the same face is still where the box's order puts it.
+    fireEvent.click(screen.getByLabelText("Inspect the Top carcass"));
+    expect(within(document.querySelector(".inspector")).getByText("Runs past 1, inside 4")).toBeTruthy();
+  });
+
+  it("moves the doubler in its own order, not the box's", () => {
+    const { container } = render(<App />);
+    for (const f of ["Front", "Top"]) doubleFace(f);
+    fireEvent.click(screen.getByLabelText("Close the panel inspector"));
+    fireEvent.click(screen.getByRole("button", { name: "Their own order" }));
+
+    fireEvent.click(screen.getByLabelText("Open the Top doubler"));
+    fireEvent.click(screen.getByLabelText("Raise Top"));
+
+    // The box's order has not moved.
+    expect([...container.querySelectorAll(".rank-summary.for-shell li")].map((li) => li.textContent))
+      .toEqual(["Front", "Back", "Left", "Right", "Top", "Bottom"]);
+    expect([...container.querySelectorAll(".rank-summary.for-doubler li")].map((li) => li.textContent))
+      .toEqual(["Front", "Back", "Left", "Top", "Right", "Bottom"]);
+  });
+
+  it("moves the box's order while the doublers follow it", () => {
+    // Moving a doubler that is laid out by the box's order *is* moving the
+    // box's order — that is what following it means, and the alternative is a
+    // button on the panel that does nothing to the panel.
+    const { container } = render(<App />);
+    doubleFace("Top");
+    fireEvent.click(screen.getByLabelText("Close the panel inspector"));
+    fireEvent.click(screen.getByLabelText("Open the Top doubler"));
+    fireEvent.click(screen.getByLabelText("Raise Top"));
+
+    expect([...container.querySelectorAll(".rank-summary.for-shell li")].map((li) => li.textContent))
+      .toEqual(["Front", "Back", "Left", "Top", "Right", "Bottom"]);
+    expect(container.querySelector(".rank-summary.for-doubler")).toBeNull();
+  });
+});
+
 describe("§21 the inspector in the app", () => {
   it("opens on the selected panel and closes again", () => {
     const { container } = render(<App />);

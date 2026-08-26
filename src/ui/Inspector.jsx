@@ -29,7 +29,7 @@ import {
 } from "../model/rebate.js";
 import {
   setFaceThickness, setFaceColour, moveFace, addPanel, removePanel, editPanel,
-  setEdgeTreatment, authoredEdge, setRebateSides, setRebateDepth,
+  setEdgeTreatment, authoredEdge, setRebateSides, setRebateDepth, layerOrder, ownOrder,
 } from "./design.js";
 
 
@@ -43,7 +43,12 @@ export default function Inspector({ design, set, derived, row, colourByFace, onS
   // Every panel on this face, so the inspector can say what is stacked here and
   // let you step between them without going back to the box.
   const onThisFace = derived.rows.filter((r) => r.face === face);
-  const rank = design.order.indexOf(face);
+  // §53 The rank this panel is actually laid out by. A doubler in a box whose
+  // doublers have an order of their own is at whatever rank *that* order gives
+  // it, and moving it moves it there — showing the carcass's rank on a panel it
+  // does not govern would be a number about some other board.
+  const orderLayer = ownOrder(design, layer) ? layer : "shell";
+  const rank = layerOrder(design, orderLayer).indexOf(face);
 
   return (
     <aside className="inspector" aria-label={`${label} ${LAYER_LABEL[layer].toLowerCase()} panel`}>
@@ -112,15 +117,17 @@ export default function Inspector({ design, set, derived, row, colourByFace, onS
         </Group>
 
         <Group title="Prominence"
-          note="Rank decides which panel runs past which at every corner. Moving this face resizes the ones it meets, and changes no internal dimension.">
+          note={`Rank decides which panel runs past which at every corner. Moving this face resizes the ones it meets, and changes no internal dimension.${
+            orderLayer === "shell" ? "" :
+            ` This is the ${LAYER_LABEL[orderLayer].toLowerCase()}s' own order, which the rest of the box does not follow.`}`}>
           <div className="rank-row">
             <span className="rank">{rank}</span>
             <span className="name">{rankNote(rank)}</span>
             <span className="moves">
               <button type="button" aria-label={`Raise ${label}`} disabled={rank === 0}
-                onClick={() => set(moveFace(design, face, -1))}>▲</button>
+                onClick={() => set(moveFace(design, face, -1, orderLayer))}>▲</button>
               <button type="button" aria-label={`Lower ${label}`} disabled={rank === 5}
-                onClick={() => set(moveFace(design, face, 1))}>▼</button>
+                onClick={() => set(moveFace(design, face, 1, orderLayer))}>▼</button>
             </span>
           </div>
         </Group>

@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { scaleLabel } from "../drawing/sheet.js";
 import { useKernelSheet } from "./useKernelSheet.js";
 import { kernelProgress } from "../occt/kernel.js";
+import { download } from "./file.js";
 
 export default function DrawingView({ derived, design }) {
   const [engine, setEngine] = useState("analytic");
@@ -52,11 +53,5 @@ function engineNote(engine, showing, kernel) {
   return "";
 }
 
-function downloadSvg(svg) {
-  const blob = new Blob([`<?xml version="1.0" encoding="UTF-8"?>\n${svg}`], { type: "image/svg+xml" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "drawing.svg";
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-}
+const downloadSvg = (svg) =>
+  download(`<?xml version="1.0" encoding="UTF-8"?>\n${svg}`, "drawing.svg", "image/svg+xml");
