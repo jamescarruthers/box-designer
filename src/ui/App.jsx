@@ -39,6 +39,12 @@ export default function App() {
   const [style, setStyle] = useState("shaded-edges");
   const [colourByFace, setColourByFace] = useState(true);
   const [explode, setExplode] = useState(0);
+  // §51 One box, one way of looking at it: the 3D view and the rendered view
+  // share how far it is pulled apart and whether it is drawn in perspective.
+  // They keep their own camera angles — those are set up per view — but a box
+  // that is exploded is exploded, and there is nothing to gain from being
+  // shown it two ways at once.
+  const [parallel, setParallel] = useState(false);
   // §22 Whether the drivers are drawn on the box. A way of looking at it rather
   // than something about it, so it lives here beside the render style and not
   // in the design. On by default: a box with the drivers in it is the picture
@@ -130,6 +136,7 @@ export default function App() {
           {/* The viewport stays mounted and is hidden with CSS, so the camera survives. */}
           <div className={`pane pane-view ${mode === "view" ? "" : "hidden"}`}>
             <Viewport derived={derived} style={style} colourByFace={colourByFace} explode={explode}
+              parallel={parallel}
               selected={selected} hovered={hovered} onSelect={onSelect} hidden={mode !== "view"} camera={camera}
               solids={solidEngine === "kernel" ? kernelSolids.solids : null}
               edgeTool={edgeTool} onEdgePick={onEdgePick} drivers={showDrivers} />
@@ -153,6 +160,16 @@ export default function App() {
                 {Object.keys(VIEW_PRESETS).map((p) => (
                   <button key={p} type="button" onClick={() => setCamera({ preset: p, nonce: Date.now() })}>{p}</button>
                 ))}
+              </div>
+              {/* §51 The same two projections the rendered view offers, and the
+                  same setting behind them. A parallel view is the one to judge
+                  a proportion in: two panels the same size are drawn the same
+                  size, with nothing to allow for. */}
+              <div className="chip-group">
+                <button type="button" className={parallel ? "" : "on"} aria-pressed={!parallel}
+                  onClick={() => setParallel(false)}>Perspective</button>
+                <button type="button" className={parallel ? "on" : ""} aria-pressed={parallel}
+                  onClick={() => setParallel(true)}>Parallel</button>
               </div>
               <div className="chip-group">
                 <button type="button" className={solidEngine === "analytic" ? "on" : ""}
@@ -216,7 +233,9 @@ export default function App() {
                 <RenderView derived={derived} design={design}
                   solids={solidEngine === "kernel" ? kernelSolids.solids : null} hidden={false}
                   camera={renderCamera} onCamera={setRenderCamera}
-                  drivers={showDrivers} onDrivers={setShowDrivers} />
+                  drivers={showDrivers} onDrivers={setShowDrivers}
+                  explode={explode} onExplode={setExplode}
+                  parallel={parallel} onParallel={setParallel} />
               </Suspense>
             </div>
           ) : null}

@@ -3541,3 +3541,58 @@ for nothing.
 The sheet captions carry it through to the end: `Sheet 2 · Valchromat 19 mm Red`
 on screen, `SHEET 2 — Valchromat RED 19mm` in the DXF. A shop with two boards on
 the rack needs to be told which one goes on the bed.
+
+## §51 Exploded, and in parallel
+
+Two things the rendered view could not do that the 3D view could, and one
+neither could do.
+
+### The box comes apart in the photograph too
+
+The 3D view has had an explode slider since §4 and the drawing's isometric
+since §38. The rendered view — the one that looks like the thing being made —
+did not, which made it the one view you could not show somebody to explain how
+it goes together.
+
+The panels are exploded *as they are placed* rather than moved afterwards. The
+studio's shadow maps are fitted to the box, the sweep is sized to it and the
+path tracer bakes it into a world-space tree; a panel moved after all three
+were fitted is a panel none of them knows about. So the whole scene is built at
+the amount asked for, and the radius everything else is fitted to grows with it.
+A driver goes in a group of its own so that moving it with its baffle does not
+overwrite where on that baffle it sits.
+
+### Perspective or parallel
+
+A photograph of a box is a box seen from somewhere: the far end is smaller than
+the near one, and every proportion has to be allowed for. A parallel projection
+is the box itself — two panels the same size are drawn the same size — which is
+what you want when the question is "is that too tall".
+
+Both 3D views offer it, from one rule in `src/three/camera.js`. What is shared
+is the camera and the size of its frustum; the depth planes are not, because
+§17's fat lines need the precision in a way a photograph does not.
+
+Two details make it a change of projection rather than a jump somewhere else:
+
+- **The frustum is sized to what the perspective camera was already seeing.** At
+  the target, a perspective camera of field *f* at distance *d* sees
+  2·*d*·tan(*f*/2) of height; the parallel camera is given exactly that. A box
+  that filled the frame still fills it.
+- **The near plane may sit behind the eye, and has to.** With parallel rays,
+  where the camera sits along them decides nothing about the picture and only
+  what gets clipped. Clamping near to a positive number — which a perspective
+  camera must do — cuts the front off the box the moment somebody zooms in
+  closer than its own radius.
+
+The camera is swapped in place: the orbit, the target and the scene stay where
+they are. In the rendered view the path tracer is let go of with the swap, since
+a different projection is a different picture rather than a better one.
+
+### One box, one way of looking at it
+
+The two 3D views keep their own camera *angles* — those are set up per view, and
+§19 made that decision when the rendered view got its own. How far the box is
+pulled apart and whether it is drawn in perspective are not that: they are
+facts about the box being looked at, so both views share them and a slider moved
+in one is moved in the other.
