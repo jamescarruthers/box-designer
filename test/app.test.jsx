@@ -34,6 +34,26 @@ afterEach(cleanup);
 // browser rather than from whatever the last one left behind.
 beforeEach(() => localStorage.clear());
 
+/**
+ * §47 Open a board's inspector, which is where everything about one panel is
+ * now. The sidebar's summary of the box is the way in — from a test as from a
+ * mouse — so a test opens a panel the way somebody would.
+ */
+const open = (name) => fireEvent.click(screen.getByLabelText(`Open the ${name}`));
+
+/** Add a layer to a face, from that face's carcass panel. */
+function addLayer(face, layer) {
+  open(`${face} carcass`);
+  fireEvent.click(screen.getByRole("button", { name: `Add ${layer}` }));
+}
+
+/** Put a fitting on a face, from the panel it is cut into. */
+function addFitting(face, type) {
+  open(`${face} carcass`);
+  fireEvent.change(screen.getByLabelText(`Add a fitting to the ${face.toLowerCase()}`),
+    { target: { value: type } });
+}
+
 const errors = [];
 const originalError = console.error;
 console.error = (...a) => { errors.push(a.join(" ")); originalError(...a); };
@@ -163,7 +183,9 @@ describe("the app", () => {
     expect([...named.options].map((o) => o.text)).toContain("Green Mint");
     fireEvent.change(named, { target: { value: "#548772" } });
 
-    fireEvent.click(screen.getByLabelText("Colour per panel"));
+    // §47 One panel's colour is the panel's business: it is set in the
+    // inspector, which switches the per-panel override on as it writes.
+    open("Front carcass");
     fireEvent.change(screen.getByLabelText("Front colour name"), { target: { value: "#da646c" } });
 
     // The part templates are drawn in whichever colouring is on, so with
@@ -267,13 +289,16 @@ describe("the app", () => {
     expect(readout(container, "Envelope")).toContain("500");
   });
 
-  it("adds a cladding side from the dropdown, inheriting the project sheet", () => {
+  it("§47 adds a cladding side from the face it goes on, inheriting the project sheet", () => {
     const { container } = render(<App />);
-    expect(container.querySelectorAll(".stack-list li")).toHaveLength(0);
+    const summary = () => container.querySelector(".panel-summary").textContent;
+    expect(summary()).toMatch(/CladdingNone/);
 
-    fireEvent.change(screen.getByLabelText("Add cladding"), { target: { value: "front" } });
-    const row = container.querySelector(".stack-list li");
-    expect(row.textContent).toContain("Front");
+    addLayer("Front", "cladding");
+    // The sidebar says what the box carries; the panel itself is in the
+    // inspector, which is where it was added from.
+    expect(summary()).toMatch(/CladdingFront/);
+    open("Front cladding");
     expect(screen.getByLabelText("Cladding Front thickness").value).toBe("18");
     expect(screen.getByLabelText("Cladding Front material").value).toBe("birch");
 
@@ -285,7 +310,8 @@ describe("the app", () => {
 
   it("changes an added panel to another sheet and separates it in the layouts", () => {
     const { container } = render(<App />);
-    fireEvent.change(screen.getByLabelText("Add cladding"), { target: { value: "front" } });
+    addLayer("Front", "cladding");
+    open("Front cladding");
     fireEvent.change(screen.getByLabelText("Cladding Front material"), { target: { value: "valchromat" } });
     // Valchromat is 19 mm as standard.
     expect(screen.getByLabelText("Cladding Front thickness").value).toBe("19");
@@ -300,10 +326,11 @@ describe("the app", () => {
 
   it("removes an added side", () => {
     const { container } = render(<App />);
-    fireEvent.change(screen.getByLabelText("Add doublers"), { target: { value: "back" } });
-    expect(container.querySelectorAll(".stack-list li")).toHaveLength(1);
-    fireEvent.click(screen.getByLabelText("Remove Doublers Back"));
-    expect(container.querySelectorAll(".stack-list li")).toHaveLength(0);
+    addLayer("Back", "doubler");
+    const summary = () => container.querySelector(".panel-summary").textContent;
+    expect(summary()).toMatch(/DoublerBack/);
+    fireEvent.click(screen.getByLabelText("Remove the Back doubler"));
+    expect(summary()).toMatch(/DoublerNone/);
   });
 
   it("moves the carcass to a new sheet's standard thickness", () => {
@@ -363,7 +390,7 @@ describe("the app", () => {
 
   it("§10 turns a port's tube off from the control", () => {
     const { container } = render(<App />);
-    fireEvent.change(screen.getByLabelText("Add a fitting"), { target: { value: "port" } });
+    addFitting("Front", "port");
     expect(container.textContent).toContain("× 150");
 
     fireEvent.click(screen.getByLabelText("Fitting 1 tube"));
@@ -377,7 +404,7 @@ describe("the app", () => {
     // of the box's capacity is the driver's body standing still in it. The
     // field carried the wrong name briefly; this is here so it cannot again.
     const { container } = render(<App />);
-    fireEvent.change(screen.getByLabelText("Add a fitting"), { target: { value: "driver" } });
+    addFitting("Front", "driver");
 
     const field = screen.getByLabelText("Fitting 1 displaces").closest(".field");
     expect(field.textContent).toContain("Displaces");
@@ -392,7 +419,7 @@ describe("the app", () => {
 
   it("§29 flares the back of a cutout from the fitting's own controls", () => {
     const { container } = render(<App />);
-    fireEvent.change(screen.getByLabelText("Add a fitting"), { target: { value: "driver" } });
+    addFitting("Front", "driver");
 
     // Square to begin with, and the radius has nothing to act on.
     const radius = screen.getByLabelText("Fitting 1 flare");
@@ -412,11 +439,12 @@ describe("the app", () => {
     expect(container.querySelector(".fitting .note").textContent).not.toContain("inside");
   });
 
-  it("§30 lines a face with lagging from the sidebar, chosen off the linings", () => {
+  it("§30 lines a face with lagging, chosen off the linings and not the sheets", () => {
     const { container } = render(<App />);
     const before = container.querySelector(".modes .stat").textContent;
 
-    fireEvent.change(screen.getByLabelText("Add lagging"), { target: { value: "back" } });
+    addLayer("Back", "lagging");
+    open("Back lagging");
     expect(screen.getByLabelText("Lagging Back thickness").value).toBe("10");
     expect(screen.getByLabelText("Lagging Back material").value).toBe("felt");
     // The lining list, not the sheet list: no birch ply in it.
@@ -433,7 +461,7 @@ describe("the app", () => {
 
   it("§31 offers the whole set of driver dimensions, filled in rather than blank", () => {
     const { container } = render(<App />);
-    fireEvent.change(screen.getByLabelText("Add a fitting"), { target: { value: "driver" } });
+    addFitting("Front", "driver");
 
     // Every one shows the figure the app would use, so a datasheet is typed
     // over a number rather than into a gap.
@@ -452,7 +480,7 @@ describe("the app", () => {
 
   it("§32 turns the section and the insulation off from the sidebar", () => {
     const { container } = render(<App />);
-    fireEvent.change(screen.getByLabelText("Add lagging"), { target: { value: "back" } });
+    addLayer("Back", "lagging");
     fireEvent.click(screen.getByRole("button", { name: "Drawing" }));
 
     const sheet = () => container.querySelector(".sheet-holder").innerHTML;
@@ -471,8 +499,8 @@ describe("the app", () => {
 
   it("§33 puts the bolt holes in the baffle and the cutout through the doubler", () => {
     const { container } = render(<App />);
-    fireEvent.change(screen.getByLabelText("Add doublers"), { target: { value: "front" } });
-    fireEvent.change(screen.getByLabelText("Add a fitting"), { target: { value: "driver" } });
+    addLayer("Front", "doubler");
+    addFitting("Front", "driver");
 
     // Two layers on the face, so there is a depth to choose. Both start at all.
     expect(screen.getByLabelText("Fitting 1 through").value).toBe("all");
@@ -491,15 +519,15 @@ describe("the app", () => {
 
   it("§33 offers no depth to choose when the face is one panel thick", () => {
     render(<App />);
-    fireEvent.change(screen.getByLabelText("Add a fitting"), { target: { value: "driver" } });
+    addFitting("Front", "driver");
     expect(screen.queryByLabelText("Fitting 1 through")).toBe(null);
     expect(screen.queryByLabelText("Fitting 1 boltsThrough")).toBe(null);
   });
 
   it("§36 gives the whole panel to a flare, and says when it opens into the bolts", () => {
     const { container } = render(<App />);
-    fireEvent.change(screen.getByLabelText("Add doublers"), { target: { value: "front" } });
-    fireEvent.change(screen.getByLabelText("Add a fitting"), { target: { value: "driver" } });
+    addLayer("Front", "doubler");
+    addFitting("Front", "driver");
     fireEvent.click(within(container.querySelector(".fitting-flare")).getByRole("button", { name: "Fillet" }));
 
     // The thickness is the only limit now, bolt holes or no bolt holes.
@@ -522,8 +550,8 @@ describe("the app", () => {
 
   it("§36 drills the bolt holes to a depth, and stops them where it runs out", () => {
     const { container } = render(<App />);
-    fireEvent.change(screen.getByLabelText("Add doublers"), { target: { value: "front" } });
-    fireEvent.change(screen.getByLabelText("Add a fitting"), { target: { value: "driver" } });
+    addLayer("Front", "doubler");
+    addFitting("Front", "driver");
 
     // Offered filled in with a hole that goes right through both panels.
     expect(Number(screen.getByLabelText("Fitting 1 boltDeep").value)).toBe(36);
@@ -566,10 +594,8 @@ describe("the app", () => {
     const plain = brackets(sheet());
     expect(new Set(plain).size).toBe(3);
 
-    for (const f of ["front", "back"]) {
-      fireEvent.change(screen.getByLabelText("Add cladding"), { target: { value: f } });
-      fireEvent.change(screen.getByLabelText("Add doublers"), { target: { value: f } });
-      fireEvent.change(screen.getByLabelText("Add lagging"), { target: { value: f } });
+    for (const f of ["Front", "Back"]) {
+      for (const layer of ["cladding", "doubler", "lagging"]) addLayer(f, layer);
     }
 
     // Those three layers all take from the depth, so the end view now carries
@@ -607,21 +633,23 @@ describe("the app", () => {
     expect(iso()).toBe(before);
   });
 
-  it("§42 rebates a panel into the ones around it, from the sidebar", () => {
+  it("§42 rebates a panel into the ones around it, from its inspector", () => {
     const { container } = render(<App />);
     // A let-in baffle needs the sides to wrap, or there is nothing to let it
     // into — and the control says exactly that when there is not.
-    fireEvent.change(screen.getByLabelText("Add a rebate"), { target: { value: "front" } });
-    expect(container.querySelector(".rebate .note").textContent).toMatch(/No sides chosen/);
+    open("Front carcass");
+    const note = () => container.querySelector(".rebate .note").textContent;
+    expect(note()).toMatch(/No sides chosen/);
 
     fireEvent.click(screen.getByLabelText("Front rebate all sides"));
-    expect(container.querySelector(".rebate .note").textContent).toMatch(/prominence order/);
+    expect(note()).toMatch(/prominence order/);
 
     const preset = [...container.querySelectorAll("label.field")]
       .find((l) => l.textContent.startsWith("Preset")).querySelector("select");
     fireEvent.change(preset, { target: { value: "sides" } });
-    expect(container.querySelector(".rebate .note").textContent)
-      .toMatch(/Let in 6 mm on left, right, top, bottom/);
+    expect(note()).toMatch(/Let in 6 mm on left, right, top, bottom/);
+    // And the sidebar's summary of the box names the board that carries it.
+    expect(container.querySelector(".panel-summary").textContent).toMatch(/RebatedFront/);
 
     // The board that is let in is bigger; the ones it goes into carry a note
     // and keep their size, and the box still closes.
@@ -633,19 +661,23 @@ describe("the app", () => {
     expect(within(container.querySelector(".totals")).getByText("exact")).toBeTruthy();
   });
 
-  it("§42 changes the depth, and takes the rebate away again", () => {
+  it("§47 changes the depth, and takes the rebate away by clearing the sides", () => {
     const { container } = render(<App />);
     const preset = [...container.querySelectorAll("label.field")]
       .find((l) => l.textContent.startsWith("Preset")).querySelector("select");
     fireEvent.change(preset, { target: { value: "sides" } });
-    fireEvent.change(screen.getByLabelText("Add a rebate"), { target: { value: "front" } });
+    open("Front carcass");
     fireEvent.click(screen.getByLabelText("Front rebate left"));
     fireEvent.change(screen.getByLabelText("Front rebate depth"), { target: { value: "9" } });
     expect(container.querySelector(".rebate .note").textContent).toMatch(/Let in 9 mm on left/);
+    expect(container.querySelector(".panel-summary").textContent).toMatch(/RebatedFront/);
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
-    expect(container.querySelector(".rebate")).toBe(null);
-    expect(screen.getByLabelText("Add a rebate").value).toBe("");
+    // There is no rebate to remove, only sides to clear: the last one off and
+    // the panel simply stops being a rebated panel.
+    fireEvent.click(screen.getByLabelText("Front rebate left"));
+    expect(container.querySelector(".rebate .note").textContent).toMatch(/No sides chosen/);
+    expect(container.querySelector(".panel-summary").textContent).toMatch(/RebatedNone/);
+    expect(screen.getByLabelText("Front rebate depth").disabled).toBe(true);
   });
 
   it("§45 shows the rebate in the cut list and on the flat drawings", () => {
@@ -653,7 +685,7 @@ describe("the app", () => {
     const preset = [...container.querySelectorAll("label.field")]
       .find((l) => l.textContent.startsWith("Preset")).querySelector("select");
     fireEvent.change(preset, { target: { value: "sides" } });
-    fireEvent.change(screen.getByLabelText("Add a rebate"), { target: { value: "front" } });
+    open("Front carcass");
     fireEvent.click(screen.getByLabelText("Front rebate all sides"));
     fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
 
@@ -689,23 +721,23 @@ describe("the app", () => {
 
   it("§46 rebates a doubler, and says which board it means", () => {
     const { container } = render(<App />);
-    // Nothing but carcass panels to rebate until there is another board.
-    const add = () => screen.getByLabelText("Add a rebate");
-    const options = () => [...add().options].map((o) => o.textContent);
-    expect(options()).not.toContain("Top doubler");
+    // A lining is not a board, and its inspector says so rather than offering
+    // sides it would refuse.
+    addLayer("Top", "lagging");
+    open("Top lagging");
+    expect(container.querySelector(".inspector").textContent).toMatch(/A lining is not a board/);
 
-    fireEvent.change(screen.getByLabelText("Add doublers"), { target: { value: "top" } });
-    expect(options()).toContain("Top doubler");
-
-    fireEvent.change(add(), { target: { value: "doubler|top" } });
+    addLayer("Top", "doubler");
+    open("Top doubler");
     fireEvent.click(screen.getByLabelText("Top doubler rebate all sides"));
-    expect(container.querySelector(".rebate h3").textContent).toBe("Top doubler");
     expect(container.querySelector(".rebate .note").textContent)
       .toMatch(/Let in 6 mm on front, back, left, right/);
     // The doubler is inside the carcass whichever way the box is wrapped, so
     // this one needs no help from the prominence order.
     fireEvent.change(screen.getByLabelText("Top doubler rebate depth"), { target: { value: "9" } });
     expect(container.querySelector(".rebate .note").textContent).toMatch(/Let in 9 mm/);
+    // The summary names the board, not just the face: "Top" is three panels.
+    expect(container.querySelector(".panel-summary").textContent).toMatch(/RebatedTop doubler/);
 
     // The carcass panels beside it carry the groove, and the box still closes.
     fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));

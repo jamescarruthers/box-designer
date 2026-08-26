@@ -253,6 +253,121 @@ describe("§21 the inspector in the app", () => {
 });
 
 /**
+ * §47 The split: the sidebar is about the box, the inspector is about one
+ * board, and nothing is in both.
+ *
+ * These are mostly negatives, which is unusual for a UI test and is the point:
+ * what went wrong before was not that a control was missing but that the same
+ * face could be changed in two places, and only one of them was in front of the
+ * panel it changed.
+ */
+describe("§47 panel controls live in the inspector", () => {
+  const sidebar = (container) => container.querySelector(".controls");
+
+  it("keeps no panel-by-panel control in the sidebar", () => {
+    const { container } = render(<App />);
+    const side = sidebar(container);
+    // The layer stacks, the rebate list and the fitting editors are gone from
+    // it; each of them named a face before it could ask anything.
+    expect(side.querySelector(".stack-list")).toBe(null);
+    expect(side.querySelector(".fitting")).toBe(null);
+    expect(side.querySelector(".rebate")).toBe(null);
+    for (const label of ["Add cladding", "Add doublers", "Add lagging", "Add a rebate", "Add a fitting"]) {
+      expect(screen.queryByLabelText(label), label).toBe(null);
+    }
+    // And no six-cell grid of thicknesses or colours.
+    expect(side.querySelector(".face-grid")).toBe(null);
+    expect(side.querySelector(".colour-grid")).toBe(null);
+  });
+
+  it("opens a board from the sidebar's summary of the box", () => {
+    const { container } = render(<App />);
+    expect(container.querySelector(".inspector")).toBe(null);
+    fireEvent.click(screen.getByLabelText("Open the Left carcass"));
+    expect(container.querySelector(".inspector").getAttribute("aria-label")).toBe("Left carcass panel");
+
+    // A layer added from the inspector turns up in the summary, and the
+    // summary opens it: the sidebar says what the box carries and the
+    // inspector says what each board is.
+    fireEvent.click(screen.getByRole("button", { name: /^Add doubler$/ }));
+    expect(container.querySelector(".panel-summary").textContent).toMatch(/DoublerLeft/);
+    fireEvent.click(screen.getByLabelText("Open the Left doubler"));
+    expect(container.querySelector(".inspector").getAttribute("aria-label")).toBe("Left doubler panel");
+  });
+
+  it("says in the sidebar which face departs from the project sheet, and how to end it", () => {
+    const { container } = render(<App />);
+    const side = () => sidebar(container).textContent;
+    expect(side()).not.toMatch(/Its own thickness/);
+
+    fireEvent.click(screen.getByLabelText("Open the Top carcass"));
+    fireEvent.change(screen.getByLabelText("Top thickness"), { target: { value: "25" } });
+    expect(side()).toMatch(/Its own thickness: Top 25 mm/);
+
+    // And the way back to a box cut from one sheet, which is the only thing
+    // the sidebar can say about it that the panel cannot.
+    fireEvent.click(screen.getByRole("button", { name: "Back to one thickness" }));
+    expect(side()).not.toMatch(/Its own thickness/);
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    const thicknessOf = (tr) => tr.querySelectorAll("td")[5].textContent;
+    for (const r of container.querySelectorAll("table.cuts tbody tr")) expect(thicknessOf(r)).toBe("18");
+  });
+
+  it("rebates the board being looked at, a side at a time", () => {
+    const { container } = render(<App />);
+    // Sides wrap, so the front can be let into them.
+    const preset = [...container.querySelectorAll("label.field")]
+      .find((l) => l.textContent.startsWith("Preset")).querySelector("select");
+    fireEvent.change(preset, { target: { value: "sides" } });
+    fireEvent.click(screen.getByLabelText("Open the Front carcass"));
+
+    // No rebate to add first: the sides are the control, and choosing one is
+    // what makes the panel a rebated panel.
+    expect(screen.getByLabelText("Front rebate depth").disabled).toBe(true);
+    fireEvent.click(screen.getByLabelText("Front rebate top"));
+    expect(screen.getByLabelText("Front rebate depth").disabled).toBe(false);
+    expect(container.querySelector(".rebate .note").textContent).toMatch(/Let in 6 mm on top/);
+
+    // Depth is kept when another side is added, and the last side off takes
+    // the rebate with it.
+    fireEvent.change(screen.getByLabelText("Front rebate depth"), { target: { value: "8" } });
+    fireEvent.click(screen.getByLabelText("Front rebate bottom"));
+    expect(container.querySelector(".rebate .note").textContent).toMatch(/Let in 8 mm on top, bottom/);
+    // "All" fills the sides in while any is missing, and clears them once
+    // they are all on — so two clicks from here empties it.
+    fireEvent.click(screen.getByLabelText("Front rebate all sides"));
+    expect(container.querySelector(".rebate .note").textContent)
+      .toMatch(/Let in 8 mm on left, right, top, bottom/);
+    fireEvent.click(screen.getByLabelText("Front rebate all sides"));
+    expect(container.querySelector(".rebate .note").textContent).toMatch(/No sides chosen/);
+    expect(container.querySelector(".panel-summary").textContent).toMatch(/RebatedNone/);
+  });
+
+  it("offers no rebate on a lining, and says why", () => {
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByLabelText("Open the Back carcass"));
+    fireEvent.click(screen.getByRole("button", { name: /^Add lagging$/ }));
+    fireEvent.click(screen.getByLabelText("Open the Back lagging"));
+    const inspector = container.querySelector(".inspector");
+    expect(inspector.textContent).toMatch(/A lining is not a board/);
+    expect(within(inspector).queryByLabelText(/rebate all sides/)).toBe(null);
+  });
+
+  it("offers a lining the linings to be cut from, not the sheets", () => {
+    // §30 The lagging stack chose off the roll goods; the inspector's sheet
+    // picker offered birch ply to a face lined in felt until this moved here.
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByLabelText("Open the Back carcass"));
+    fireEvent.click(screen.getByRole("button", { name: /^Add lagging$/ }));
+    fireEvent.click(screen.getByLabelText("Open the Back lagging"));
+    const options = [...within(container.querySelector(".inspector"))
+      .getByLabelText("Lagging Back material").options].map((o) => o.value);
+    expect(options).toContain("wadding");
+    expect(options).not.toContain("birch");
+  });
+});
+
+/**
  * §21 The stylesheet, on the two points that made a field unreadable.
  *
  * Reported as "the fittings panel is a bit tight — the numbers are not

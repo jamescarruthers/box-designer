@@ -1,17 +1,22 @@
-// §7 Control groups: starting point, material, prominence, reinforcement, edge treatment.
+// §7 Control groups: starting point, material, prominence, edge treatment, drawing.
+//
+// §47 The sidebar is about the box and the inspector is about one board, and
+// nothing is in both. What was here a face at a time — a panel's thickness, its
+// colour, the cladding or doubler or lagging on it, its rebate, its fittings —
+// is in the inspector now, where the panel it belongs to is the thing on the
+// screen. What is left is a summary: what the box carries and where, with every
+// entry a way into the panel that owns it.
 
 import React, { useState } from "react";
-import { FACES, FACE_LABEL, MATERIALS, LAGGINGS, PROMINENCE_PRESETS, EDGES, edgeAxis, materialById } from "../model/constants.js";
+import { FACES, FACE_LABEL, LAYER_LABEL, MATERIALS, PROMINENCE_PRESETS, EDGES, edgeAxis, materialById } from "../model/constants.js";
 import { ROUND_STEPS } from "../model/solver.js";
-import { setIn, freeFaces, addPanel, removePanel, editPanel, setProjectMaterial, setProjectThickness, setEdgeTreatment, treatedEdges } from "./design.js";
+import { setIn, setProjectMaterial, setProjectThickness, setEdgeTreatment, treatedEdges } from "./design.js";
 import { largestBevel, largestBevelAt } from "../model/bevel.js";
-import { rebateSides, newRebate, rebateProblems, rebateKey, readRebateKey, rebateLabel, REBATABLE }
-  from "../model/rebate.js";
+import { readRebateKey, rebateLabel } from "../model/rebate.js";
 import { Group, Num, Colour, Segmented, FaceSwatch, StockThicknesses } from "./fields.jsx";
-import { FittingList } from "./FittingEditor.jsx";
 import { fmt } from "../cutlist/cutlist.js";
 
-export default function Controls({ design, set, derived, colourByFace }) {
+export default function Controls({ design, set, derived, colourByFace, onInspect }) {
   const s = design.start;
   const cuttable = Object.values(derived.fullLength).filter(Boolean).length;
   const mitrable = Object.values(derived.mitrable).filter((c) => c.ok).length;
@@ -95,36 +100,20 @@ export default function Controls({ design, set, derived, colourByFace }) {
         <Num label="Thickness" suffix="mm" step={0.5} value={design.thickness}
           list={`th-${derived.material.id}`}
           onChange={(v) => set(setProjectThickness(design, v))} />
-        <label className="check">
-          <input type="checkbox" checked={design.perFaceThickness}
-            onChange={(e) => set({ ...design, perFaceThickness: e.target.checked })} />
-          <span>Thickness per face</span>
-        </label>
-        {design.perFaceThickness ? (
-          <div className="face-grid">
-            {FACES.map((f) => (
-              <Num key={f} label={FACE_LABEL[f]} suffix="mm" step={0.5} value={design.thicknessBy[f]}
-                onChange={(v) => set(setIn(design, ["thicknessBy", f], v))} />
-            ))}
-          </div>
-        ) : null}
+        {/* §47 One thickness and one colour for the carcass. A face that wants
+            its own is given it in that panel's inspector, which switches the
+            override on as it writes — so what is left here is the way back to
+            a box cut from one sheet. */}
+        <Departures design={design} derived={derived} onInspect={onInspect}
+          on="perFaceThickness" by="thicknessBy" uniform={design.thickness}
+          label="thickness" undo="Back to one thickness"
+          set={set} format={(v) => `${fmt(v)} mm`} />
         <Colour label="Colour" aria="Sheet" material={design.material} value={design.colour}
           onChange={(hex) => set({ ...design, colour: hex })} />
-        <label className="check">
-          <input type="checkbox" checked={design.perPanelColour}
-            onChange={(e) => set({ ...design, perPanelColour: e.target.checked })} />
-          <span>Colour per panel</span>
-        </label>
-        {design.perPanelColour ? (
-          <div className="colour-grid">
-            {FACES.map((f) => (
-              <Colour key={f} label={FACE_LABEL[f]} aria={FACE_LABEL[f]} material={design.material}
-                value={design.colourBy?.[f] ?? null} inheritLabel="As the sheet"
-                inherit={design.colour ?? materialById(design.material).colour}
-                onChange={(hex) => set(setIn(design, ["colourBy", f], hex))} />
-            ))}
-          </div>
-        ) : null}
+        <Departures design={design} derived={derived} onInspect={onInspect}
+          on="perPanelColour" by="colourBy" uniform={design.colour ?? materialById(design.material).colour}
+          label="colour" undo="Back to one colour"
+          set={set} format={() => null} />
         <Num label="Kerf" suffix="mm" step={0.1} value={design.kerf} onChange={(v) => set({ ...design, kerf: v })} />
         <label className="check">
           <input type="checkbox" checked={design.grainLocked}
@@ -138,28 +127,12 @@ export default function Controls({ design, set, derived, colourByFace }) {
         <Prominence design={design} set={set} colourByFace={colourByFace} />
       </Group>
 
-      <Group title="Reinforcement" note="Cladding lies outside the carcass and grows the box. A doubler lies inside and eats the cavity. Each panel starts as the project sheet and can then be changed.">
-        <LayerStack design={design} set={set} layer="cladding" title="Cladding" colourByFace={colourByFace} />
-        <LayerStack design={design} set={set} layer="doubler" title="Doublers" colourByFace={colourByFace} />
-      </Group>
-
-      {/* §30 Its own group rather than a third stack under Reinforcement: felt
-          reinforces nothing. It is added the same way and sized the same way,
-          and it is chosen from the linings rather than from the sheets. */}
-      <Group title="Lagging" note="Lining on the inside of the box, a face at a time. It sits inside the doublers and takes its thickness out of the cavity, so a box sized to a volume grows to keep it.">
-        <LayerStack design={design} set={set} layer="lagging" title="Lagging"
-          colourByFace={colourByFace} materials={LAGGINGS} />
-      </Group>
-
-      {/* §42 Its own group: a rebate is a joint, not a layer. What it changes
-          is where one panel stops and what is cut out of the ones it runs
-          into, which is nothing like adding a board to a face. */}
-      <Group title="Rebate" note="A board let into the ones around it: it runs on past where it stopped, and a groove is cut in every panel it runs into. The board gets bigger, the ones beside it get a groove, and the box stays the size it was. Any board can be rebated — carcass, doubler or cladding — into whatever is beside it.">
-        <RebateStack design={design} set={set} derived={derived} />
-      </Group>
-
-      <Group title="Fittings" note="Drivers and ports are cut into the outermost panel of their face. Position is measured from the panel's own low corner, so it reads straight off the face-on view — or as a percentage across it, which keeps a centred driver centred when the box changes size.">
-        <FittingList design={design} set={set} derived={derived} />
+      {/* §47 What the box carries, a layer at a time, and a way into each of
+          them. The controls that add and change them are in the inspector:
+          they are about one board, and the sidebar is about the box. */}
+      <Group title="Panels"
+        note="Everything about one board — its sheet, thickness and colour, the cladding, doubler or lagging on its face, its rebate and its fittings — is in the inspector. Open one from here, or click a panel in the box.">
+        <PanelSummary design={design} derived={derived} onInspect={onInspect} colourByFace={colourByFace} />
       </Group>
 
       <Group title="Edge treatment" note="Cut from the outer face after assembly. Blank sizes are unchanged.">
@@ -375,145 +348,116 @@ function Prominence({ design, set, colourByFace }) {
   );
 }
 
-/** A list of added panels for one layer, plus a side picker to add another. */
 /**
- * §42 Which panels are rebated, on which sides, and how deep.
+ * §47 What the box carries, and a way into each of it.
  *
- * A panel is added the way a cladding panel is, because the shape of the thing
- * is the same — a handful of panels, each with its own numbers — and one idiom
- * in the sidebar is worth more than a bespoke control for every feature.
+ * Six chips for the carcass, because every box has those six and they are the
+ * way in to everything else on a face; then a line per layer naming the faces
+ * that carry one. Each name opens that panel's inspector, so the summary is
+ * both the answer to "what is on this box" and the route to changing it.
  *
- * The sides offered are the four that meet the face: a front panel has no
- * front side to be let into. "All" is the case somebody wants nine times out
- * of ten, so it is a button rather than four clicks.
- *
- * §46 And a panel is any board in the box, not just a carcass one, so the list
- * is keyed by layer and face together.
+ * A summary and not a control: nothing here edits anything, so there is one
+ * place to change a board and it is the place where the board is on screen.
  */
-function RebateStack({ design, set, derived }) {
-  const entries = Object.entries(design.rebate ?? {});
-  // §46 What there is to rebate: every board in the box — carcass, doubler or
-  // cladding — listed from the outside in, and only the ones that exist. A
-  // doubler is a board like any other, so it is offered like any other.
-  const panels = REBATABLE.flatMap((layer) => FACES
-    .filter((face) => derived.sol.panels.some((p) => p.layer === layer && p.face === face))
-    .map((face) => ({ layer, face, key: rebateKey(layer, face), label: rebateLabel(layer, face) })));
-  const free = panels.filter((p) => !design.rebate?.[p.key]);
-  const put = (key, next) => set(setIn(design, ["rebate", key], next));
-  const drop = (key) => {
-    const rest = { ...design.rebate };
-    delete rest[key];
-    set({ ...design, rebate: rest });
-  };
-  return (
-    <div className="stack">
-      <div className="stack-head">
-        <h3>Rebated panels</h3>
-        <select className="add" value="" disabled={!free.length} aria-label="Add a rebate"
-          onChange={(e) => { if (e.target.value) put(e.target.value, newRebate()); }}>
-          <option value="">{free.length ? "Add a panel…" : "All panels rebated"}</option>
-          {free.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
-        </select>
+function PanelSummary({ design, derived, onInspect, colourByFace }) {
+  const indexOf = (layer, face) =>
+    derived.rows.find((r) => r.layer === layer && r.face === face)?.panelIndex;
+  const open = (layer, face) => { const i = indexOf(layer, face); if (i != null) onInspect(i); };
+
+  const layerRow = (layer) => {
+    const faces = FACES.filter((f) => design[layer]?.[f]);
+    return (
+      <div key={layer}>
+        <dt>{LAYER_LABEL[layer]}</dt>
+        <dd>{faces.length ? faces.map((f) => (
+          <button type="button" className="linkish" key={f}
+            aria-label={`Open the ${FACE_LABEL[f]} ${LAYER_LABEL[layer].toLowerCase()}`}
+            onClick={() => open(layer, f)}>{FACE_LABEL[f]}</button>
+        )) : <span className="none">None</span>}</dd>
       </div>
-      {entries.length === 0 ? (
-        <p className="empty">None.</p>
-      ) : entries.map(([key, rebate]) => {
-        const { layer, face } = readRebateKey(key);
-        const label = rebateLabel(layer, face);
-        const sides = rebateSides(face);
-        const all = sides.every((g) => rebate.sides?.[g]);
-        const cut = derived.rebated?.[key]?.sides ?? [];
-        // §43 Why the sides that did not happen did not happen — shown even
-        // when the others did, which is the whole point: a rebate cut on two
-        // sides of four has to account for the other two.
-        const refused = rebateProblems(derived.rebateRejected).filter((p) => p.key === key);
-        return (
-          <div className="rebate" key={key}>
-            <div className="stack-head">
-              <h3>{label}</h3>
-              <button type="button" className="linkish" onClick={() => drop(key)}>Remove</button>
-            </div>
-            <div className="chip-group">
-              <button type="button" className={all ? "on" : ""}
-                aria-label={`${label} rebate all sides`}
-                onClick={() => put(key, { ...rebate,
-                  sides: all ? {} : Object.fromEntries(sides.map((g) => [g, true])) })}>All</button>
-              {sides.map((g) => (
-                <button type="button" key={g} className={rebate.sides?.[g] ? "on" : ""}
-                  aria-label={`${label} rebate ${g}`}
-                  onClick={() => put(key, { ...rebate,
-                    sides: { ...rebate.sides, [g]: !rebate.sides?.[g] } })}>{FACE_LABEL[g]}</button>
-              ))}
-            </div>
-            <Num label="Depth" suffix="mm" step={0.5} value={rebate.depth}
-              aria={`${label} rebate depth`}
-              onChange={(v) => put(key, { ...rebate, depth: v })} />
-            {/* What was actually cut, which is not always what was asked for —
-                the reason is in the messages, and this is the tally. */}
-            {cut.length ? (
-              <p className="note">
-                Let in {fmt(rebate.depth)} mm on {cut.map((g) => FACE_LABEL[g].toLowerCase()).join(", ")}.
-              </p>
-            ) : refused.length ? null : <p className="note">No sides chosen yet.</p>}
-            {refused.map(({ sides: bad, why }) => (
-              <p className="note bad" key={why}>
-                {bad.length ? `${bad.map((g) => FACE_LABEL[g]).join(", ")}: ` : ""}{why}.
-              </p>
-            ))}
-          </div>
-        );
-      })}
-    </div>
+    );
+  };
+
+  // §46 A rebate names a board, so the summary names it the same way the
+  // warnings do — "Top doubler", not "Top".
+  const rebates = Object.keys(design.rebate ?? {}).map((key) => ({ key, ...readRebateKey(key) }));
+  const fittings = design.fittings ?? [];
+
+  return (
+    <>
+      <div className="panel-picker">
+        {FACES.map((f) => (
+          <button type="button" key={f} className="panel-chip"
+            aria-label={`Open the ${FACE_LABEL[f]} carcass`}
+            onClick={() => open("shell", f)}>
+            <FaceSwatch face={f} layer="shell" on={colourByFace} />
+            {FACE_LABEL[f]}
+          </button>
+        ))}
+      </div>
+      <dl className="readout panel-summary">
+        {["cladding", "doubler", "lagging"].map(layerRow)}
+        <div>
+          <dt>Rebated</dt>
+          <dd>{rebates.length ? rebates.map(({ key, layer, face }) => (
+            <button type="button" className="linkish" key={key}
+              aria-label={`Open the rebated ${rebateLabel(layer, face)}`}
+              onClick={() => open(layer, face)}>{rebateLabel(layer, face)}</button>
+          )) : <span className="none">None</span>}</dd>
+        </div>
+        <div>
+          <dt>Fittings</dt>
+          <dd>{fittings.length ? fittings.map((f, i) => (
+            <button type="button" className="linkish" key={f.id ?? i}
+              aria-label={`Open the panel fitting ${i + 1} is on`}
+              onClick={() => {
+                const panel = derived.fittingPanels?.[f.face];
+                const row = derived.rows.find((r) => r.panel === panel);
+                if (row) onInspect(row.panelIndex); else open("shell", f.face);
+              }}>{FACE_LABEL[f.face]} {f.type}</button>
+          )) : <span className="none">None</span>}</dd>
+        </div>
+      </dl>
+    </>
   );
 }
 
-function LayerStack({ design, set, layer, title, colourByFace, materials = MATERIALS }) {
-  const entries = Object.entries(design[layer] ?? {});
-  const free = freeFaces(design, layer);
+/**
+ * §47 Where a face has been given its own thickness or colour, and the way back.
+ *
+ * The six-cell grids that used to be here were the same six numbers the
+ * inspector asks for one at a time, and keeping both meant a face could be
+ * changed in two places. What is worth having in the sidebar is the fact that
+ * the box is no longer cut from one sheet — so that is what this is: which
+ * faces depart from the project, and a button that ends the departure.
+ */
+function Departures({ design, derived, set, on, by, uniform, label, undo, onInspect, format }) {
+  if (!design[on]) return null;
+  const odd = FACES.filter((f) => {
+    const v = design[by]?.[f];
+    return v != null && v !== uniform;
+  });
+  const indexOf = (face) =>
+    derived.rows.find((r) => r.layer === "shell" && r.face === face)?.panelIndex;
   return (
-    <div className="stack">
-      <div className="stack-head">
-        <h3>{title}</h3>
-        <select className="add" value="" disabled={!free.length}
-          aria-label={`Add ${title.toLowerCase()}`}
-          onChange={(e) => { if (e.target.value) set(addPanel(design, layer, e.target.value)); }}>
-          <option value="">{free.length ? "Add a side…" : "All sides used"}</option>
-          {free.map((f) => <option key={f} value={f}>{FACE_LABEL[f]}</option>)}
-        </select>
-      </div>
-      {entries.length === 0 ? (
-        <p className="empty">None.</p>
-      ) : (
-        <ul className="stack-list">
-          {entries.map(([face, entry]) => {
-            const m = materialById(entry.material);
-            return (
-              <li key={face}>
-                <span className="stack-face">
-                  <FaceSwatch face={face} layer={layer} on={colourByFace} />
-                  {FACE_LABEL[face]}
-                </span>
-                <input type="number" min="0" step="0.5" value={entry.thickness}
-                  aria-label={`${title} ${FACE_LABEL[face]} thickness`}
-                  list={`th-${m.id}`}
-                  onChange={(e) => set(editPanel(design, layer, face, { thickness: Number(e.target.value) || 0 }))} />
-                <select value={entry.material}
-                  aria-label={`${title} ${FACE_LABEL[face]} material`}
-                  onChange={(e) => set(editPanel(design, layer, face, { material: e.target.value }))}>
-                  {materials.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-                </select>
-                <input type="color" className="stack-colour"
-                  value={entry.colour ?? materialById(entry.material).colour}
-                  aria-label={`${title} ${FACE_LABEL[face]} colour`}
-                  onChange={(e) => set(editPanel(design, layer, face, { colour: e.target.value }))} />
-                <button type="button" className="drop" aria-label={`Remove ${title} ${FACE_LABEL[face]}`}
-                  onClick={() => set(removePanel(design, layer, face))}>×</button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
+    <p className="note">
+      {odd.length ? (
+        <>
+          Its own {label}: {odd.map((f, i) => (
+            <React.Fragment key={f}>
+              {i ? ", " : ""}
+              {/* No label of its own: what it says is "Front 25 mm", which is
+                  a better name for it than anything a label could add. */}
+              <button type="button" className="linkish"
+                onClick={() => { const n = indexOf(f); if (n != null) onInspect(n); }}>
+                {FACE_LABEL[f]}{format(design[by][f]) ? ` ${format(design[by][f])}` : ""}
+              </button>
+            </React.Fragment>
+          ))}.{" "}
+        </>
+      ) : <>Per face, though no face differs yet. </>}
+      <button type="button" className="linkish" onClick={() => set({ ...design, [on]: false })}>{undo}</button>
+    </p>
   );
 }
 

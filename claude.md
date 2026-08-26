@@ -1914,6 +1914,9 @@ prominence order, its four edges, the fittings on it, and whether it carries
 cladding or a doubler. Shown in every mode, because the cut list and the drawing
 select panels too and the same face is the same face from all three.
 
+(§21 added the inspector beside the sidebar and left both; §47 finished the job
+and moved every panel control out of the sidebar, so nothing is in two places.)
+
 ### The controls are the same controls
 
 `Num`, `Colour`, `Segmented`, `Group` and the fitting editor moved out of
@@ -3310,3 +3313,60 @@ box wrapped a particular way. A doubler is *inside* the carcass however the box
 is wrapped, so there is always board beside it. Every preset, every face, all
 four sides — and the closure comes out exact each time, which is the invariant
 that says no material appeared or vanished on the way.
+
+
+## §47 The sidebar is the box, the inspector is the board
+
+§21 built the inspector and left the sidebar as it was, so for two years a
+panel could be changed in either — its thickness in a six-cell grid behind a
+switch, or in the panel itself; a doubler added from a face dropdown, or from
+the face. Two controls for one fact is two places for it to drift, and the one
+in the sidebar is always the worse of the two, because it has to name the face
+before it can ask anything.
+
+So the split is now a rule, and the rule is: **anything keyed to one board is in
+the inspector, and the sidebar is what is true of the box.**
+
+Out of the sidebar went the per-face thickness grid, the per-panel colour grid,
+the cladding and doubler and lagging stacks, the rebate list and the list of
+every fitting. What stayed is the box: its size, its sheet, its prominence
+order, its twelve edges, and what the drawing shows.
+
+### A rebate is four buttons now
+
+It was the control that made the case. In the sidebar a rebate had to be
+*added* — pick a panel from a dropdown of every board in the box, get a row,
+then choose sides on it — because a list needs a row to hang the sides on.
+In the inspector the panel is already the thing on the screen, so a rebate is
+four buttons and a number, and it exists because a side is chosen rather than
+because it was added. Clear the last side and the panel simply stops being a
+rebated panel.
+
+It sits beside the edges, because that is what it is: the other way of joining
+this board to the ones around it. A lining gets the rule instead of the
+buttons — a groove in felt is a dent.
+
+### What the sidebar says instead
+
+Not nothing: a summary of what the box carries, which is a box-level fact and
+was never actually visible before. Six chips for the carcass, then a line each
+for cladding, doublers, lagging, rebates and fittings, naming the faces that
+have one. Every name opens that board's inspector, so the summary is both the
+answer to "what is on this box" and the way to change it — and a panel is
+reachable from the sidebar in every mode, not only from the 3D view.
+
+The two overrides say where they are: with the grids gone, what the sidebar can
+usefully say about a per-face thickness is *which faces depart from the project
+sheet* and how to end the departure. Setting a face's thickness in the inspector
+switches the override on, as it always did; "Back to one thickness" is the way
+out, and it is the only control of its kind left in the sidebar because it is
+the only one that is about all six at once.
+
+### What it caught
+
+Moving the lagging editor into the inspector found a real bug: the inspector's
+sheet picker offered every *sheet* for any added panel, so a face lined in felt
+was offered birch ply. It had been unreachable in practice because the sidebar's
+lagging stack was the one anybody used, and it was passed the linings. The
+inspector now picks from the linings for a lagging panel, and a test holds it
+there.

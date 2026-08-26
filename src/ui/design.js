@@ -169,6 +169,31 @@ export function setFaceColour(design, face, hex) {
 }
 
 /**
+ * §47 Turning one side of a panel's rebate on or off, from the inspector.
+ *
+ * A rebate exists because a side is chosen and stops existing when the last one
+ * is cleared. There is no empty rebate to add first and fill in later: the
+ * sidebar's list needed one to hang a row on, and the inspector does not — the
+ * panel is already on the screen, and its four sides are four buttons.
+ */
+export function setRebateSides(design, key, sides) {
+  const on = Object.fromEntries(Object.entries(sides ?? {}).filter(([, v]) => v));
+  const rest = { ...design.rebate };
+  if (!Object.keys(on).length) {
+    delete rest[key];
+    return { ...design, rebate: rest };
+  }
+  const cur = design.rebate?.[key] ?? newRebate();
+  return { ...design, rebate: { ...rest, [key]: { ...cur, sides: on } } };
+}
+
+/** The depth of a rebate that exists. Nothing to set on a panel with no sides chosen. */
+export function setRebateDepth(design, key, depth) {
+  if (!design.rebate?.[key]) return design;
+  return setIn(design, ["rebate", key], { ...design.rebate[key], depth });
+}
+
+/**
  * §21 Move one face up or down the prominence order.
  *
  * Prominence decides which panel runs past which at every corner, so it is as

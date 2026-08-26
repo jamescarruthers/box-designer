@@ -102,7 +102,12 @@ export default function App() {
           <input className="title-input" value={design.title} aria-label="Drawing title"
             onChange={(e) => setDesign({ ...design, title: e.target.value.toUpperCase() })} />
         </header>
-        <Controls design={design} set={setDesign} derived={derived} colourByFace={colourByFace} />
+        {/* §47 The sidebar can open a panel too: what it shows of a board is a
+            summary, and every line of it is a way into the inspector that owns
+            the board. Not `onSelect`, which toggles — a name in a list that
+            closes the panel it names is a name that does not work twice. */}
+        <Controls design={design} set={setDesign} derived={derived} colourByFace={colourByFace}
+          onInspect={setSelected} />
         <footer className="side-foot">
           {/* Forgets as well as resets: a design kept between visits that you
               cannot get rid of is a trap, not a convenience. */}
