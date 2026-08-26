@@ -4,11 +4,12 @@ import { uniformEdges, noEdges, edgeOwners, fullLengthEdges, applicableEdges, pa
 import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
 import { buildOrthoView, classifyEdges, FACE_SIDE } from "../src/drawing/views.js";
 import { buildSection, HATCH } from "../src/drawing/section.js";
-import { buildIsometric, isoProject, ISO_Z, inFront, paintOrder } from "../src/drawing/iso.js";
-import { explodeShift } from "../src/model/explode.js";
+import { buildIsometric, isoProject, ISO_Z, inFront, paintOrder, panelQuads } from "../src/drawing/iso.js";
+import { explodeShift, explodedBox } from "../src/model/explode.js";
 import { newFitting } from "../src/model/fittings.js";
 import { VIEW_EXTENT } from "../src/drawing/hlr.js";
-import { EDGES } from "../src/model/constants.js";
+import { EDGES, PROMINENCE_PRESETS } from "../src/model/constants.js";
+import { panelSolidVolume, subtractCells, subtractBoxes } from "../src/model/rebate.js";
 import { buildSheet, HIDDEN_DASH } from "../src/drawing/sheet.js";
 
 const box = () => solve({
@@ -396,5 +397,149 @@ describe("§40 the isometric draws the edge treatments", () => {
     // More filled faces on the sheet: the rounds are surfaces of their own.
     const fills = (svg) => (svg.match(/fill="var\(--paper\)"/g) ?? []).length;
     expect(fills(isoOf(round))).toBeGreaterThan(fills(isoOf(square)));
+  });
+});
+
+/**
+ * §49 The isometric of a rebated board.
+ *
+ * Two invariants, and they are the same two that caught §44: the surface the
+ * drawing builds has to be a closed one, and it has to enclose the volume the
+ * model gives the panel. A drawing that fails either is drawing a shape the box
+ * does not have — faces inside the material, holes where a face is missing —
+ * and it shows up as boards that look like they cross through each other.
+ */
+describe("§49 the isometric draws the board the model has", () => {
+  const FACES = ["front", "back", "left", "right", "top", "bottom"];
+  const every = (depth = 6) => ({ depth,
+    sides: Object.fromEntries(FACES.map((s) => [s, true])) });
+  const VERTICALS = ["front|left", "back|left", "front|right", "back|right"];
+  const edgeSet = (type, keys, radius = 12) => ({ type: "none", radius: 12, perEdge: true,
+    by: Object.fromEntries(keys.map((k) => [k, { type, radius }])) });
+
+  const r6 = (n) => Math.round(n * 1e6) / 1e6;
+  const key3 = (v) => `${r6(v.x)},${r6(v.y)},${r6(v.z)}`;
+
+  /** Edges of the drawn surface that are not shared by exactly two faces. */
+  const openEdges = (quads) => {
+    const seen = new Map();
+    for (const q of quads) {
+      for (let i = 0; i < q.pts.length; i++) {
+        const u = key3(q.pts[i]), v = key3(q.pts[(i + 1) % q.pts.length]);
+        if (u === v) continue;
+        const k = u < v ? `${u}|${v}` : `${v}|${u}`;
+        seen.set(k, (seen.get(k) ?? 0) + 1);
+      }
+    }
+    return [...seen.values()].filter((c) => c !== 2).length;
+  };
+
+  /** What the drawn surface encloses, each face turned to agree with its normal. */
+  const drawnVolume = (quads) => {
+    let out = 0;
+    for (const q of quads) {
+      const [a, b, c] = q.pts;
+      const u = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+      const v = { x: c.x - a.x, y: c.y - a.y, z: c.z - a.z };
+      const w = { x: u.y * v.z - u.z * v.y, y: u.z * v.x - u.x * v.z, z: u.x * v.y - u.y * v.x };
+      const pts = w.x * q.normal.x + w.y * q.normal.y + w.z * q.normal.z >= 0
+        ? q.pts : [...q.pts].reverse();
+      for (let i = 1; i + 1 < pts.length; i++) {
+        const [p0, p1, p2] = [pts[0], pts[i], pts[i + 1]];
+        out += (p0.x * (p1.y * p2.z - p2.y * p1.z) - p0.y * (p1.x * p2.z - p2.x * p1.z)
+          + p0.z * (p1.x * p2.y - p2.x * p1.y)) / 6;
+      }
+    }
+    return Math.abs(out);
+  };
+
+  it("closes the surface of every panel of every box it can draw", () => {
+    let checked = 0;
+    for (const preset of PROMINENCE_PRESETS) {
+      for (const edge of [edgeSet("mitre", []), edgeSet("mitre", VERTICALS),
+        edgeSet("fillet", ["front|left", "front|right"], 8), edgeSet("chamfer", ["left|top"], 6)]) {
+        for (const face of [null, ...FACES]) {
+          const d = derive({ ...DEFAULT_DESIGN, preset: preset.id, order: preset.order,
+            edge, rebate: face ? { [face]: every() } : {} });
+          for (const explode of [0, 60]) {
+            for (const [i, panel] of d.sol.panels.entries()) {
+              const quads = panelQuads(panel, explodedBox(panel, explode), d.bevelsOf(panel, i));
+              checked++;
+              expect(openEdges(quads),
+                `${preset.id} rebate:${face} explode:${explode} ${panel.layer}/${panel.face}`).toBe(0);
+            }
+          }
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(1500);
+  });
+
+  it("draws the volume the model gives the panel", () => {
+    // A fillet or a chamfer takes off material `panelSolidVolume` knows nothing
+    // about — it reckons boxes, grooves and mitres — so the comparison is with
+    // the panels that have neither.
+    let checked = 0;
+    for (const preset of PROMINENCE_PRESETS) {
+      for (const keys of [[], VERTICALS, ["left|top", "right|top"]]) {
+        for (const face of FACES) {
+          const d = derive({ ...DEFAULT_DESIGN, preset: preset.id, order: preset.order,
+            edge: edgeSet("mitre", keys), rebate: { [face]: every() } });
+          if (!Object.keys(d.rebated).length) continue;
+          for (const [i, panel] of d.sol.panels.entries()) {
+            const quads = panelQuads(panel, panel.box, d.bevelsOf(panel, i));
+            checked++;
+            expect(drawnVolume(quads),
+              `${preset.id} ${keys.length} mitres, rebate:${face}, ${panel.layer}/${panel.face}`)
+              .toBeCloseTo(panelSolidVolume(panel), 3);
+          }
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(200);
+  });
+
+  it("keeps the faces inside the board out of the drawing", () => {
+    // What went wrong: `subtractBoxes` glues its cells back together, so two
+    // of them meet along part of a face rather than the whole of it — and a
+    // face only partly shared cannot be cancelled against its neighbour. The
+    // grooved panel came out with faces inside the material and holes in its
+    // surface, which is why a rebated box looked like it was drawn inside out.
+    const d = derive({ ...DEFAULT_DESIGN, rebate: { top: every() } });
+    const i = d.sol.panels.findIndex((p) => p.face === "front" && p.layer === "shell");
+    const panel = d.sol.panels[i];
+    expect(panel.notches).toHaveLength(1);
+    const quads = panelQuads(panel, panel.box, d.bevelsOf(panel, i));
+    // No two faces of the drawing lie on top of each other.
+    const keys = quads.map((q) => q.pts.map(key3).sort().join("|"));
+    expect(new Set(keys).size).toBe(keys.length);
+    // And every face is on the outside: nothing is drawn in the plane the
+    // groove was cut from except the floor of the groove itself.
+    expect(openEdges(quads)).toBe(0);
+  });
+
+  it("uses the cells the grid leaves, not the ones glued back together", () => {
+    // The distinction the fix turns on, stated on its own.
+    const box3 = { x: [0, 100], y: [0, 18], z: [0, 60] };
+    const notch = [{ x: [40, 60], y: [12, 18], z: [50, 60] }];
+    const cells = subtractCells(box3, notch);
+    const merged = subtractBoxes(box3, notch);
+    expect(cells.length).toBeGreaterThan(merged.length);
+    const volume = (list) => list.reduce((a, b) =>
+      a + (b.x[1] - b.x[0]) * (b.y[1] - b.y[0]) * (b.z[1] - b.z[0]), 0);
+    // Same solid either way — only the way it is cut up differs.
+    expect(volume(cells)).toBeCloseTo(volume(merged), 6);
+    // Every face of every cell is met by a whole face of its neighbour, which
+    // is the property a surface needs and merging destroys.
+    const faceKeys = new Map();
+    for (const c of cells) {
+      for (const [ax, at] of [["x", 0], ["x", 1], ["y", 0], ["y", 1], ["z", 0], ["z", 1]]) {
+        const rest = ["x", "y", "z"].filter((k) => k !== ax);
+        const k = `${ax}=${c[ax][at]}|${rest.map((r) => `${c[r][0]}:${c[r][1]}`).join(",")}`;
+        faceKeys.set(k, (faceKeys.get(k) ?? 0) + 1);
+      }
+    }
+    // Shared faces come in pairs; the rest are the outside of the shape.
+    for (const n of faceKeys.values()) expect(n).toBeLessThanOrEqual(2);
   });
 });

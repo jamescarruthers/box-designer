@@ -80,8 +80,26 @@ export function intersect(a, b) {
  * closure. Adjacent survivors are merged back along the first axis, so the
  * common shape — a board with one groove in it — comes back as two boxes
  * rather than a wall of them.
+ *
+ * §49 Anything building a *surface* wants `subtractCells` instead: merging
+ * leaves neighbours meeting along part of a face rather than the whole of it,
+ * and a face that is only partly shared cannot be cancelled against its
+ * neighbour. The grid cells always meet a whole face at a time.
  */
 export function subtractBoxes(box, notches) {
+  return merge(subtractCells(box, notches));
+}
+
+/**
+ * §49 The same subtraction, left as the grid it is worked out on.
+ *
+ * Every cell meets each of its neighbours across one whole face, which is what
+ * lets a drawing cancel the faces that are inside the material: two identical
+ * rectangles, back to back. `subtractBoxes` glues these together and is the
+ * right answer for a volume or a rectangle to hatch; it is the wrong one for
+ * anything that has to know which faces are on the outside.
+ */
+export function subtractCells(box, notches) {
   const inside = (notches ?? []).map((n) => intersect(box, n)).filter(Boolean);
   if (!inside.length) return [box];
 
@@ -109,7 +127,7 @@ export function subtractBoxes(box, notches) {
       }
     }
   }
-  return merge(kept);
+  return kept;
 }
 
 /** Glue cells back together where they share a face, one axis at a time. */

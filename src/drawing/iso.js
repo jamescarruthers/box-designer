@@ -12,7 +12,8 @@ import { AXIS, AXES, PAIR } from "../model/constants.js";
 import { faceAxes, fittingCircles } from "../model/fittings.js";
 import { explodedBox } from "../model/explode.js";
 import { ringAt, ringDepths, mitresOnly, notchDepth } from "../three/panelGeometry.js";
-import { subtractBoxes } from "../model/rebate.js";
+import { subtractCells } from "../model/rebate.js";
+import { mitredCells } from "../model/mitre.js";
 
 export const ISO_X = Math.SQRT1_2, ISO_Y = Math.sqrt(1 / 6), ISO_Z = Math.sqrt(2 / 3);
 
@@ -94,8 +95,13 @@ export function paintOrder(items) {
  * Every quad is turned to face outward against the panel's centre, which a
  * bevelled box lets you do exactly because it is still convex. Then the ones
  * the eye can see are the ones whose normal points at it.
+ *
+ * §49 A grooved panel goes to `grooveQuads` instead, and the two invariants
+ * that hold for both are worth stating: the surface closes — every edge has a
+ * face on each side of it — and it encloses the volume the model gives the
+ * panel. Exported so a test can say so.
  */
-function panelQuads(panel, box, bevels) {
+export function panelQuads(panel, box, bevels) {
   // §42 An exploded panel takes its grooves with it.
   const moved = box === panel.box ? panel : {
     ...panel, box,
@@ -111,7 +117,15 @@ function panelQuads(panel, box, bevels) {
   const sideFace = [PAIR[q][0], PAIR[p][1], PAIR[q][1], PAIR[p][0]];
 
   const groove = notchDepth(moved);
-  const stop = groove === null ? T : T - groove;
+  // §49 A grooved panel is drawn as the cells it is left as — the same shape
+  // the model reckons its volume from (§44), mitres and all. The loft cannot
+  // do it: it works depth by depth from the outer face, and a groove is a
+  // hole in a plane rather than a narrowing of one, so the two were built
+  // apart and met along faces neither knew about. What is given up is a round
+  // on a grooved board, drawn square; a closed solid with a square arris beats
+  // a rounded one with holes in its surface.
+  if (groove !== null) return grooveQuads(moved, box);
+  const stop = T;
   const depths = ringDepths(moved, bevels).filter((d) => d <= stop + EPS);
   if (!depths.some((d) => Math.abs(d - stop) < EPS)) depths.push(stop);
   depths.sort((u, v) => u - v);
@@ -173,39 +187,7 @@ function panelQuads(panel, box, bevels) {
       ]);
     }
   }
-  if (groove === null) {
-    add(rings[rings.length - 1], [true, true, true, true]);
-  } else {
-    // §42 The grooved part is boxes, and every face of it is a real edge — a
-    // groove has no smooth anything. What is left of the inner face is the
-    // cells' own boundary; what is left of the plane the groove starts at is
-    // the bottom of the groove, and that is the one face of the loft's inner
-    // cap that survives having a groove cut through it.
-    const slab = Object.fromEntries(AXES.map((b) => [b, [...box[b]]]));
-    slab[a] = s < 0 ? [box[a][1] - groove, box[a][1]] : [box[a][0], box[a][0] + groove];
-    const atStop = s < 0 ? slab[a][0] : slab[a][1];
-    for (const cell of subtractBoxes(slab, moved.notches)) {
-      for (const face of boxQuads(cell)) {
-        if (Math.abs(face[0][a] - atStop) < EPS && Math.abs(face[2][a] - atStop) < EPS) continue;
-        add(face.map((v) => ({ x: v.x, y: v.y, z: v.z })), [true, true, true, true]);
-      }
-    }
-    for (const n of moved.notches) {
-      add([[0, 0], [1, 0], [1, 1], [0, 1]].map(([ip, iq]) => {
-        const v = { [a]: atStop, [p]: n[p][ip], [q]: n[q][iq] };
-        return { x: v.x, y: v.y, z: v.z };
-      }), [true, true, true, true]);
-    }
-    // Faces two cells share are inside the board, and a line there is a line
-    // through solid material.
-    const seen = new Map();
-    for (const quad of quads) {
-      const k = quad.pts.map(key3).sort().join("|");
-      seen.set(k, (seen.get(k) ?? 0) + 1);
-      quad.key = k;
-    }
-    for (let i = quads.length - 1; i >= 0; i--) if (seen.get(quads[i].key) === 2) quads.splice(i, 1);
-  }
+  add(rings[rings.length - 1], [true, true, true, true]);
 
   // Outward, against the centre of the panel.
   const c = { x: 0, y: 0, z: 0 };
@@ -224,6 +206,84 @@ function panelQuads(panel, box, bevels) {
       .reduce((best, k) => (Math.abs(nrm[k]) > Math.abs(nrm[best]) ? k : best), "x");
   }
   return quads;
+}
+
+/**
+ * §49 A grooved panel's surface, from the cells the groove leaves it as.
+ *
+ * `subtractCells` cuts the box at every face of every notch and keeps what is
+ * outside them, so the cells meet each other across whole faces — which is what
+ * lets the faces that are inside the board cancel, exactly, two identical
+ * rectangles back to back. (`subtractBoxes` glues those cells together again,
+ * and two boards meeting along half a face cannot cancel: that is what left the
+ * isometric of a rebated box with faces inside the material and holes in its
+ * surface.)
+ *
+ * §44's mitre clipping is applied to each cell, so a board that is both mitred
+ * and grooved comes out as the one shape the model gives it rather than as a
+ * mitred loft and a square slab that disagree about where the board stops.
+ */
+function grooveQuads(panel, box) {
+  const quads = [];
+  const add = (pts, ref) => {
+    const uniq = pts.filter((pt, i) => !pts.some((o, j) =>
+      j < i && Math.abs(o.x - pt.x) < EPS && Math.abs(o.y - pt.y) < EPS && Math.abs(o.z - pt.z) < EPS));
+    if (uniq.length < 3) return;
+    // Every face of a groove is a real edge: there is no smooth anything in a
+    // board that has had a slot cut down it.
+    quads.push({ pts, edges: pts.map(() => true), ref });
+  };
+  const centroid = (pts) => pts.reduce((acc, v, _, all) => ({
+    x: acc.x + v.x / all.length, y: acc.y + v.y / all.length, z: acc.z + v.z / all.length,
+  }), { x: 0, y: 0, z: 0 });
+
+  for (const cell of subtractCells(box, panel.notches)) {
+    const pieces = mitredCells(panel, cell);
+    if (!pieces) {
+      const mid = { x: (cell.x[0] + cell.x[1]) / 2, y: (cell.y[0] + cell.y[1]) / 2, z: (cell.z[0] + cell.z[1]) / 2 };
+      for (const face of boxQuads(cell)) add(face.map((v) => ({ x: v.x, y: v.y, z: v.z })), mid);
+      continue;
+    }
+    // A clipped cell is a prism: the cross-section at each end, and one face
+    // per side of it run along the length.
+    for (const { axis, thick, run, poly, at } of pieces) {
+      const to = (uw, r) => {
+        const v = { [axis]: uw[0], [thick]: uw[1], [run]: r };
+        return { x: v.x, y: v.y, z: v.z };
+      };
+      const caps = [poly.map((uw) => to(uw, at[0])), poly.map((uw) => to(uw, at[1]))];
+      const mid = centroid([...caps[0], ...caps[1]]);
+      for (const cap of caps) add(cap, mid);
+      for (let i = 0; i < poly.length; i++) {
+        const j = (i + 1) % poly.length;
+        add([to(poly[i], at[0]), to(poly[j], at[0]), to(poly[j], at[1]), to(poly[i], at[1])], mid);
+      }
+    }
+  }
+
+  // Faces two cells share are inside the board, and a line there is a line
+  // through solid material. Every such face is shared whole, so the pair
+  // cancels exactly and what is left is the outside of the shape.
+  const seen = new Map();
+  for (const quad of quads) {
+    quad.key = quad.pts.map(key3).sort().join("|");
+    seen.set(quad.key, (seen.get(quad.key) ?? 0) + 1);
+  }
+  const kept = quads.filter((quad) => seen.get(quad.key) === 1);
+
+  // Outward, against the centre of the piece each face belongs to — a grooved
+  // board is not convex, but every cell of it is.
+  for (const quad of kept) {
+    const nrm = quadNormal(quad.pts);
+    const mid = centroid(quad.pts);
+    const out = (mid.x - quad.ref.x) * nrm.x + (mid.y - quad.ref.y) * nrm.y + (mid.z - quad.ref.z) * nrm.z;
+    if (out < 0) { nrm.x *= -1; nrm.y *= -1; nrm.z *= -1; }
+    quad.normal = nrm;
+    quad.visible = nrm.x * ISO_EYE.x + nrm.y * ISO_EYE.y + nrm.z * ISO_EYE.z > EPS;
+    quad.axis = ["x", "y", "z"]
+      .reduce((best, k) => (Math.abs(nrm[k]) > Math.abs(nrm[best]) ? k : best), "x");
+  }
+  return kept;
 }
 
 /** The six faces of a box, each as four corners going round. */
@@ -264,22 +324,34 @@ function quadNormal(pts) {
 function panelLines(quads) {
   const seen = new Map();
   for (const quad of quads) {
-    for (let i = 0; i < 4; i++) {
-      const u = quad.pts[i], v = quad.pts[(i + 1) % 4];
+    for (let i = 0; i < quad.pts.length; i++) {
+      const u = quad.pts[i], v = quad.pts[(i + 1) % quad.pts.length];
       const ku = key3(u), kv = key3(v);
       if (ku === kv) continue;
       const k = ku < kv ? `${ku}|${kv}` : `${kv}|${ku}`;
-      const found = seen.get(k) ?? { u, v, faces: 0, visible: 0, feature: false };
+      const found = seen.get(k) ?? { u, v, faces: 0, visible: 0, feature: false, normals: [] };
       found.faces += 1;
       if (quad.visible) found.visible += 1;
       if (quad.edges[i]) found.feature = true;
+      found.normals.push(quad.normal);
       seen.set(k, found);
     }
+  }
+  for (const e of seen.values()) {
+    // Flat where every face along it points the same way.
+    e.flat = e.normals.length > 1 && e.normals.every((n) =>
+      n.x * e.normals[0].x + n.y * e.normals[0].y + n.z * e.normals[0].z > 1 - 1e-9);
   }
   const out = [];
   for (const e of seen.values()) {
     if (e.visible === 0) continue;
-    if (e.visible === 1 || e.feature) out.push([e.u, e.v]);
+    // §49 A line needs a corner to be at. Two faces in the same plane are one
+    // surface however they were built, and the join between them — a groove's
+    // cells against the loft they sit on, or one cell against the next — is
+    // not an edge of the board. The silhouette is the exception: there the
+    // second face is turned away, so there is a corner whatever the planes do.
+    if (e.visible === 1) { out.push([e.u, e.v]); continue; }
+    if (e.feature && !e.flat) out.push([e.u, e.v]);
   }
   return out;
 }
