@@ -3960,3 +3960,60 @@ should.
   every button, so a right-click was also selecting the panel behind the menu —
   and a second right-click on the same face closed the inspector the first one
   had opened.
+
+## §59 What the pointer is on, and what the board is made of
+
+Two halves of the same thing: §58 put a menu on the box, and neither the menu
+nor the edges it acts on announced themselves.
+
+### The hover says what a right-click would act on
+
+§15 lit an edge only while a tool was armed, which was right when a click was
+the only thing that could reach one. §58 changed that, so an edge that never
+shows itself is a menu nobody knows to open.
+
+The pointer now lights whatever it is over, **edge before face** — the same
+precedence a right-click uses, so the hint is a promise about what the menu will
+be about. The colour says which kind of promise: **accent** where the armed tool
+would take the edge, and a quieter grey where the hint only says "this is the
+edge you are on". A line under the box names it and what to do with it: *"Right /
+Left edge — right-click to treat it"*.
+
+Two things came out of doing it properly:
+
+- **Hover no longer rebuilds the box.** `hovered` was in the panel-rebuilding
+  effect's dependencies, so running the pointer across the box — or down the cut
+  list, which shares the same state — remeshed every panel in it. The hover is
+  its own effect now and lifts one material's emissive in place.
+- **Selection and hover stopped looking alike.** Hover used to accent the
+  panel's outline, which is what selection does. Selection keeps the outline;
+  hover lifts the face by a third of the amount, which is enough to see and not
+  enough to look like a decision. Measured on screen: +22 red against +2 green
+  on a green panel, where a selection is three times that.
+
+Hovering in the box lights the row in the cut list, because it feeds the same
+`hovered` the cut list already shared — which had never worked the other way
+round in the 3D view at all.
+
+### The menu turns a page
+
+A board is a sheet, a thickness and a colour: five sheets, nine thicknesses,
+twelve colours. Flat, that is a scrolling wall; as nested flyouts it is fiddly
+with a pointer and worse with a keyboard. So the menu turns a **page** — the
+same popup, one list, the way back at the top and the board named in the header.
+
+What each page writes follows §47's rules rather than flattening them:
+
+- **The carcass has one sheet for all six faces**, so changing a carcass panel's
+  board changes the project's. The group is headed "The whole carcass" — said on
+  the item rather than left to be discovered five boards later.
+- **Its thickness and colour are per face** and switch their own override on as
+  they write, exactly as the inspector's do.
+- **A cladding, doubler or lagging panel carries its own** of all three, and a
+  lining is offered the linings — §30, felt and wadding and no birch ply.
+- **A sheet with no range has no colour page.** Birch ply comes as it comes; the
+  item says so and points at the inspector, which can still paint it any hex.
+  A page with one line on it is not a page.
+
+Colours are shown as swatches beside their names, because "Green Mint" is not a
+shade anybody can picture.

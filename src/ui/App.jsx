@@ -83,6 +83,10 @@ export default function App() {
   // was. Not part of the design and not part of the view — it is a question
   // somebody is in the middle of asking.
   const [menu, setMenu] = useState(null);
+  // §59 What the pointer is over in the 3D view: a panel, an edge, or nothing.
+  // The panel half feeds the `hovered` the cut list already shares, so hovering
+  // a board in the box lights its row in the list and the other way about.
+  const [hoverTarget, setHoverTarget] = useState(null);
   const fileInput = useRef(null);
 
   const derived = useMemo(() => {
@@ -122,9 +126,18 @@ export default function App() {
   }, []);
 
   const onMenuPick = useCallback((item) => {
+    // §59 A page turns in place: the menu stays where it is and shows the next
+    // list, so the pointer does not have to chase a flyout.
+    if (item.into) { setMenu((m) => (m ? { ...m, page: item.into } : m)); return; }
+    if (item.back) { setMenu((m) => (m ? { ...m, page: null } : m)); return; }
     setMenu(null);
     if (item.inspect != null) { setSelected(item.inspect); return; }
     if (item.apply) setDesign((d) => item.apply(d));
+  }, []);
+
+  const onHover = useCallback((t) => {
+    setHoverTarget(t);
+    setHovered(t?.kind === "panel" ? t.index : null);
   }, []);
 
   const onSelect = useCallback((i) => setSelected((cur) => (cur === i ? null : i)), []);
@@ -204,7 +217,7 @@ export default function App() {
               selected={selected} hovered={hovered} onSelect={onSelect} hidden={mode !== "view"} camera={camera}
               solids={solidEngine === "kernel" ? kernelSolids.solids : null}
               edgeTool={edgeTool} onEdgePick={onEdgePick} onContext={onContext}
-              drivers={showDrivers} />
+              onHover={onHover} drivers={showDrivers} />
             <div className="chips">
               <div className="chip-group">
                 {RENDER_STYLES.map((s) => (
@@ -282,6 +295,10 @@ export default function App() {
                 {fmt(selectedRow.length)} × {fmt(selectedRow.width)} × {fmt(selectedRow.thickness)} mm
                 {selectedRow.edgeWork !== "—" ? ` · ${selectedRow.edgeWork}` : ""}
               </div>
+            ) : hoverNote(hoverTarget, derived) ? (
+              // §59 What the pointer is on, and that a right-click will act on
+              // it. The line is only ever there while the pointer is on the box.
+              <div className="selection hovering">{hoverNote(hoverTarget, derived)}</div>
             ) : null}
           </div>
 
@@ -329,11 +346,30 @@ export default function App() {
 
       {/* §58 Last in the tree, so it is over everything without a z-index race. */}
       {menu ? (
-        <ContextMenu menu={contextMenu(design, derived, menu.target)} at={menu.at}
+        <ContextMenu menu={contextMenu(design, derived, menu.target, menu.page)} at={menu.at}
           onPick={onMenuPick} onClose={() => setMenu(null)} />
       ) : null}
     </div>
   );
+}
+
+/**
+ * §59 What the pointer is over, in words, and the reminder that it can be acted
+ * on. Named the way §58's menu names it, so the line and the menu agree.
+ */
+export function hoverNote(target, derived) {
+  if (target?.kind === "edge") {
+    const [a, b] = String(target.key).split("|");
+    if (!FACE_LABEL[a] || !FACE_LABEL[b]) return null;
+    return `${FACE_LABEL[a]} / ${FACE_LABEL[b]} edge — right-click to treat it`;
+  }
+  if (target?.kind === "panel") {
+    const row = derived.rows?.find((r) => r.panelIndex === target.index);
+    if (!row) return null;
+    return `${row.id} ${row.faceLabel} ${row.layerLabel} · ${fmt(row.length)} × ${fmt(row.width)}`
+      + ` — click to inspect, right-click for more`;
+  }
+  return null;
 }
 
 function solidNote(k) {

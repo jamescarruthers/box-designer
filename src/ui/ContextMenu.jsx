@@ -67,14 +67,18 @@ export default function ContextMenu({ menu, at, onPick, onClose }) {
           {group.name ? <h4>{group.name}</h4> : null}
           {group.items.map((item) => (
             <button type="button" key={item.id} role="menuitem"
-              className={item.on ? "on" : ""}
+              className={[item.on ? "on" : "", item.back ? "back" : ""].filter(Boolean).join(" ")}
               disabled={Boolean(item.disabled)}
               // The refusal is the useful half: an item that cannot be chosen
               // says what would have to change for it to be.
               title={item.why ?? undefined}
               aria-describedby={item.why ? `${item.id}-why` : undefined}
               onClick={() => onPick(item)}>
+              {/* §59 A colour is a colour: the name beside the thing itself,
+                  because "Green Mint" is not a shade anybody can picture. */}
+              {item.swatch ? <i className="swatch" style={{ background: item.swatch }} /> : null}
               <span className="what">{item.label}</span>
+              {item.into ? <span className="into" aria-hidden="true">›</span> : null}
               {item.on ? <span className="mark" aria-label="current">·</span> : null}
               {item.note && !item.disabled ? <span className="note">{item.note}</span> : null}
               {item.why ? <span className="note why" id={`${item.id}-why`}>{item.why}</span> : null}

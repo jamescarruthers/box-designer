@@ -12,7 +12,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import ContextMenu from "../src/ui/ContextMenu.jsx";
 import { contextMenu } from "../src/ui/menu.js";
-import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
+import { DEFAULT_DESIGN, derive, setProjectMaterial } from "../src/ui/design.js";
 
 afterEach(cleanup);
 
@@ -131,5 +131,58 @@ describe("§58 a real menu, from a real box", () => {
     expect(screen.getByRole("menu", { name: "Front / Left edge" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "Mitre" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: /Fillet R12/ })).toBeTruthy();
+  });
+});
+
+/**
+ * §59 Turning a page.
+ *
+ * The menu shows one list at a time and turns to the next in place. What is on
+ * each page is `menu.js`'s business; what matters here is that the arrow says a
+ * page follows, that a swatch shows the colour it names, and that the way back
+ * is the first thing the keyboard lands on.
+ */
+describe("§59 the pages", () => {
+  const val = setProjectMaterial(DEFAULT_DESIGN, "valchromat");
+  const derived = derive(val);
+  const index = derived.rows.find((r) => r.face === "front" && r.layer === "shell").panelIndex;
+  const at = (page) => contextMenu(val, derived, { kind: "panel", index }, page);
+
+  it("hands back the page an item asks for rather than acting", () => {
+    const { onPick } = show(at(null));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Sheet/ }));
+    expect(onPick.mock.calls[0][0].into).toBe("board");
+    expect(onPick.mock.calls[0][0].apply).toBeUndefined();
+  });
+
+  it("marks the items that open a page", () => {
+    const { container } = show(at(null));
+    const sheet = screen.getByRole("menuitem", { name: /^Sheet/ });
+    expect(sheet.querySelector(".into")).toBeTruthy();
+    expect(container.querySelectorAll(".into").length).toBe(3);
+  });
+
+  it("puts the way back first, and the keyboard on it", () => {
+    show(at("board"));
+    const items = screen.getAllByRole("menuitem");
+    expect(items[0].textContent).toBe("Back");
+    expect(document.activeElement).toBe(items[0]);
+  });
+
+  it("shows a colour beside the name of it", () => {
+    // "Green Mint" is not a shade anybody can picture.
+    show(at("colour"));
+    const mint = screen.getByRole("menuitem", { name: /Green Mint/ });
+    expect(mint.querySelector(".swatch")).toBeTruthy();
+    expect(mint.querySelector(".swatch").style.background).toBeTruthy();
+  });
+
+  it("names the board on every page, so you know what you are changing", () => {
+    for (const [page, tail] of [["board", "sheet"], ["thickness", "valchromat"], ["colour", "colour"]]) {
+      const { unmount } = show(at(page));
+      expect(screen.getByRole("menu").getAttribute("aria-label"))
+        .toBe(`Front carcass · ${tail}`);
+      unmount();
+    }
   });
 });

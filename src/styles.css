@@ -586,6 +586,15 @@ table.cuts .chip, .by-material .chip {
 .context-menu button.on { color: var(--ink); }
 .context-menu button:disabled { cursor: default; color: var(--ink-3); }
 .context-menu .mark { float: right; color: var(--accent); }
+/* §59 A page that turns: the way back, and the arrow that says a page follows. */
+.context-menu .into { float: right; color: var(--ink-3); }
+.context-menu button.back { color: var(--ink-3); }
+.context-menu button.back::before { content: "‹ "; }
+.context-menu .swatch { margin-right: 6px; }
+
+/* §59 The line naming what the pointer is on. Quieter than a selection, which
+   is a thing you chose rather than a thing you are passing over. */
+.selection.hovering { color: var(--ink-3); }
 /* The reason a thing is refused is worth reading, so it is on the sheet rather
    than in a tooltip somebody has to hover to find. */
 .context-menu .note { display: block; font-size: 9.5px; color: var(--ink-3); }

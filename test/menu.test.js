@@ -7,14 +7,14 @@
  * what each item does to the design. No canvas is involved in any of it.
  */
 import { describe, it, expect } from "vitest";
-import { contextMenu, menuItems, EDGE_TREATMENTS, ADDABLE } from "../src/ui/menu.js";
+import { contextMenu, menuItems, EDGE_TREATMENTS, ADDABLE, PAGES } from "../src/ui/menu.js";
 import {
   DEFAULT_DESIGN, derive, addPanel, setLayerOrder, setOwnProminence, setEdgeTreatment,
-  layerOrder,
+  layerOrder, setProjectMaterial,
 } from "../src/ui/design.js";
 import { PROMINENCE_PRESETS, FACES } from "../src/model/constants.js";
 
-const open = (design, target) => contextMenu(design, derive(design), target);
+const open = (design, target, page = null) => contextMenu(design, derive(design), target, page);
 const panelOn = (design, face, layer = "shell") =>
   derive(design).rows.find((r) => r.face === face && r.layer === layer).panelIndex;
 const item = (menu, id) => menuItems(menu).find((i) => i.id === id);
@@ -186,14 +186,128 @@ describe("§58 the way in to everything else", () => {
   });
 
   it("gives every item something to do", () => {
-    // An item that neither changes the design nor opens anything is a dead
-    // line in a menu.
-    for (const target of [{ kind: "panel", index: panelOn(DEFAULT_DESIGN, "top") },
-      { kind: "edge", key: "front|left" }]) {
-      for (const i of menuItems(open(DEFAULT_DESIGN, target))) {
-        expect(Boolean(i.apply) || i.inspect != null).toBe(true);
-        expect(i.label.length).toBeGreaterThan(0);
+    // An item that neither changes the design, opens something, turns a page
+    // nor comes back from one is a dead line in a menu.
+    const alive = (i) => Boolean(i.apply) || i.inspect != null || Boolean(i.into) || Boolean(i.back);
+    const targets = [{ kind: "panel", index: panelOn(DEFAULT_DESIGN, "top") },
+      { kind: "edge", key: "front|left" }];
+    for (const target of targets) {
+      for (const page of [null, ...PAGES]) {
+        const menu = open(DEFAULT_DESIGN, target, page);
+        if (!menu) continue;
+        for (const i of menuItems(menu)) {
+          expect(alive(i)).toBe(true);
+          expect(i.label.length).toBeGreaterThan(0);
+        }
       }
+    }
+  });
+});
+
+/**
+ * §59 The board itself, from the menu.
+ *
+ * A sheet, nine thicknesses and twelve colours is more than a menu can hold
+ * flat, so the menu turns a page. Which page shows what, and what each item
+ * writes, is the same kind of question §58 answered for the rest of it — and
+ * the answer differs by layer, because §47's rules do: the carcass has one
+ * sheet for all six faces, and everything else carries its own.
+ */
+describe("§59 the sheet, the thickness and the colour", () => {
+  const design = DEFAULT_DESIGN;
+  const page = (d, face, layer, p) =>
+    contextMenu(d, derive(d), { kind: "panel", index: panelOn(d, face, layer) }, p);
+  const labels = (menu) => menuItems(menu).filter((i) => !i.back).map((i) => i.label);
+
+  it("offers the three of them as pages, with what they are now", () => {
+    const m = page(design, "front", "shell", null);
+    const board = item(m, "board"), thick = item(m, "thickness"), colour = item(m, "colour");
+    expect(board.into).toBe("board");
+    expect(board.note).toBe("Birch ply");
+    expect(thick.into).toBe("thickness");
+    expect(thick.note).toBe("18 mm");
+    expect(colour.swatch).toBeTruthy();
+  });
+
+  it("comes back from a page", () => {
+    for (const p of PAGES) {
+      const m = page(design, "front", "shell", p);
+      expect(menuItems(m)[0].back).toBe(true);
+      expect(m.back).toBe(true);
+    }
+  });
+
+  it("changes the carcass sheet for the whole carcass, and says so", () => {
+    // §47 There is one carcass sheet, not one per face. A menu that pretended
+    // otherwise would change five other boards without mentioning them.
+    const m = page(design, "front", "shell", "board");
+    expect(m.groups.some((g) => g.name === "The whole carcass")).toBe(true);
+    expect(labels(m)).toEqual(["MDF", "Birch ply", "Oak-faced ply", "Pine", "Valchromat"]);
+    expect(item(m, "birch").disabled).toBe(true);          // already that
+    const after = item(m, "mdf").apply(design);
+    expect(after.material).toBe("mdf");
+    expect(derive(after).sol.closureExact).toBe(true);
+  });
+
+  it("changes one face's thickness and leaves the other five", () => {
+    const m = page(design, "top", "shell", "thickness");
+    expect(labels(m)).toEqual(["4 mm", "6 mm", "9 mm", "12 mm", "15 mm", "18 mm", "24 mm", "30 mm"]);
+    expect(item(m, "t18").on).toBe(true);
+    const after = item(m, "t24").apply(design);
+    expect(after.perFaceThickness).toBe(true);
+    expect(after.thicknessBy.top).toBe(24);
+    expect(after.thicknessBy.front).toBe(18);
+  });
+
+  it("paints one face from the range the sheet is sold in", () => {
+    const val = setProjectMaterial(design, "valchromat");
+    const m = page(val, "front", "shell", "colour");
+    expect(labels(m)[0]).toBe("As the project");
+    expect(labels(m)).toContain("Green Mint");
+    const after = item(m, "green-mint").apply(val);
+    expect(after.perPanelColour).toBe(true);
+    expect(after.colourBy.front).toBe("#548772");
+    // And back to the project's, which is what "As the project" means.
+    const back = item(page(after, "front", "shell", "colour"), "inherit").apply(after);
+    expect(back.colourBy.front ?? null).toBeNull();
+  });
+
+  it("refuses the colour page on a sheet that comes as it comes", () => {
+    // Birch ply has no range. The inspector can still paint it any hex, and
+    // the item says where to go rather than opening a page with one line.
+    const m = page(design, "front", "shell", null);
+    expect(item(m, "colour").disabled).toBe(true);
+    expect(item(m, "colour").why).toContain("inspector");
+  });
+
+  it("gives a cladding its own sheet, thickness and colour", () => {
+    const clad = addPanel(design, "cladding", "front");
+    const m = page(clad, "front", "cladding", "board");
+    expect(m.groups.some((g) => g.name === "The whole carcass")).toBe(false);
+    const after = item(m, "valchromat").apply(clad);
+    expect(after.cladding.front.material).toBe("valchromat");
+    expect(after.material).toBe(design.material);          // the carcass is untouched
+
+    const t = page(after, "front", "cladding", "thickness");
+    const thicker = item(t, "t19").apply(after);
+    expect(thicker.cladding.front.thickness).toBe(19);
+    expect(thicker.thickness).toBe(design.thickness);
+  });
+
+  it("offers a lining the linings, not the boards", () => {
+    // §30 A lining comes off a roll: no birch ply among them.
+    const lined = addPanel(design, "lagging", "back");
+    const m = page(lined, "back", "lagging", "board");
+    expect(labels(m)).not.toContain("Birch ply");
+    expect(labels(m).length).toBeGreaterThan(0);
+    const after = item(m, "wool").apply(lined);
+    expect(after.lagging.back.material).toBe("wool");
+  });
+
+  it("has nothing to say about an edge", () => {
+    for (const p of PAGES) {
+      expect(contextMenu(design, derive(design), { kind: "edge", key: "front|left" }, p).kind)
+        .toBe("edge");
     }
   });
 });
