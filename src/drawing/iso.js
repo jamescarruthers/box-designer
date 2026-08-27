@@ -83,6 +83,29 @@ export function paintOrder(items) {
   return out;
 }
 
+/** The box a face occupies, which is flat in one axis and is meant to be. */
+const boundsOf = (pts) => Object.fromEntries(AXES.map((b) =>
+  [b, [Math.min(...pts.map((v) => v[b])), Math.max(...pts.map((v) => v[b]))]]));
+
+/**
+ * §54 Back to front *within* one panel.
+ *
+ * A box is convex, so its three visible faces never overlap on the paper and
+ * the order they come back in cannot be wrong. A grooved board is not convex:
+ * the step at the bottom of a rebate faces the eye and so does the board's own
+ * outer face in front of it, and they overlap on the paper exactly where the
+ * groove is. Painted in the order the cells happen to be built, the inside of
+ * the groove is painted over the board it is cut into — which is the rebate
+ * drawn in front of the face it is on.
+ *
+ * The same sort the panels themselves get, on the boxes the faces occupy. It
+ * changes nothing for a convex panel, where any order is right.
+ */
+function facePaintOrder(quads) {
+  if (quads.length < 2) return quads;
+  return paintOrder(quads.map((quad) => ({ quad, box: boundsOf(quad.pts) }))).map((i) => i.quad);
+}
+
 /**
  * §40 One panel's surface: the loft the 3D view is built from, as quads.
  *
@@ -454,6 +477,32 @@ function runsInside(pts, within) {
 }
 
 /**
+ * §54 Every panel's surface, in the order the picture is painted: the panels
+ * back to front, and the faces within each panel back to front too.
+ *
+ * Exported because that order is the whole of what makes a solid isometric
+ * read, and the only way to test it is to ask what was actually painted where.
+ *
+ * The panels are sorted on the box **prominence** left them, not the one a
+ * rebate grew. A tongue reaches into the panel beside it, so a rebated panel's
+ * box is no longer clear of its neighbours' along any axis — and `inFront`
+ * answers "neither" to a pair like that, which drops them to the tie-break and
+ * paints the rebated board over the one standing in front of it. The core is
+ * the box that still has the property the sort is built on.
+ */
+export function isoSurfaces(sol, { explode = 0, bevelsOf = null } = {}) {
+  const ordered = paintOrder(sol.panels.map((panel, index) => ({
+    panel, index,
+    drawn: explodedBox(panel, explode),
+    box: explodedBox(panel.core ? { ...panel, box: panel.core } : panel, explode),
+  })));
+  return ordered.map(({ panel, index, drawn }) => {
+    const quads = panelQuads(panel, drawn, bevelsOf?.(panel, index) ?? {});
+    return { panel, index, box: drawn, quads, visible: facePaintOrder(quads.filter((q) => q.visible)) };
+  });
+}
+
+/**
  * §38 Build the isometric: every panel, painted back to front.
  *
  * `fittingsOn` is the same function the cut list and the kernel use, so a hole
@@ -465,15 +514,9 @@ function runsInside(pts, within) {
  * which is what the isometric drew before and what a filleted box is not.
  */
 export function buildIsometric(sol, { explode = 0, fittingsOn = null, bevelsOf = null } = {}) {
-  const { panels } = sol;
   const groups = [];
 
-  const ordered = paintOrder(panels.map((panel, index) =>
-    ({ panel, index, box: explodedBox(panel, explode) })));
-
-  for (const { panel, index, box } of ordered) {
-    const quads = panelQuads(panel, box, bevelsOf?.(panel, index) ?? {});
-    const visible = quads.filter((q) => q.visible);
+  for (const { panel, index, box, visible, quads } of isoSurfaces(sol, { explode, bevelsOf })) {
     const holes = fittingsOn ? panelHoles(panel, box, fittingsOn(panel)) : [];
     groups.push({ panel, visible, holes, edges: panelLines(quads) });
   }

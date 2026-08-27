@@ -3698,3 +3698,61 @@ looking at, read from the box's order, on whatever panel was selected — which 
 a doubler laid out its own way is a number about some other board. It now shows
 the rank the panel is actually laid out by, and its arrows move it in that order:
 the box's while the doublers follow it, the doublers' own once they do not.
+
+## §54 Two things drawn where they are not
+
+Both reported from looking at the app, both real, and neither in the code that
+was last touched — which is the usual shape of a drawing bug: a rule that held
+until some later feature quietly broke its premise.
+
+### The rebate drawn in front of the board it is cut into
+
+The isometric is a painter's algorithm — faces back to front, last one wins —
+and §42's rebates broke it twice.
+
+**A rebated panel is no longer clear of its neighbours.** §38's sort rests on
+one property, and the comment in `paintOrder` states it: *any two panels are
+clear of each other along at least one axis, so `inFront` can order every pair
+exactly.* Prominence guarantees that, because a panel stops where the next one
+starts. A rebate is precisely the thing that breaks it: the panel grows a tongue
+into the panel beside it, the two boxes now overlap along every axis, `inFront`
+answers "neither", and the pair drops to the centre-depth tie-break — which
+painted the rebated top over the front and the side it is let into.
+
+The fix is to sort on the panel as *prominence* left it. `applyRebates` keeps
+the box it grew from as `panel.core`, and the isometric orders on that while
+drawing the grown one. The property the sort needs is a property of the core,
+and it is exactly as true as it ever was.
+
+**A grooved board is not convex.** A box has three faces pointing at the eye and
+they never overlap on the paper, so the order they are built in cannot be wrong.
+Cut a groove in it and that stops being true: the step at the bottom of the
+rebate faces the eye, so does the board's own outer face in front of it, and
+they cover the same paper exactly where the groove is. §49 built those faces
+from the cells the board is left as, in whatever order the grid produced — so
+the inside of the groove was painted over the board it is cut into. Faces within
+a panel now get the same back-to-front sort the panels themselves get.
+
+**How it was measured**, because "it looks right now" is not a test. Sample
+points across the whole picture; at each, find every visible face that covers it
+and how far along the eye it is; the face painted **last** there must be the
+**nearest**. On a doubled box with both rebates, 3.3% of the picture was a face
+showing through something solid, by up to 55 mm. It is now 0.0% — and what is
+left is a handful of samples on one line: where a groove wall meets the tongue
+filling it, two panels interlock, and no ordering of whole panels is right for
+both sides of that joint. `isoSurfaces` is exported so the test asks the drawing
+what it actually painted rather than forming a second opinion about it.
+
+### The exploded box standing in the floor
+
+§19 stands the box on a sweep, because a photograph of a box hovering is a
+photograph of a mistake. §51 let the box come apart. Nobody put those two
+together: exploding moves each panel out along its own face normal, the bottom
+ones go *down* — the bottom cladding by 1.5× the amount asked for — and the
+floor does not go with them.
+
+What stands on the floor is the lowest piece, not the box's underside.
+`explodeSink` says how far that piece has dropped, the assembly is lifted by
+exactly that, and the camera target and the lamps are aimed the same amount
+higher so the picture does not drift. At rest it is zero, so an unexploded box
+stands where it always did.
