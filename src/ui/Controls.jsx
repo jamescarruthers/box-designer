@@ -132,7 +132,7 @@ export default function Controls({ design, set, derived, colourByFace, onInspect
           them. The controls that add and change them are in the inspector:
           they are about one board, and the sidebar is about the box. */}
       <Group title="Panels"
-        note="Everything about one board — its sheet, thickness and colour, the cladding, doubler or lagging on its face, its rebate and its fittings — is in the inspector. Open one from here, or click a panel in the box.">
+        note="Everything about one board — its sheet, thickness and colour, the cladding, doubler or lagging on its face, its rebate and its fittings — is in the inspector. Open one from here, or click a panel in the box. Right-click a face or an edge in the box for what can be done to it there.">
         <PanelSummary design={design} derived={derived} onInspect={onInspect} colourByFace={colourByFace} />
       </Group>
 

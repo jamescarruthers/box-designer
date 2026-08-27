@@ -9,6 +9,8 @@ import DrawingView from "./DrawingView.jsx";
 // the app has to open on a slow connection.
 const RenderView = lazy(() => import("./RenderView.jsx"));
 import { DEFAULT_DESIGN, derive, setEdgeTreatment } from "./design.js";
+import ContextMenu from "./ContextMenu.jsx";
+import { contextMenu } from "./menu.js";
 import { loadDesign, saveDesign, forgetDesign } from "./storage.js";
 import { designFileText, designFileName, readDesignFile, openedNote, readFile, download,
   FILE_ACCEPT, FILE_TYPE } from "./file.js";
@@ -77,6 +79,10 @@ export default function App() {
   // it, or why it would not open. Kept until the next one, because a file that
   // half-opened is something to read at your own pace, not a flash.
   const [fileNote, setFileNote] = useState(null);
+  // §58 The right-click menu: what was under the pointer and where the pointer
+  // was. Not part of the design and not part of the view — it is a question
+  // somebody is in the middle of asking.
+  const [menu, setMenu] = useState(null);
   const fileInput = useRef(null);
 
   const derived = useMemo(() => {
@@ -107,6 +113,18 @@ export default function App() {
     } catch (e) {
       setFileNote({ ok: false, text: e?.message ?? String(e) });
     }
+  }, []);
+
+  // §58 A right-click on the box. A miss closes whatever was open rather than
+  // leaving a menu hanging over nothing.
+  const onContext = useCallback((target, at) => {
+    setMenu(target ? { target, at } : null);
+  }, []);
+
+  const onMenuPick = useCallback((item) => {
+    setMenu(null);
+    if (item.inspect != null) { setSelected(item.inspect); return; }
+    if (item.apply) setDesign((d) => item.apply(d));
   }, []);
 
   const onSelect = useCallback((i) => setSelected((cur) => (cur === i ? null : i)), []);
@@ -185,7 +203,8 @@ export default function App() {
               parallel={parallel}
               selected={selected} hovered={hovered} onSelect={onSelect} hidden={mode !== "view"} camera={camera}
               solids={solidEngine === "kernel" ? kernelSolids.solids : null}
-              edgeTool={edgeTool} onEdgePick={onEdgePick} drivers={showDrivers} />
+              edgeTool={edgeTool} onEdgePick={onEdgePick} onContext={onContext}
+              drivers={showDrivers} />
             <div className="chips">
               <div className="chip-group">
                 {RENDER_STYLES.map((s) => (
@@ -306,6 +325,12 @@ export default function App() {
       {selectedRow ? (
         <Inspector design={design} set={setDesign} derived={derived} row={selectedRow}
           colourByFace={colourByFace} onSelect={setSelected} onClose={() => setSelected(null)} />
+      ) : null}
+
+      {/* §58 Last in the tree, so it is over everything without a z-index race. */}
+      {menu ? (
+        <ContextMenu menu={contextMenu(design, derived, menu.target)} at={menu.at}
+          onPick={onMenuPick} onClose={() => setMenu(null)} />
       ) : null}
     </div>
   );

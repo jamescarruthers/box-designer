@@ -243,6 +243,33 @@ export function setOwnProminence(design, layer, own) {
 }
 
 /**
+ * §58 Which order lays a panel out: the layer's own if it has one, the box's if
+ * it does not.
+ *
+ * §53's rule, in one place. The inspector shows a rank by it and §58's menu
+ * moves a face by it, and two copies of "unless that layer has its own" is one
+ * copy too many.
+ */
+export const prominenceLayer = (design, layer) => (ownOrder(design, layer) ? layer : "shell");
+
+/**
+ * §58 Put a face straight at a rank, taking the rest with it.
+ *
+ * `moveFace` swaps with the neighbour, which is what an arrow does. Bringing a
+ * face to the front is not five swaps: it is one move, and the four it passes
+ * keep the order they were in — a lid brought to the front should not shuffle
+ * the sides on its way.
+ */
+export function setFaceRank(design, face, rank, layer = "shell") {
+  const order = [...layerOrder(design, layer)];
+  const i = order.indexOf(face);
+  if (i < 0 || rank < 0 || rank >= order.length || rank === i) return design;
+  order.splice(i, 1);
+  order.splice(rank, 0, face);
+  return setLayerOrder(design, layer, order);
+}
+
+/**
  * §21 Move one face up or down the prominence order.
  *
  * Prominence decides which panel runs past which at every corner, so it is as
