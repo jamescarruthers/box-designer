@@ -15,16 +15,58 @@ export const TITLE_BLOCK = { w: 180, h: 40, cols: [0, 90, 140, 180], rows: 20 };
 // §6.1 ISO 5455 preferred scales.
 export const PREFERRED_SCALES = [10, 5, 2, 1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01];
 
-export const LW = { visible: 0.7, hidden: 0.45, dim: 0.25, cut: 0.45, frame: 0.7, hatch: 0.16 };
-export const TS = { dim: 3.2, label: 2.9, value: 4, key: 2.2, note: 2.4 };
-export const HIDDEN_DASH = "3 1.4";
-export const CUT_DASH = "12 2 2 2";
+/**
+ * §57 The line widths of ISO 128-20, at the group this sheet is.
+ *
+ * A drawing does not pick a width per line. It picks one *group* — a pair, wide
+ * and narrow at 2:1 — and every line on the sheet is one or the other: wide for
+ * what the object is, narrow for everything said about it. The group goes with
+ * the sheet size, 0.7 for A0 and A1 and 0.5 for A2 down to A4, because what a
+ * width has to survive is the reduction from the paper to a person's eye.
+ *
+ * This sheet is A3 and was drawn at 0.7 with a 1.55:1 ratio — the A0 group,
+ * with hidden lines nearly as heavy as the outlines they hide behind. Printed
+ * at size it read as a thick drawing, which is exactly what it was.
+ */
+export const LINE_GROUP = 0.5;
+const WIDE = LINE_GROUP, NARROW = LINE_GROUP / 2;
+export const LW = {
+  visible: WIDE,          // ISO 128-20: the object, seen
+  hidden: NARROW,         // and not seen
+  cut: WIDE,              // ISO 128-40: the cutting plane
+  dim: NARROW,            // dimensions, leaders, centre lines, the rest
+  hatch: NARROW,          // ISO 128-50
+  // ISO 5457 fixes the border at 0.7 whatever the group: it is the sheet's
+  // line, not the drawing's.
+  frame: 0.7,
+};
+
+/**
+ * §57 ISO 3098 character heights. There is nothing between them: 2.5, 3.5, 5,
+ * 7 and up, and a drawing that uses 2.9 or 3.2 has picked a size that does not
+ * exist. 3.5 is the floor ISO 129-1 puts on a dimension figure.
+ */
+export const TS = { dim: 3.5, label: 3.5, value: 5, key: 2.5, note: 2.5 };
 
 export const GAP_H = [22, 40], GAP_V = [22, 46];
 
 const clamp = (v, [lo, hi]) => Math.min(hi, Math.max(lo, v));
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const n2 = (v) => (Math.round(v * 1000) / 1000).toString();
+
+/**
+ * §57 ISO 128-24 line types, in multiples of the width they are drawn at.
+ *
+ * A dash pattern is a shape, not a length: the same 12d/3d looks the same at
+ * every width because it is measured in widths. Hard-coded millimetres stop
+ * looking like themselves the moment the group changes, which is how a 0.25 mm
+ * hidden line ended up with the gaps of a 0.45 mm one.
+ */
+const pattern = (mult, d) => mult.map((m) => n2(m * d)).join(" ");
+export const dashedAt = (d) => pattern([12, 3], d);
+export const chainAt = (d) => pattern([24, 3, 6, 3], d);
+export const HIDDEN_DASH = dashedAt(LW.hidden);
+export const CUT_DASH = chainAt(LW.cut);
 
 export function frameRect() {
   return {
@@ -157,7 +199,7 @@ function drawFittings(g, place) {
   for (const c of g.boltCircles ?? []) {
     const p = place(c.at);
     out.push(`<circle cx="${n2(p[0])}" cy="${n2(p[1])}" r="${n2(c.r * place.scale)}" fill="none" ` +
-      `stroke="var(--ink-2)" stroke-width="${LW.dim}" stroke-dasharray="${CUT_DASH}"/>`);
+      `stroke="var(--ink-2)" stroke-width="${LW.dim}" stroke-dasharray="${chainAt(LW.dim)}"/>`);
   }
   for (const c of g.circles ?? []) {
     const p = place(c.at);
@@ -422,7 +464,15 @@ export function buildSheet(sol, edges, opts = {}) {
   body.push(titleBlock(L, { title, material, rev, sheetNo, scale: s }));
 
   const svg = [
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SHEET.w} ${SHEET.h}" width="100%" `,
+    // §57 The sheet says how big it is. The user unit is a millimetre —
+    // everything on here is in them, line widths included — and an SVG with no
+    // physical size is a 420 × 297 *pixel* document to whatever opens it: at 96
+    // dpi that prints 111 mm across, a quarter of A3, with every line a quarter
+    // of the width it was drawn at. The width and height are what make "printed
+    // at A3" true rather than a hope; the viewBox still lets the app scale it to
+    // whatever room it has on screen.
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SHEET.w} ${SHEET.h}" `,
+    `width="${SHEET.w}mm" height="${SHEET.h}mm" `,
     `preserveAspectRatio="xMidYMid meet" font-family="ui-monospace, 'DejaVu Sans Mono', monospace" `,
     `style="--ink:#12161c;--ink-2:#4a5561;--paper:#f3f1ea">`,
     defs(),

@@ -3862,3 +3862,51 @@ does not move when the kernel arrives.
 What changes on paper: the isometric is line work rather than paper-filled
 panels. That is not a loss — the fills of §38 were doing the occlusion that HLR
 does properly, and the rest of an ISO 128 sheet is line work anyway.
+
+## §57 The sheet at the size it is printed
+
+The drawing is an A3 sheet whose user unit is a millimetre — `SHEET` is
+420 × 297 and every number on it is in them, line widths included. Two things
+made that a fiction.
+
+### The file did not say how big it was
+
+The SVG carried `width="100%"` and no height. In the app that is right; as a
+file it means nothing at all — a viewer reads `viewBox="0 0 420 297"` as a
+420 × 297 **pixel** document, which at 96 dpi is 111 mm across. Printed, that is
+a quarter of an A3 with every line a quarter of the width it was drawn at, or a
+print-to-fit that scales it by whatever the paper happens to be. The element now
+says `width="420mm" height="297mm"`, and the exported file opens at 420.0 ×
+297.0 mm. The viewBox still lets the app scale it to the room it has on screen.
+
+### The widths were the group for a sheet four times bigger
+
+ISO 128-20 does not have a width per line type. It has **groups** — a wide and a
+narrow at 2:1 — and the group goes with the sheet, 0.7 for A0 and A1 and 0.5
+for A2 down to A4. Everything on the drawing is then one of the two: wide for
+what the object *is*, narrow for everything *said* about it.
+
+This sheet was drawn at 0.7 visible and 0.45 hidden — the A0 group, at a 1.55:1
+ratio that is no group at all. Hidden lines nearly as heavy as the outlines they
+hide behind is exactly what "too thick" looks like. It is the 0.5 group now:
+
+| | was | is | |
+|---|---|---|---|
+| visible | 0.7 | **0.5** | ISO 128-20 wide |
+| hidden, dimensions, hatching | 0.45 / 0.25 / 0.16 | **0.25** | narrow |
+| cutting plane | 0.45 | **0.5** | wide, ISO 128-40 |
+| border | 0.7 | 0.7 | ISO 5457 fixes it whatever the group |
+
+The dash patterns go with it, and are stated the way ISO 128-24 states them —
+in **multiples of the line width**, 12d/3d dashed and 24d/3d/6d/3d chain. A
+pattern in millimetres stops looking like itself the moment the width changes,
+which is how a 0.25 mm hidden line ended up wearing a 0.45 mm line's gaps.
+
+### The lettering was between sizes
+
+ISO 3098 has 2.5, 3.5, 5, 7 and up, and nothing in between; a drawing lettered
+at 2.9 and 3.2 has picked heights that do not exist. Dimension figures are 3.5
+now, which is also the floor ISO 129-1 puts on them; view captions 3.5, title
+block values 5, field names and notes 2.5. Nothing collided — the layout
+reserves `DIM_TEXT` either way — and the sheet reads as a drawing rather than as
+a diagram of one.
