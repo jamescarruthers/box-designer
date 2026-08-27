@@ -339,13 +339,8 @@ export function buildSheet(sol, edges, opts = {}) {
     // that shows the fittings in place — and the one that comes apart.
     iso: buildIsometric(drawn, { explode, fittingsOn: opts.fittingsOn, bevelsOf: opts.bevelsOf }),
   };
-  // §38 The kernel's isometric is a hidden-line view of the box as assembled,
-  // and there is no exploded shape to ask it for — the panels are one solid by
-  // then. So an exploded isometric is drawn from the panel boxes either way,
-  // and the slider works with the kernel on.
-  if (opts.geometry && explode > 0) {
-    geo.iso = buildIsometric(drawn, { explode, fittingsOn: opts.fittingsOn, bevelsOf: opts.bevelsOf });
-  }
+  // §56 The kernel draws its own exploded isometric now — it is handed the
+  // panels where the explode put them — so there is nothing to substitute here.
 
   // §32 The layout is settled after the views, not before: without a section
   // the isometric picks which free rectangle it goes in, and it can only pick

@@ -148,10 +148,10 @@ export const OPS = {
     });
   },
 
-  views(oc, { sol, edges, owners, sectionAt, fittings, tubes }) {
+  views(oc, { sol, edges, owners, sectionAt, explode, fittings, tubes }) {
     // Only the geometry: the shape is an OCCT handle and stays on this side.
     return kernelViews(oc, sol, edges, owners, {
-      sectionAt,
+      sectionAt, explode,
       fittingsFor: (i) => fittings?.[i] ?? [],
       tubesFor: (i) => tubes?.[i] ?? [],
     }).geometry;

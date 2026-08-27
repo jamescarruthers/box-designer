@@ -681,3 +681,58 @@ describe("§41 hiding the insulation hides its dimension too", () => {
     expect(withoutLagging(plain)).toBe(plain);
   });
 });
+
+/**
+ * §56 The sheet takes the isometric it is given.
+ *
+ * §38 handed the kernel's sheet an analytic isometric whenever the explode
+ * slider was off zero, because the kernel had no exploded shape to draw. It has
+ * one now, so the substitution is gone — and the test that matters is that the
+ * sheet stops making it, because a sheet that quietly swaps one engine's view
+ * for another's is a sheet you cannot tell which engine drew.
+ */
+describe("§56 the isometric the sheet draws", () => {
+  /** A stand-in for what the kernel returns: lines, no groups. */
+  const kernelGeometry = (explode) => {
+    const iso = buildIsometric(sol, { explode });
+    return {
+      front: { view: "front", ext: { h: 100, v: 100 }, lines: [], arcs: [] },
+      end: { view: "end", ext: { h: 100, v: 100 }, lines: [], arcs: [] },
+      plan: { view: "plan", ext: { h: 100, v: 100 }, lines: [], arcs: [] },
+      section: { view: "section", ext: { h: 100, v: 100 }, lines: [], arcs: [], hatches: [] },
+      // Marked so the test can tell it apart from anything built here.
+      iso: { view: "iso", ext: iso.ext, arcs: [], lines: [{ a: [0, 0], b: [1, 1], visible: true, kind: "iso" }] },
+    };
+  };
+
+  const built = (explode) => buildSheet(sol, noEdges(), {
+    title: "KERNEL", material: "BIRCH PLY 18",
+    geometry: kernelGeometry(explode), holesInGeometry: true, explode,
+  });
+
+  it("keeps the kernel's isometric when the box is together", () => {
+    const sheet = built(0);
+    expect(sheet.geometry.iso.lines).toHaveLength(1);
+    expect(sheet.geometry.iso.groups).toBeUndefined();
+  });
+
+  it("keeps it when the box has come apart, which it did not used to", () => {
+    const sheet = built(60);
+    expect(sheet.geometry.iso.lines).toHaveLength(1);
+    expect(sheet.geometry.iso.groups).toBeUndefined();
+  });
+
+  it("still builds its own when no geometry is handed to it", () => {
+    const sheet = buildSheet(sol, noEdges(), { title: "ANALYTIC", material: "BIRCH PLY 18", explode: 60 });
+    expect(sheet.geometry.iso.groups.length).toBeGreaterThan(0);
+  });
+
+  it("draws the isometric it kept, at the scale the sheet chose", () => {
+    // The one that matters on paper: the sheet lays out around `geo.iso.ext`,
+    // so an isometric whose extent came from one engine and whose lines came
+    // from another would be drawn off its own cell.
+    const sheet = built(60);
+    expect(sheet.svg).toContain('data-view="iso"');
+    expect(sheet.isoScale).toBeGreaterThan(0);
+  });
+});

@@ -3808,3 +3808,57 @@ leaving the mode and coming back returns to the view you left.
 A **Recentre** button is the way back, and the way anybody finds out the pan is
 there at all: it is lit only once the view has been dragged off the box, it
 says how to pan in its tooltip, and it leaves the angle and the zoom alone.
+
+## §56 The isometric, from the kernel
+
+The drawing had two isometrics and showed the wrong one. The kernel's is a
+hidden-line view of the solids that are actually being made — cut fittings,
+rounded edges, rebate grooves, silhouettes — and §38's is a reconstruction from
+panel boxes, painted back to front. §54 is the record of what that costs: two
+classes of bug in the paint order, and a residual sliver no ordering of whole
+panels can fix.
+
+Two things kept the analytic one in front.
+
+### The kernel can draw an exploded box after all
+
+§38 said it could not: *"there is no exploded shape to ask it for — the panels
+are one solid by then."* That was wrong about the shape. `assembly` builds a
+**compound** of separate panel solids and has never fused them — HLR runs over
+the six-or-more of them, which is exactly why §6.3's merge step exists. So the
+exploded picture is what you get by building each panel from its exploded box.
+
+Two things make that safe, and both are properties of what explode does rather
+than luck:
+
+- **A panel moves along its own normal and nothing else.** A bore is placed at
+  `at.a`/`at.b` in the panel's two *planar* axes and started from `panel.box` in
+  the third. The planar pair is untouched by the move and the third comes from
+  the box that moved, so a hole stays where it was drilled.
+- **A bevel belongs to an edge, not to a position.** The bevels are looked up
+  against the panel where it was, so a fillet on the front-left arris is still
+  on the front-left arris after the front panel has left the building.
+
+Checked the way it deserves: the exploded assembly has **exactly** the volume of
+the assembled one, holes and all. Anything else would mean a cut had landed
+somewhere new.
+
+### The drawing opens on it
+
+§23 made OpenCASCADE the default engine for the 3D view because the kernel is
+what models the thing being made. The drawing kept opening on the analytic
+sheet, so the isometric anybody actually looked at was the painted one. It opens
+on the kernel now, with the analytic sheet as what is on screen while the 3.5 MB
+arrives and what is left if it will not — the same arrangement, for the same
+reason.
+
+The two isometrics register exactly, at every explode amount: §6.6 chose the
+projection's x direction so that OCCT's lands on the app's own screen formula
+rather than a rotation of it, and the sheet lays out around `geo.iso.ext`, so a
+picture whose extent came from one engine and whose lines came from the other
+would be drawn off its own cell. The extents match to six figures, so the sheet
+does not move when the kernel arrives.
+
+What changes on paper: the isometric is line work rather than paper-filled
+panels. That is not a loss — the fills of §38 were doing the occlusion that HLR
+does properly, and the rest of an ISO 128 sheet is line work anyway.
