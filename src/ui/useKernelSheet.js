@@ -35,6 +35,10 @@ export function useKernelSheet(derived, design, enabled, attempt = 0) {
       edges: derived.edges,
       owners: derived.owners,
       sectionAt: derived.sectionAt,
+      // §56 The isometric comes apart in the kernel now, so it needs to know
+      // by how much. The three orthographic views never do: a drawing
+      // dimensions the box as it is made, not as it is taken to bits.
+      explode: derived.drawing.explode,
       fittings: drawSol.panels.map((p) => derived.fittingsOn?.(p) ?? []),
       tubes: drawSol.panels.map((p) => derived.tubesOn?.(p) ?? []),
     }, {

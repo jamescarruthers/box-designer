@@ -4,7 +4,7 @@
 // is exploded on screen and exploded on the sheet should come apart the same
 // way, or the drawing is of a different box.
 
-import { AXIS } from "./constants.js";
+import { AXIS, AXES } from "./constants.js";
 
 /**
  * Outward along the face normal, scaled by layer so a stack comes apart in
@@ -23,6 +23,34 @@ export function explodeShift(panel, amount) {
 }
 
 /**
+ * §55 The box an exploded assembly occupies, in model coordinates.
+ *
+ * Not the envelope: the envelope is where the box is when it is together, and
+ * a box that has come apart reaches past it — by 1.5× the amount asked for on
+ * the cladding, and by nothing at all on a face that carries none. Which is
+ * why this is measured rather than derived from `E`: a box clad on the front
+ * only comes apart lopsidedly, and the middle of what you are looking at is
+ * not the middle of the box it was.
+ */
+export function explodedBounds(panels, amount) {
+  const out = Object.fromEntries(AXES.map((b) => [b, [Infinity, -Infinity]]));
+  for (const p of panels) {
+    const box = explodedBox(p, amount);
+    for (const b of AXES) {
+      out[b][0] = Math.min(out[b][0], box[b][0]);
+      out[b][1] = Math.max(out[b][1], box[b][1]);
+    }
+  }
+  return out;
+}
+
+/** The middle of that box, which is what a camera looking at the thing aims at. */
+export const explodedCentre = (panels, amount) => {
+  const b = explodedBounds(panels, amount);
+  return Object.fromEntries(AXES.map((k) => [k, (b[k][0] + b[k][1]) / 2]));
+};
+
+/**
  * §54 How far the lowest piece of an exploded assembly reaches below the floor
  * the box stands on, as a number that is zero or negative.
  *
@@ -33,7 +61,7 @@ export function explodeShift(panel, amount) {
  * pieces that moved go through the floor.
  */
 export const explodeSink = (panels, amount) =>
-  Math.min(0, ...panels.map((p) => p.box.z[0] + explodeShift(p, amount).z));
+  Math.min(0, explodedBounds(panels, amount).z[0]);
 
 /** The same shift applied to a panel's box, which is what the views draw. */
 export function explodedBox(panel, amount) {

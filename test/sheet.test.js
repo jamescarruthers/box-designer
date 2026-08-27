@@ -6,7 +6,8 @@ import { applyMitres } from "../src/model/mitre.js";
 import { fittingDimensions, DIM_ANGLE } from "../src/drawing/fittings.js";
 import { newFitting } from "../src/model/fittings.js";
 import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
-import { buildSheet, layout, planDimensions, dimensionLadder, dimensionStep, dimensionRungs, DIM_NEAR, DIM_STEP, DIM_STEP_MIN, pickScale, scaleLabel, edgeNote, mitreDrawingNote, noteText, isoFit, withoutLagging, SHEET, TITLE_BLOCK, LW, TS, PREFERRED_SCALES, GAP_H, GAP_V, frameRect } from "../src/drawing/sheet.js";
+import { LINE_GROUP, dashedAt, chainAt, CUT_DASH, buildSheet, layout, planDimensions, dimensionLadder, dimensionStep, dimensionRungs, DIM_NEAR, DIM_STEP, DIM_STEP_MIN, pickScale, scaleLabel, edgeNote, mitreDrawingNote, noteText, isoFit, withoutLagging, SHEET, TITLE_BLOCK, LW, TS, PREFERRED_SCALES, GAP_H, GAP_V, frameRect } from "../src/drawing/sheet.js";
+import { HIDDEN_DASH } from "../src/drawing/sheet.js";
 import { HATCH } from "../src/drawing/section.js";
 import { buildIsometric } from "../src/drawing/iso.js";
 import { addPanel, editPanel } from "../src/ui/design.js";
@@ -81,12 +82,51 @@ describe("§6.1 the sheet", () => {
     expect(buildSheet(sol, noEdges()).svg).toContain(">1:5<");
   });
 
-  it("uses the specified line widths and text sizes", () => {
-    expect(LW).toEqual({ visible: 0.7, hidden: 0.45, dim: 0.25, cut: 0.45, frame: 0.7, hatch: 0.16 });
-    expect(TS).toEqual({ dim: 3.2, label: 2.9, value: 4, key: 2.2, note: 2.4 });
+  /**
+   * §57 The widths and heights are a standard, not a taste. Asserting the rule
+   * rather than the numbers is what makes this a test: pick a different group
+   * tomorrow and everything still has to hold.
+   */
+  it("draws in one ISO 128-20 line group, wide and narrow at 2:1", () => {
+    expect(LINE_GROUP).toBe(0.5);                       // ISO 128-20, the A2–A4 group
+    expect(LW.visible).toBe(LINE_GROUP);
+    expect(LW.cut).toBe(LINE_GROUP);
+    for (const narrow of ["hidden", "dim", "hatch"]) {
+      expect(LW[narrow]).toBeCloseTo(LINE_GROUP / 2, 9);
+    }
+    // Every width on the sheet is one of the group's two, or the border ISO
+    // 5457 fixes at 0.7 whatever the group is.
+    for (const w of Object.values(LW)) expect([0.25, 0.5, 0.7]).toContain(w);
+    expect(LW.frame).toBe(0.7);
+  });
+
+  it("letters at the heights ISO 3098 has, and no others", () => {
+    // 2.9 and 3.2 are not sizes. 3.5 is the floor ISO 129-1 puts on a
+    // dimension figure, and everything else is on the same ladder.
+    for (const h of Object.values(TS)) expect([2.5, 3.5, 5, 7]).toContain(h);
+    expect(TS.dim).toBeGreaterThanOrEqual(3.5);
+  });
+
+  it("measures its dash patterns in line widths, so they scale with the group", () => {
+    // ISO 128-24: a dashed line is 12d long with 3d gaps, a chain line
+    // 24d/3d/6d/3d. In millimetres they stop being those the moment the width
+    // changes — which is how a 0.25 line ended up with a 0.45 line's gaps.
+    expect(HIDDEN_DASH).toBe(dashedAt(LW.hidden));
+    expect(dashedAt(0.25)).toBe("3 0.75");
+    expect(CUT_DASH).toBe(chainAt(LW.cut));
+    expect(chainAt(0.5)).toBe("12 1.5 3 1.5");
+  });
+
+  it("says how big the sheet is, so it prints at A3", () => {
+    // The user unit is a millimetre and always was; without a physical size on
+    // the element, a viewer reads 420 × 297 as pixels and prints a quarter of
+    // an A3 with quarter-width lines.
     const svg = buildSheet(sol, noEdges()).svg;
-    expect(svg).toContain(`stroke-width="0.7"`);
-    expect(svg).toContain(`stroke-dasharray="3 1.4"`);
+    expect(svg).toContain(`width="420mm"`);
+    expect(svg).toContain(`height="297mm"`);
+    expect(svg).toContain(`viewBox="0 0 420 297"`);
+    expect(svg).toContain(`stroke-width="${LW.visible}"`);
+    expect(svg).toContain(`stroke-dasharray="${HIDDEN_DASH}"`);
   });
 });
 
@@ -133,7 +173,7 @@ describe("§6 the drawing as a whole", () => {
 
   it("puts the cutting-plane symbol on the plan, not the front elevation", () => {
     const plan = built.svg.slice(built.svg.indexOf('data-view="plan"'));
-    expect(built.svg).toContain(`stroke-dasharray="12 2 2 2"`);
+    expect(built.svg).toContain(`stroke-dasharray="${CUT_DASH}"`);
     // The chain line sits at the plan's horizontal centre.
     const L = layout(sol.E, { dimRungs: dimensionRungs(sol) });
     const x = L.cells.plan.x + (sol.E.x / 2) * L.scale;
@@ -679,5 +719,60 @@ describe("§41 hiding the insulation hides its dimension too", () => {
     const plain = solve({ envelope: { x: 300, y: 360, z: 420 }, thickness: 18,
       order: PROMINENCE_PRESETS[0].order });
     expect(withoutLagging(plain)).toBe(plain);
+  });
+});
+
+/**
+ * §56 The sheet takes the isometric it is given.
+ *
+ * §38 handed the kernel's sheet an analytic isometric whenever the explode
+ * slider was off zero, because the kernel had no exploded shape to draw. It has
+ * one now, so the substitution is gone — and the test that matters is that the
+ * sheet stops making it, because a sheet that quietly swaps one engine's view
+ * for another's is a sheet you cannot tell which engine drew.
+ */
+describe("§56 the isometric the sheet draws", () => {
+  /** A stand-in for what the kernel returns: lines, no groups. */
+  const kernelGeometry = (explode) => {
+    const iso = buildIsometric(sol, { explode });
+    return {
+      front: { view: "front", ext: { h: 100, v: 100 }, lines: [], arcs: [] },
+      end: { view: "end", ext: { h: 100, v: 100 }, lines: [], arcs: [] },
+      plan: { view: "plan", ext: { h: 100, v: 100 }, lines: [], arcs: [] },
+      section: { view: "section", ext: { h: 100, v: 100 }, lines: [], arcs: [], hatches: [] },
+      // Marked so the test can tell it apart from anything built here.
+      iso: { view: "iso", ext: iso.ext, arcs: [], lines: [{ a: [0, 0], b: [1, 1], visible: true, kind: "iso" }] },
+    };
+  };
+
+  const built = (explode) => buildSheet(sol, noEdges(), {
+    title: "KERNEL", material: "BIRCH PLY 18",
+    geometry: kernelGeometry(explode), holesInGeometry: true, explode,
+  });
+
+  it("keeps the kernel's isometric when the box is together", () => {
+    const sheet = built(0);
+    expect(sheet.geometry.iso.lines).toHaveLength(1);
+    expect(sheet.geometry.iso.groups).toBeUndefined();
+  });
+
+  it("keeps it when the box has come apart, which it did not used to", () => {
+    const sheet = built(60);
+    expect(sheet.geometry.iso.lines).toHaveLength(1);
+    expect(sheet.geometry.iso.groups).toBeUndefined();
+  });
+
+  it("still builds its own when no geometry is handed to it", () => {
+    const sheet = buildSheet(sol, noEdges(), { title: "ANALYTIC", material: "BIRCH PLY 18", explode: 60 });
+    expect(sheet.geometry.iso.groups.length).toBeGreaterThan(0);
+  });
+
+  it("draws the isometric it kept, at the scale the sheet chose", () => {
+    // The one that matters on paper: the sheet lays out around `geo.iso.ext`,
+    // so an isometric whose extent came from one engine and whose lines came
+    // from another would be drawn off its own cell.
+    const sheet = built(60);
+    expect(sheet.svg).toContain('data-view="iso"');
+    expect(sheet.isoScale).toBeGreaterThan(0);
   });
 });

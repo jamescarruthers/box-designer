@@ -3756,3 +3756,157 @@ What stands on the floor is the lowest piece, not the box's underside.
 exactly that, and the camera target and the lamps are aimed the same amount
 higher so the picture does not drift. At rest it is zero, so an unexploded box
 stands where it always did.
+
+## §55 Looking at the thing, and moving it about the frame
+
+### The camera aims at the middle of what is there
+
+§19 pointed the rendered view's camera at `[0, E.z × 0.42, 0]` — a little below
+the middle of the *box*, which flatters a box standing on a floor. §51 let the
+box come apart, and that aim stopped meaning anything: the pieces spread both
+ways from where they were, so the middle of the assembly is not the middle of
+the envelope it came from, and the picture slid down the frame as the slider
+moved.
+
+So the aim is **measured**. `explodedBounds` is the box an exploded assembly
+actually occupies, and the camera looks at the middle of it. That is right for
+three cases the old aim was wrong for:
+
+- **Exploded.** The pieces reach past the envelope, by 1.5× the amount asked
+  for on the cladding and nothing at all on a face that carries none.
+- **Lopsided.** A box clad on the front only comes apart lopsidedly: at 60 mm
+  its middle has moved 15 mm forward, and no fraction of `E` knows that.
+- **Standing on the floor.** §54 lifts the assembly so its lowest piece rests on
+  the sweep; the aim goes up with it, from the same bounds, so the two cannot
+  drift apart. `explodeSink` is now that bound's floor rather than a second
+  traversal with its own opinion.
+
+Measured before and after over a lopsided box: the picture's centroid used to
+sit at 0.457 of the frame and slide to 0.487 as the box came apart; it now sits
+at 0.486 and stays there.
+
+The lamps are aimed at the same point, and at the aim rather than the panned
+target — dragging the view across the box is a change of viewpoint, not of the
+lighting.
+
+### Panning
+
+The rendered view could turn and zoom and nothing else, so a box you had zoomed
+into was a box you could only look at the middle of. **Shift-drag or
+middle-drag** now moves it about the frame — the same hand as §4's 3D view,
+because they are two views of one box and a pointer that means different things
+in each is a pointer you have to remember. `panBy` in `src/three/camera.js` is
+the one rule both use: along the camera's own right and up, scaled by how far
+back it is standing so a pixel drags the same amount of *picture* at every zoom.
+
+The pan is kept **apart from the aim** rather than written into the target. The
+scene is rebuilt whenever the design or the explode changes and the aim is
+recomputed with it, so a pan folded into the target would be wiped by the next
+keystroke in the sidebar. It is reported with the angle and the distance, so
+leaving the mode and coming back returns to the view you left.
+
+A **Recentre** button is the way back, and the way anybody finds out the pan is
+there at all: it is lit only once the view has been dragged off the box, it
+says how to pan in its tooltip, and it leaves the angle and the zoom alone.
+
+## §56 The isometric, from the kernel
+
+The drawing had two isometrics and showed the wrong one. The kernel's is a
+hidden-line view of the solids that are actually being made — cut fittings,
+rounded edges, rebate grooves, silhouettes — and §38's is a reconstruction from
+panel boxes, painted back to front. §54 is the record of what that costs: two
+classes of bug in the paint order, and a residual sliver no ordering of whole
+panels can fix.
+
+Two things kept the analytic one in front.
+
+### The kernel can draw an exploded box after all
+
+§38 said it could not: *"there is no exploded shape to ask it for — the panels
+are one solid by then."* That was wrong about the shape. `assembly` builds a
+**compound** of separate panel solids and has never fused them — HLR runs over
+the six-or-more of them, which is exactly why §6.3's merge step exists. So the
+exploded picture is what you get by building each panel from its exploded box.
+
+Two things make that safe, and both are properties of what explode does rather
+than luck:
+
+- **A panel moves along its own normal and nothing else.** A bore is placed at
+  `at.a`/`at.b` in the panel's two *planar* axes and started from `panel.box` in
+  the third. The planar pair is untouched by the move and the third comes from
+  the box that moved, so a hole stays where it was drilled.
+- **A bevel belongs to an edge, not to a position.** The bevels are looked up
+  against the panel where it was, so a fillet on the front-left arris is still
+  on the front-left arris after the front panel has left the building.
+
+Checked the way it deserves: the exploded assembly has **exactly** the volume of
+the assembled one, holes and all. Anything else would mean a cut had landed
+somewhere new.
+
+### The drawing opens on it
+
+§23 made OpenCASCADE the default engine for the 3D view because the kernel is
+what models the thing being made. The drawing kept opening on the analytic
+sheet, so the isometric anybody actually looked at was the painted one. It opens
+on the kernel now, with the analytic sheet as what is on screen while the 3.5 MB
+arrives and what is left if it will not — the same arrangement, for the same
+reason.
+
+The two isometrics register exactly, at every explode amount: §6.6 chose the
+projection's x direction so that OCCT's lands on the app's own screen formula
+rather than a rotation of it, and the sheet lays out around `geo.iso.ext`, so a
+picture whose extent came from one engine and whose lines came from the other
+would be drawn off its own cell. The extents match to six figures, so the sheet
+does not move when the kernel arrives.
+
+What changes on paper: the isometric is line work rather than paper-filled
+panels. That is not a loss — the fills of §38 were doing the occlusion that HLR
+does properly, and the rest of an ISO 128 sheet is line work anyway.
+
+## §57 The sheet at the size it is printed
+
+The drawing is an A3 sheet whose user unit is a millimetre — `SHEET` is
+420 × 297 and every number on it is in them, line widths included. Two things
+made that a fiction.
+
+### The file did not say how big it was
+
+The SVG carried `width="100%"` and no height. In the app that is right; as a
+file it means nothing at all — a viewer reads `viewBox="0 0 420 297"` as a
+420 × 297 **pixel** document, which at 96 dpi is 111 mm across. Printed, that is
+a quarter of an A3 with every line a quarter of the width it was drawn at, or a
+print-to-fit that scales it by whatever the paper happens to be. The element now
+says `width="420mm" height="297mm"`, and the exported file opens at 420.0 ×
+297.0 mm. The viewBox still lets the app scale it to the room it has on screen.
+
+### The widths were the group for a sheet four times bigger
+
+ISO 128-20 does not have a width per line type. It has **groups** — a wide and a
+narrow at 2:1 — and the group goes with the sheet, 0.7 for A0 and A1 and 0.5
+for A2 down to A4. Everything on the drawing is then one of the two: wide for
+what the object *is*, narrow for everything *said* about it.
+
+This sheet was drawn at 0.7 visible and 0.45 hidden — the A0 group, at a 1.55:1
+ratio that is no group at all. Hidden lines nearly as heavy as the outlines they
+hide behind is exactly what "too thick" looks like. It is the 0.5 group now:
+
+| | was | is | |
+|---|---|---|---|
+| visible | 0.7 | **0.5** | ISO 128-20 wide |
+| hidden, dimensions, hatching | 0.45 / 0.25 / 0.16 | **0.25** | narrow |
+| cutting plane | 0.45 | **0.5** | wide, ISO 128-40 |
+| border | 0.7 | 0.7 | ISO 5457 fixes it whatever the group |
+
+The dash patterns go with it, and are stated the way ISO 128-24 states them —
+in **multiples of the line width**, 12d/3d dashed and 24d/3d/6d/3d chain. A
+pattern in millimetres stops looking like itself the moment the width changes,
+which is how a 0.25 mm hidden line ended up wearing a 0.45 mm line's gaps.
+
+### The lettering was between sizes
+
+ISO 3098 has 2.5, 3.5, 5, 7 and up, and nothing in between; a drawing lettered
+at 2.9 and 3.2 has picked heights that do not exist. Dimension figures are 3.5
+now, which is also the floor ISO 129-1 puts on them; view captions 3.5, title
+block values 5, field names and notes 2.5. Nothing collided — the layout
+reserves `DIM_TEXT` either way — and the sheet reads as a drawing rather than as
+a diagram of one.

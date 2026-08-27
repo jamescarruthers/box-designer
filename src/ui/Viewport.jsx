@@ -13,7 +13,7 @@ import { edgeProxies, pickableEdges, pickRadius, hintSize } from "../three/edgeP
 import { toThree } from "../three/panelGeometry.js";
 import { panelColour, SELECT_EMISSIVE, ACCENT } from "../three/palette.js";
 import { lineWidthFor, nearFar, sceneRadius } from "../three/lines.js";
-import { makeCamera, frameParallel, parallelPlanes } from "../three/camera.js";
+import { makeCamera, frameParallel, parallelPlanes, panBy } from "../three/camera.js";
 
 /** §4 The two depth comparisons the edge passes use. */
 const DEPTH_FUNC = { "less-equal": THREE.LessEqualDepth, greater: THREE.GreaterDepth };
@@ -210,10 +210,8 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
       drag.x = e.clientX; drag.y = e.clientY;
       drag.moved += Math.abs(dx) + Math.abs(dy);
       if (drag.pan) {
-        const right = new THREE.Vector3().setFromMatrixColumn(state.camera.matrix, 0);
-        const up = new THREE.Vector3().setFromMatrixColumn(state.camera.matrix, 1);
-        const k = sph.dist * 0.0016;
-        target.addScaledVector(right, -dx * k).addScaledVector(up, dy * k);
+        // §55 The same pan the rendered view does, from the same rule.
+        panBy(state.camera, sph.dist, dx, dy, target);
       } else {
         sph.az -= dx * 0.007;
         sph.pol = Math.min(POLAR_MAX, Math.max(POLAR_MIN, sph.pol - dy * 0.007));

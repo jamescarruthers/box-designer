@@ -56,3 +56,26 @@ export const parallelPlanes = (dist, radius) => ({
   near: dist - radius * 2,
   far: dist + radius * 2,
 });
+
+/**
+ * §55 How far a drag across the screen moves the point the camera is aimed at.
+ *
+ * Along the camera's own right and up, so the box follows the pointer whichever
+ * way the view happens to be turned, and scaled by how far back the camera is
+ * standing so a pixel drags the same amount of *picture* at every zoom. Both 3D
+ * views pan by this, because they are two views of one box and a pointer that
+ * means different things in each is a pointer you have to remember.
+ *
+ * `out` is added to rather than replaced: the 3D view keeps its pan in the
+ * target and the rendered view keeps it apart from the aim (§55), and both are
+ * accumulating the same drag.
+ */
+export function panBy(camera, dist, dx, dy, out) {
+  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
+  const up = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
+  const k = dist * PAN_PER_PIXEL;
+  return out.addScaledVector(right, -dx * k).addScaledVector(up, dy * k);
+}
+
+/** How much of the distance to the target one pixel of drag is worth. */
+export const PAN_PER_PIXEL = 0.0016;

@@ -25,6 +25,8 @@ import { triangulate, meshPanels, meshVolume, describeShapeFailure } from "../sr
 import { edgeSegments } from "../src/occt/edges.js";
 import { viewLines, segEnds } from "../src/drawing/hlr.js";
 import { panelPositions, inwardCount } from "../src/three/panelGeometry.js";
+import { explodedBox } from "../src/model/explode.js";
+import { applyRebates } from "../src/model/rebate.js";
 
 let oc;
 beforeAll(async () => {
@@ -207,6 +209,92 @@ describe("§6.6 the isometric, from the kernel", () => {
     expect(Math.min(...xs)).toBeCloseTo(0, 6);
     expect(Math.min(...ys)).toBeCloseTo(0, 6);
   }, 120000);
+});
+
+/**
+ * §56 The isometric of a box coming apart, from the kernel.
+ *
+ * §38 said the kernel could not be asked for one — "the panels are one solid by
+ * then" — and drew the exploded isometric analytically instead. That was wrong
+ * about the shape: the assembly is a compound of separate panel solids, so the
+ * exploded picture is what you get by building each one from its exploded box.
+ */
+describe("§56 the exploded isometric, from the kernel", () => {
+  const sol = carcass();
+  const apart = (amount) => sol.panels.map((p) => ({ ...p, box: explodedBox(p, amount) }));
+  const isoAt = (amount, fittingsFor) =>
+    isoGeometry(oc, assembly(oc, apart(amount),
+      (i) => panelBevels(i, sol.panels[i], noEdges(), edgeOwners(sol.env, sol.panels)), fittingsFor), sol.E);
+
+  it("registers with the analytic isometric at every amount", () => {
+    // §6.6 chose the projection so the two can be laid over each other. That
+    // has to keep holding once the box comes apart, or switching engines with
+    // the slider off zero moves the drawing on the sheet.
+    for (const amount of [0, 30, 90]) {
+      const kernel = isoAt(amount);
+      const analytic = buildIsometric(sol, { explode: amount });
+      expect(kernel.ext.h).toBeCloseTo(analytic.ext.h, 6);
+      expect(kernel.ext.v).toBeCloseTo(analytic.ext.v, 6);
+    }
+  }, 180000);
+
+  it("grows as the box comes apart, and stays a pictorial", () => {
+    const together = isoAt(0), open = isoAt(60);
+    expect(open.ext.h).toBeGreaterThan(together.ext.h);
+    expect(open.ext.v).toBeGreaterThan(together.ext.v);
+    // Hidden lines are removed at every amount: an exploded wireframe is the
+    // thicket §38 was avoiding, and HLR is what makes fills unnecessary.
+    expect(open.lines.every((l) => l.visible)).toBe(true);
+    expect(open.lines.length).toBeGreaterThan(together.lines.length);
+  }, 180000);
+
+  it("moves the material rather than remaking it", () => {
+    // The decisive check that a bore survives the move. A hole is drilled at
+    // `at.a`/`at.b` in the *planar* axes and along the panel's own box in the
+    // third — and explode moves a panel along that third axis only. So the
+    // exploded assembly must have exactly the volume of the assembled one,
+    // holes and all: anything else means a cut landed somewhere new.
+    const driver = { ...newFitting("driver", "front"), at: { a: 118, b: 178 } };
+    const fittingsFor = (i) => (sol.panels[i].face === "front" ? [driver] : []);
+    const owners = edgeOwners(sol.env, sol.panels);
+    const bevels = (i) => panelBevels(i, sol.panels[i], noEdges(), owners);
+    const still = volumeOf(oc, assembly(oc, sol.panels, bevels, fittingsFor));
+    for (const amount of [20, 75]) {
+      const moved = volumeOf(oc, assembly(oc, apart(amount), bevels, fittingsFor));
+      expect(moved).toBeCloseTo(still, 6);
+    }
+    // And the hole is really there to have been moved.
+    expect(still).toBeLessThan(volumeOf(oc, assembly(oc, sol.panels, bevels)));
+  }, 180000);
+
+  it("cuts the rebate groove that §54 could only paint around", () => {
+    // The payoff. §49 rebuilt a grooved board out of cells and §54 had to sort
+    // its faces back to front, and what is left over there is the sliver where
+    // a groove wall meets the tongue filling it. The kernel cuts the groove and
+    // removes the hidden lines, so there is no order to get wrong.
+    const rebated = applyRebates(sol.panels,
+      { top: { depth: 6, sides: { front: true, back: true, left: true, right: true } } });
+    expect(rebated.panels.some((p) => p.notches?.length)).toBe(true);
+    const owners = edgeOwners(sol.env, sol.panels);
+    const iso = isoGeometry(oc, assembly(oc, rebated.panels,
+      (i) => panelBevels(i, sol.panels[i], noEdges(), owners)), sol.E);
+    const plain = isoGeometry(oc, build(sol, noEdges()), sol.E);
+    expect(iso.lines.length).toBeGreaterThan(plain.lines.length);
+    expect(iso.lines.every((l) => l.visible)).toBe(true);
+  }, 180000);
+
+  it("is what kernelViews returns, with the flat views left alone", () => {
+    // A drawing dimensions the box as it is made, not as it is taken to bits,
+    // so only the isometric knows about the slider.
+    const owners = edgeOwners(sol.env, sol.panels);
+    const together = kernelViews(oc, sol, noEdges(), owners, {}).geometry;
+    const open = kernelViews(oc, sol, noEdges(), owners, { explode: 50 }).geometry;
+    expect(open.iso.ext.h).toBeGreaterThan(together.iso.ext.h);
+    for (const view of ["front", "end", "plan"]) {
+      expect(open[view].ext).toEqual(together[view].ext);
+      expect(open[view].lines.length).toBe(together[view].lines.length);
+    }
+  }, 240000);
 });
 
 const facesOf = (shape) => {

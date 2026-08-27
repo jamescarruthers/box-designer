@@ -7,7 +7,13 @@ import { kernelProgress } from "../occt/kernel.js";
 import { download } from "./file.js";
 
 export default function DrawingView({ derived, design }) {
-  const [engine, setEngine] = useState("analytic");
+  // §56 OpenCASCADE from the start, as §23 did for the 3D view and for the same
+  // reason: the kernel draws the box that is being made. It cuts the holes, it
+  // rounds the edges, it removes the hidden lines, and — now that it is handed
+  // the panels where the explode put them — it draws the isometric of a box
+  // coming apart. The analytic sheet is what is on screen while the kernel
+  // loads and what is left if it will not.
+  const [engine, setEngine] = useState("kernel");
   const [attempt, setAttempt] = useState(0);
   const kernel = useKernelSheet(derived, design, engine === "kernel", attempt);
 
