@@ -77,7 +77,7 @@ export const VIEW_PRESETS = {
 
 const POLAR_MIN = 0.06, POLAR_MAX = Math.PI - 0.06;
 
-export default function Viewport({ derived, style, colourByFace, explode, parallel = false, selected, onSelect, hovered, hidden, camera, solids, edgeTool, onEdgePick, drivers = true }) {
+export default function Viewport({ derived, style, colourByFace, explode, parallel = false, selected, onSelect, hovered, hidden, camera, solids, edgeTool, onEdgePick, onContext, drivers = true }) {
   const host = useRef(null);
   const gl = useRef(null);
 
@@ -180,6 +180,11 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
     // --- hand-rolled orbit: drag to orbit, shift-drag to pan, wheel to zoom.
     let drag = null;
     const down = (e) => {
+      // §58 The left button turns the box and picks what is under it; the right
+      // one opens a menu and nothing else. Without this a right-click also
+      // selected the panel behind the menu — and a second right-click on the
+      // same face closed the inspector it had just opened.
+      if (e.button !== 0) return;
       drag = { x: e.clientX, y: e.clientY, pan: e.shiftKey, moved: 0 };
       el.setPointerCapture?.(e.pointerId);
     };
@@ -190,10 +195,17 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
         -((e.clientY - r.top) / r.height) * 2 + 1), state.camera);
       return ray;
     };
-    const edgeUnder = (e) => {
-      if (!state.edgeTool || !state.edgeProxies.length) return null;
+    /** The edge the pointer is over, whatever any tool thinks of it. */
+    const edgeAt = (e) => {
+      if (!state.edgeProxies.length) return null;
       const hit = rayAt(e).intersectObjects(state.edgeProxies, false)[0];
       return hit ? hit.object.userData.edgeKey : null;
+    };
+    /** The edge the *armed tool* would take, which is a narrower question. */
+    const edgeUnder = (e) => {
+      if (!state.edgeTool) return null;
+      const key = edgeAt(e);
+      return key && state.edgeAllowed?.[key]?.ok ? key : null;
     };
 
     const move = (e) => {
@@ -238,6 +250,21 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
       state.onSelect?.(hit ? hit.object.userData.index : null);
     };
 
+    /**
+     * §58 A right-click asks what is here. The edge wins a tie, as it does for
+     * a left-click: it is the smaller target and the panel behind it is always
+     * one more click away.
+     */
+    const context = (e) => {
+      e.preventDefault();
+      if (!state.onContext) return;
+      const key = edgeAt(e);
+      if (key) { state.onContext({ kind: "edge", key }, { x: e.clientX, y: e.clientY }); return; }
+      const hit = rayAt(e).intersectObjects(state.picks, false)[0];
+      state.onContext(hit ? { kind: "panel", index: hit.object.userData.index } : null,
+        { x: e.clientX, y: e.clientY });
+    };
+    el.addEventListener("contextmenu", context);
     el.addEventListener("pointerdown", down);
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerup", up);
@@ -248,6 +275,7 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
 
     return () => {
       ro.disconnect();
+      el.removeEventListener("contextmenu", context);
       el.removeEventListener("pointerdown", down);
       el.removeEventListener("pointermove", move);
       el.removeEventListener("pointerup", up);
@@ -278,14 +306,18 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
     state.edgeProxies = [];
     if (state.edgeHint) { state.scene.remove(state.edgeHint); state.edgeHint = null; }
 
-    if (!edgeTool) { state.edgeHover = null; state.needs = true; return; }
+    if (!edgeTool) state.edgeHover = null;
 
     const { sol } = derived;
-    const allowed = pickableEdges(edgeTool, derived);
+    // §58 Every edge gets a proxy, whether a tool is armed or not: a right-click
+    // has to be able to hit an edge that no tool is currently offering, and the
+    // menu is where the offering is decided now. What the armed tool allows is
+    // recorded beside them rather than deciding which ones exist.
+    const allowed = edgeTool ? pickableEdges(edgeTool, derived) : {};
+    state.edgeAllowed = allowed;
     const r = pickRadius(sol.E);
     const byKey = new Map();
     for (const proxy of edgeProxies(sol.env, sol.E, r)) {
-      if (!allowed[proxy.key]?.ok) continue;
       byKey.set(proxy.key, proxy);
       const mesh = new THREE.Mesh(
         new THREE.BoxGeometry(...proxy.size),
@@ -486,6 +518,10 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
     state.target.set(0, 0, 0);
     state.invalidate?.();
   }, [camera?.preset, camera?.nonce]);
+
+  // §58 The right-click callback, kept current on its own: the menu it opens
+  // closes and reopens far more often than the box changes.
+  useEffect(() => { if (gl.current) gl.current.onContext = onContext; }, [onContext]);
 
   // Re-render when the viewport comes back from hidden.
   useEffect(() => { if (!hidden) gl.current?.invalidate?.(); }, [hidden]);

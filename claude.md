@@ -3910,3 +3910,53 @@ now, which is also the floor ISO 129-1 puts on them; view captions 3.5, title
 block values 5, field names and notes 2.5. Nothing collided — the layout
 reserves `DIM_TEXT` either way — and the sheet reads as a drawing rather than as
 a diagram of one.
+
+## §58 A menu on the thing itself
+
+The sidebar and the inspector are lists of everything a box *could* have. That
+is the right shape for reading a design and the wrong one for changing the thing
+under the pointer. Adding a doubler to the front meant finding the front in a
+list of six; mitring one edge meant arming a tool from a strip of chips, aiming
+at the edge, and then disarming the tool. A right-click is the short way round,
+because you have already pointed at what you mean.
+
+### What it offers
+
+**An edge** — the four treatments of §15, asked of the edge you are on instead
+of of all twelve at once. The rules are unchanged: a bevel needs one panel
+running the whole edge (§3), a mitre needs both panels to run it together (§12).
+What changes is that the refusal is *shown*: an edge that cannot be filleted
+still lists Fillet, greyed, with "no one panel runs the whole of this edge"
+underneath it. An item that has gone is a question you cannot ask; one that is
+greyed with a reason answers it.
+
+**A panel** — the layers its face can carry, added or taken away; where the face
+sits in the prominence order; and the way in to the inspector for everything
+else. The face is the clicked panel's face whatever layer was clicked, because
+"add a doubler here" said over a piece of cladding can only mean the front.
+
+**Bring to the front / send to the back** is one move, not five swaps: the four
+faces it passes keep the order they were in. §53's rule holds, so a doubler in a
+box whose doublers have an order of their own moves in *that* order, and the
+menu says which — "Bring to the front of the doublers".
+
+### Where the decision lives
+
+All of it in `menu.js`, as data, and none of it in the component that draws it.
+Each item is `{ id, label, disabled, why, apply }` — `apply` being a design in
+and a design out. What a right-click offers, what it refuses and what it does
+are the questions worth testing, and not one of them needs a canvas to answer;
+what is left for the component is a list at a point that goes away when it
+should.
+
+### Two things the view had to learn
+
+- **Every edge gets a pick proxy now**, not only the ones an armed tool would
+  take. §15 built proxies only while a tool was armed, which is exactly the
+  state a right-click is not in. What the armed tool allows is recorded beside
+  them instead of deciding which ones exist, so hovering and left-clicking still
+  answer to the tool alone.
+- **The right button is the menu's and nothing else's.** `pointerdown` fires for
+  every button, so a right-click was also selecting the panel behind the menu —
+  and a second right-click on the same face closed the inspector the first one
+  had opened.

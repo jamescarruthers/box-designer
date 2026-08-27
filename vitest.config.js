@@ -9,6 +9,7 @@ export default defineConfig({
     // something ask for it.
     environmentMatchGlobs: [
       ["test/app.test.jsx", "jsdom"], ["test/inspector.test.jsx", "jsdom"],
+      ["test/contextmenu.test.jsx", "jsdom"],
       ["test/isolate.test.js", "jsdom"], ["test/render.test.js", "jsdom"],
       ["test/kernel-worker.test.js", "jsdom"], ["test/kernel-ui.test.jsx", "jsdom"],
     ],
