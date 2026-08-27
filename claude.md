@@ -3756,3 +3756,55 @@ What stands on the floor is the lowest piece, not the box's underside.
 exactly that, and the camera target and the lamps are aimed the same amount
 higher so the picture does not drift. At rest it is zero, so an unexploded box
 stands where it always did.
+
+## §55 Looking at the thing, and moving it about the frame
+
+### The camera aims at the middle of what is there
+
+§19 pointed the rendered view's camera at `[0, E.z × 0.42, 0]` — a little below
+the middle of the *box*, which flatters a box standing on a floor. §51 let the
+box come apart, and that aim stopped meaning anything: the pieces spread both
+ways from where they were, so the middle of the assembly is not the middle of
+the envelope it came from, and the picture slid down the frame as the slider
+moved.
+
+So the aim is **measured**. `explodedBounds` is the box an exploded assembly
+actually occupies, and the camera looks at the middle of it. That is right for
+three cases the old aim was wrong for:
+
+- **Exploded.** The pieces reach past the envelope, by 1.5× the amount asked
+  for on the cladding and nothing at all on a face that carries none.
+- **Lopsided.** A box clad on the front only comes apart lopsidedly: at 60 mm
+  its middle has moved 15 mm forward, and no fraction of `E` knows that.
+- **Standing on the floor.** §54 lifts the assembly so its lowest piece rests on
+  the sweep; the aim goes up with it, from the same bounds, so the two cannot
+  drift apart. `explodeSink` is now that bound's floor rather than a second
+  traversal with its own opinion.
+
+Measured before and after over a lopsided box: the picture's centroid used to
+sit at 0.457 of the frame and slide to 0.487 as the box came apart; it now sits
+at 0.486 and stays there.
+
+The lamps are aimed at the same point, and at the aim rather than the panned
+target — dragging the view across the box is a change of viewpoint, not of the
+lighting.
+
+### Panning
+
+The rendered view could turn and zoom and nothing else, so a box you had zoomed
+into was a box you could only look at the middle of. **Shift-drag or
+middle-drag** now moves it about the frame — the same hand as §4's 3D view,
+because they are two views of one box and a pointer that means different things
+in each is a pointer you have to remember. `panBy` in `src/three/camera.js` is
+the one rule both use: along the camera's own right and up, scaled by how far
+back it is standing so a pixel drags the same amount of *picture* at every zoom.
+
+The pan is kept **apart from the aim** rather than written into the target. The
+scene is rebuilt whenever the design or the explode changes and the aim is
+recomputed with it, so a pan folded into the target would be wiped by the next
+keystroke in the sidebar. It is reported with the angle and the distance, so
+leaving the mode and coming back returns to the view you left.
+
+A **Recentre** button is the way back, and the way anybody finds out the pan is
+there at all: it is lit only once the view has been dragged off the box, it
+says how to pan in its tooltip, and it leaves the angle and the zoom alone.

@@ -18,7 +18,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { panelPositions, explodeOffset } from "../three/panelGeometry.js";
-import { explodeSink } from "../model/explode.js";
+import { explodedBounds } from "../model/explode.js";
+import { AXES } from "../model/constants.js";
 import { panelBevels } from "../model/bevel.js";
 import { slug } from "./file.js";
 import {
@@ -28,7 +29,7 @@ import {
 import { loadPathTracer, START_SAMPLES } from "../render/pathtrace.js";
 import { driverBody, driverMaterial, placeDriver, driversOn } from "../three/driver.js";
 import { boardMaps, boxUV, textureFor, TINT_ONE } from "../three/texture.js";
-import { makeCamera, frameParallel, parallelPlanes } from "../three/camera.js";
+import { makeCamera, frameParallel, parallelPlanes, panBy } from "../three/camera.js";
 
 const POLAR_MIN = 0.12, POLAR_MAX = Math.PI / 2 - 0.02;   // never below the floor
 
@@ -192,6 +193,10 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
   const parallelRef = useRef(parallel);
   parallelRef.current = parallel;
   const [trace, setTrace] = useState({ status: "off" });
+  // §55 Whether the view has been dragged off the box. Only so the way back can
+  // be offered: a camera pointing at nothing, with no button that says so, is a
+  // view somebody has to reload the page to escape.
+  const [panned, setPanned] = useState(false);
   // §19 How far to refine before stopping. A render is finished when it stops
   // getting better, and that is a judgement about the picture rather than a
   // number the app can know — so it is offered rather than decided.
@@ -213,6 +218,13 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
     const scene = new THREE.Scene();
     let camera = makeCamera(parallelRef.current, FOV);
     const target = new THREE.Vector3();
+    // §55 What the camera is looking at, in two parts: where the box is, and
+    // where the person has dragged the view to. The scene is rebuilt whenever
+    // the design or the explode changes and the aim is recomputed with it, so a
+    // pan written straight into the target would be wiped by the next keystroke
+    // in the sidebar. Kept apart, it survives.
+    const aim = new THREE.Vector3();
+    const pan = new THREE.Vector3();
     const sph = { az: -0.68, pol: 1.02, dist: 1200 };
 
     const equirect = environmentTexture();
@@ -253,7 +265,8 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
     }
 
     const state = {
-      renderer, scene, camera, target, sph, box, stage, sweep, lights, equirect, pmrem,
+      renderer, scene, camera, target, aim, pan, sph, box, stage, sweep, lights, equirect, pmrem,
+      onPanned: setPanned,
       raf: 0, tracer: null, onTrace: null, kept: keptRef.current, onCamera: onCameraRef.current,
       // §39 One board texture per sheet, kept across rebuilds: the design
       // changes far more often than the material does.
@@ -346,7 +359,11 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
     // at any moment and come back to the same angle.
     state.report = () => state.onCamera?.({
       azimuth: sph.az, polar: sph.pol, distance: sph.dist,
+      pan: [pan.x, pan.y, pan.z],
     });
+
+    /** Look at the box again, from wherever the view has been dragged to. */
+    state.retarget = () => { target.copy(aim).add(pan); };
 
     state.moved = () => {
       if (state.tracer?.held) {
@@ -358,14 +375,31 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
       invalidate();
     };
 
+    // §55 Drag to turn, shift-drag or middle-drag to pan, wheel to zoom — the
+    // same hand as §4's 3D view, because they are two views of one box and a
+    // pointer that means different things in each is a pointer you have to
+    // remember. Which it is is settled on the way down: a shift let go of
+    // halfway through a drag should not turn a pan into a pirouette.
     let drag = null;
-    const down = (e) => { drag = { x: e.clientX, y: e.clientY }; el.setPointerCapture?.(e.pointerId); };
+    const down = (e) => {
+      drag = { x: e.clientX, y: e.clientY, pan: e.shiftKey || e.button === 1 };
+      el.setPointerCapture?.(e.pointerId);
+    };
     const move = (e) => {
       if (!drag) return;
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-      drag = { x: e.clientX, y: e.clientY };
-      sph.az -= dx * 0.006;
-      sph.pol = Math.min(POLAR_MAX, Math.max(POLAR_MIN, sph.pol - dy * 0.006));
+      drag = { ...drag, x: e.clientX, y: e.clientY };
+      if (drag.pan) {
+        // Across the screen, whichever way the camera happens to be facing:
+        // its own right and up, scaled so a pixel drags the same distance of
+        // box however far back the camera is standing.
+        panBy(state.camera, sph.dist, dx, dy, pan);
+        state.retarget();
+        state.onPanned?.(pan.length() > 1e-6);
+      } else {
+        sph.az -= dx * 0.006;
+        sph.pol = Math.min(POLAR_MAX, Math.max(POLAR_MIN, sph.pol - dy * 0.006));
+      }
       state.moved();
     };
     const up = (e) => { drag = null; el.releasePointerCapture?.(e.pointerId); };
@@ -374,6 +408,8 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
       sph.dist = Math.max(state.radius * 0.6, Math.min(state.radius * 20, sph.dist * (1 + Math.sign(e.deltaY) * 0.1)));
       state.moved();
     };
+    const noAuxScroll = (e) => { if (e.button === 1) e.preventDefault(); };
+    el.addEventListener("auxclick", noAuxScroll);
     el.addEventListener("pointerdown", down);
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerup", up);
@@ -387,6 +423,7 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
       state.report();
       observer.disconnect();
       cancelAnimationFrame(state.raf);
+      el.removeEventListener("auxclick", noAuxScroll);
       el.removeEventListener("pointerdown", down);
       el.removeEventListener("pointermove", move);
       el.removeEventListener("pointerup", up);
@@ -501,7 +538,8 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
     // does not go with them, so an exploded box was half sunk into it. The
     // assembly is lifted by however far its lowest piece has dropped, and the
     // camera and the lamps are aimed that much higher so it stays in frame.
-    const sink = explodeSink(sol.panels, explode);
+    const bounds = explodedBounds(sol.panels, explode);
+    const sink = Math.min(0, bounds.z[0]);
     const stand = E.z / 2 - sink;
     state.box.position.set(0, stand, 0);
 
@@ -510,7 +548,18 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
     // behind it and the shadow map over it are both fitted to this.
     state.radius = Math.hypot(E.x, E.y, E.z) + explode * 2;
     state.sweep.add(sweepMesh(view.sweep, state.radius));
-    state.target.set(view.target[0], view.target[1] - sink, view.target[2]);
+
+    // §55 The camera looks at the middle of the thing on the stand, measured
+    // rather than assumed. §19 aimed a little below the middle of the *box*,
+    // which flatters a box and says nothing about an assembly that has come
+    // apart: the pieces spread both ways, a box clad on one face spreads
+    // lopsidedly, and the picture slid out of frame as the slider moved. The
+    // middle of what is actually there is the one point that is right for all
+    // of them. `mid` is in model coordinates, so it goes through the same
+    // mapping the geometry did (§4: x right, z up, y back and negated) and up
+    // by the same stand.
+    const mid = Object.fromEntries(AXES.map((b) => [b, (bounds[b][0] + bounds[b][1]) / 2]));
+    state.aim.set(mid.x - E.x / 2, mid.z - E.z / 2 + stand, -(mid.y - E.y / 2));
     if (!state.framed) {
       // Where it was left, if it has been here before; the framing of §19 if
       // this is the first time.
@@ -518,16 +567,23 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
       state.sph.dist = from.distance ?? view.distance;
       state.sph.az = from.azimuth ?? view.azimuth;
       state.sph.pol = from.polar ?? view.polar;
+      // §55 And whatever it had been panned to, which is as much a part of
+      // where the view was left as the angle is.
+      if (Array.isArray(from.pan)) state.pan.set(...from.pan);
       state.framed = true;
     }
+    state.retarget();
+    state.onPanned?.(state.pan.length() > 1e-6);
 
-    // Every lamp aimed at the middle of the box, from its own angle.
+    // Every lamp aimed at the middle of the box, from its own angle. §55 The
+    // same middle the camera looks at, and not the panned target: dragging the
+    // view across the box is a change of viewpoint, not of the lighting.
     const throwDistance = state.radius * 3;
     for (const [name, lamp] of Object.entries(RIG)) {
       const light = state.lights[name];
       const [lx, ly, lz] = lampDirection(lamp);
       light.position.set(lx * throwDistance, ly * throwDistance, lz * throwDistance);
-      light.target.position.set(0, stand, 0);
+      light.target.position.copy(state.aim);
       light.target.updateMatrixWorld();
       if (!lamp.casts) continue;
       // Fitted to the box *and the shadow it throws*, which is the part that
@@ -607,6 +663,16 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
     }
   };
 
+  /** §55 Back to the middle of the box, leaving the angle and the zoom alone. */
+  const recentre = () => {
+    const state = gl.current;
+    if (!state) return;
+    state.pan.set(0, 0, 0);
+    state.retarget();
+    setPanned(false);
+    state.moved();
+  };
+
   const save = () => {
     const state = gl.current;
     if (!state) return;
@@ -652,6 +718,14 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
             <output>{explode}</output>
           </div>
         ) : null}
+        {/* §55 Shift-drag or middle-drag moves the box about the frame. The
+            button is the way back, and the way anybody finds out the pan is
+            there at all. */}
+        <div className="chip-group">
+          <button type="button" disabled={!panned}
+            title="Shift-drag or middle-drag the picture to pan; this puts it back"
+            onClick={recentre}>Recentre</button>
+        </div>
         <div className="chip-group samples">
           <label htmlFor="max-samples">Samples</label>
           <input id="max-samples" type="number" min="1" max="5000" step="1" value={maxSamples}

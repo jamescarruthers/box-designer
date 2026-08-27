@@ -6,7 +6,7 @@ import { solve } from "../src/model/solver.js";
 import { uniformEdges, noEdges } from "../src/model/bevel.js";
 import { buildSheet } from "../src/drawing/sheet.js";
 import { PROMINENCE_PRESETS, FACES } from "../src/model/constants.js";
-import { explodeSink, explodeShift } from "../src/model/explode.js";
+import { explodeSink, explodeShift, explodedBounds, explodedCentre } from "../src/model/explode.js";
 
 const CASES = [
   { name: "plain carcass", input: { envelope: { x: 236, y: 286, z: 356 }, thickness: 18 }, edges: noEdges() },
@@ -107,6 +107,72 @@ describe("§54 what stands on the floor", () => {
     // nothing would lift it off the floor it is meant to be resting on.
     for (const explode of [0, 1, 40, 400]) {
       expect(explodeSink(box().panels, explode)).toBeLessThanOrEqual(0);
+    }
+  });
+});
+
+/**
+ * §55 The camera looks at the middle of what is on the stand.
+ *
+ * §19 aimed a little below the middle of the *box*, which flatters a box and
+ * says nothing about an assembly that has come apart. The pieces spread both
+ * ways from where they were, and a box clad on one face spreads lopsidedly, so
+ * the middle of the box is not the middle of the picture.
+ */
+describe("§55 what the camera is looking at", () => {
+  const E = { x: 236, y: 286, z: 356 };
+  const plain = () => solve({ envelope: E, thickness: 18, order: PROMINENCE_PRESETS[0].order });
+  /** Clad on the front only: it comes apart lopsidedly, which is the point. */
+  const lopsided = () => solve({ envelope: E, thickness: 18, cladding: { front: 6 },
+    order: PROMINENCE_PRESETS[0].order });
+
+  it("is the box itself while the box is together", () => {
+    const b = explodedBounds(plain().panels, 0);
+    expect(b.x).toEqual([0, E.x]);
+    expect(b.y).toEqual([0, E.y]);
+    expect(b.z).toEqual([0, E.z]);
+    expect(explodedCentre(plain().panels, 0)).toEqual({ x: E.x / 2, y: E.y / 2, z: E.z / 2 });
+  });
+
+  it("grows both ways as the box comes apart, and the middle stays put", () => {
+    const sol = plain();
+    for (const explode of [10, 40, 120]) {
+      const b = explodedBounds(sol.panels, explode);
+      // A bare carcass moves by the amount asked for, §38's shell scale being 1.
+      expect(b.z[0]).toBeCloseTo(-explode, 9);
+      expect(b.z[1]).toBeCloseTo(E.z + explode, 9);
+      // Symmetric, so the middle has not moved.
+      expect(explodedCentre(sol.panels, explode).z).toBeCloseTo(E.z / 2, 9);
+    }
+  });
+
+  it("follows the middle when the box comes apart lopsidedly", () => {
+    // Cladding on the front alone: the front leaves at 1.5x and there is
+    // nothing on the back to balance it, so the middle moves forward.
+    const sol = lopsided();
+    const still = explodedCentre(sol.panels, 0);
+    const apart = explodedCentre(sol.panels, 60);
+    expect(apart.y).toBeLessThan(still.y);          // −y is the front
+    expect(apart.x).toBeCloseTo(still.x, 9);        // and nothing else moved
+    expect(apart.z).toBeCloseTo(still.z, 9);
+  });
+
+  it("is never the middle of the box once that stops being true", () => {
+    // The claim the fix rests on: aiming at a fixed fraction of the envelope
+    // is aiming somewhere other than at the thing on screen.
+    const sol = lopsided();
+    const apart = explodedCentre(sol.panels, 60);
+    expect(Math.abs(apart.y - E.y / 2)).toBeGreaterThan(5);
+  });
+
+  it("agrees with §54 about how far the lowest piece has dropped", () => {
+    // One traversal, one truth: the sink is the bottom of these bounds, and a
+    // second opinion about it is how the floor and the camera drift apart.
+    for (const sol of [plain(), lopsided()]) {
+      for (const explode of [0, 30, 90]) {
+        expect(explodeSink(sol.panels, explode))
+          .toBeCloseTo(Math.min(0, explodedBounds(sol.panels, explode).z[0]), 9);
+      }
     }
   });
 });
