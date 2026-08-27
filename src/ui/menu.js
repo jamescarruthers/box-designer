@@ -11,11 +11,13 @@
 // that shows it. What a right-click offers, what it refuses and why are the
 // questions worth testing, and none of them need a canvas to answer.
 
-import { FACE_LABEL, LAYER_LABEL, FACES } from "../model/constants.js";
+import {
+  FACE_LABEL, LAYER_LABEL, FACES, MATERIALS, LAGGINGS, materialById, paletteFor, colourName,
+} from "../model/constants.js";
 import { pickableEdges } from "../three/edgePick.js";
 import {
   addPanel, removePanel, setEdgeTreatment, authoredEdge, setFaceRank,
-  layerOrder, prominenceLayer,
+  layerOrder, prominenceLayer, setFaceThickness, setFaceColour, editPanel, setProjectMaterial,
 } from "./design.js";
 import { fmt } from "../cutlist/cutlist.js";
 
@@ -31,15 +33,136 @@ export const EDGE_TREATMENTS = [
 export const ADDABLE = ["cladding", "doubler", "lagging"];
 
 /**
+ * §59 The pages a panel's menu can turn to.
+ *
+ * A board comes in five sheets, nine thicknesses and twelve colours, and a flat
+ * menu of all of them would be a scrolling wall. Nested flyouts are the usual
+ * answer and the wrong one here: they are fiddly with a pointer and worse with
+ * a keyboard. So the menu turns a *page* — the same popup, showing one list,
+ * with the way back at the top. One thing on screen at a time, and every page
+ * is still a plain list.
+ */
+export const PAGES = ["board", "thickness", "colour"];
+
+/**
  * The menu for whatever the pointer was on, or null for nothing.
  *
  * `target` is `{ kind: "edge", key }` or `{ kind: "panel", index }` — what the
- * view hit, not what it drew. Everything else is worked out here.
+ * view hit, not what it drew. `page` is which of §59's pages is open, or null
+ * for the menu itself. Everything else is worked out here.
  */
-export function contextMenu(design, derived, target) {
+export function contextMenu(design, derived, target, page = null) {
   if (target?.kind === "edge") return edgeMenu(design, derived, target.key);
-  if (target?.kind === "panel") return panelMenu(design, derived, target.index);
+  if (target?.kind === "panel") {
+    const row = derived.rows.find((r) => r.panelIndex === target.index);
+    if (!row) return null;
+    return page ? sheetPage(design, row, page) : panelMenu(design, row);
+  }
   return null;
+}
+
+/**
+ * §59 What sheet a panel is cut from, and how the design says so.
+ *
+ * The carcass has one sheet for all six faces (§47), so changing a carcass
+ * panel's board changes the project's — said on the item rather than left to be
+ * discovered. Its thickness and colour are per face and switch their own
+ * override on as they write. A cladding, doubler or lagging panel carries its
+ * own of all three.
+ */
+function sheetOf(design, row) {
+  const { face, layer } = row;
+  if (layer === "shell") {
+    return {
+      materialId: design.material,
+      thickness: design.perFaceThickness ? design.thicknessBy[face] : design.thickness,
+      colour: design.colourBy?.[face] ?? null,
+      inherited: design.colour ?? materialById(design.material).colour,
+      inheritLabel: "As the project",
+      // The carcass is one sheet: this is the project's board, not this face's.
+      shared: true,
+      sheets: MATERIALS,
+      setMaterial: (d, id) => setProjectMaterial(d, id),
+      setThickness: (d, v) => setFaceThickness(d, face, v),
+      setColour: (d, hex) => setFaceColour(d, face, hex),
+    };
+  }
+  const entry = design[layer]?.[face];
+  if (!entry) return null;
+  return {
+    materialId: entry.material,
+    thickness: entry.thickness,
+    colour: entry.colour ?? null,
+    inherited: materialById(entry.material).colour,
+    inheritLabel: "As the sheet comes",
+    shared: false,
+    // §30 A lining comes off a roll, not out of a sheet.
+    sheets: layer === "lagging" ? LAGGINGS : MATERIALS,
+    setMaterial: (d, id) => editPanel(d, layer, face, { material: id }),
+    setThickness: (d, v) => editPanel(d, layer, face, { thickness: v }),
+    setColour: (d, hex) => editPanel(d, layer, face, { colour: hex }),
+  };
+}
+
+/** One page of §59: a list of what this panel could be, and the way back. */
+function sheetPage(design, row, page) {
+  const sheet = sheetOf(design, row);
+  if (!sheet || !PAGES.includes(page)) return null;
+  const name = `${FACE_LABEL[row.face]} ${LAYER_LABEL[row.layer].toLowerCase()}`;
+  const back = { id: "back", label: "Back", back: true };
+
+  if (page === "board") {
+    return {
+      kind: "page", page, title: `${name} · sheet`, back: true,
+      groups: [{ name: null, items: [back] }, { name: sheet.shared ? "The whole carcass" : null,
+        items: sheet.sheets.map((m) => ({
+          id: m.id,
+          label: m.name,
+          note: `${fmt(m.thickness)} mm as standard`,
+          on: m.id === sheet.materialId,
+          disabled: m.id === sheet.materialId,
+          apply: (d) => sheet.setMaterial(d, m.id),
+        })) }],
+    };
+  }
+
+  if (page === "thickness") {
+    const m = materialById(sheet.materialId);
+    return {
+      kind: "page", page, title: `${name} · ${m.name.toLowerCase()}`, back: true,
+      groups: [{ name: null, items: [back] }, { name: "Thickness", items: m.thicknesses.map((t) => ({
+        id: `t${t}`,
+        label: `${fmt(t)} mm`,
+        on: Math.abs(t - sheet.thickness) < 1e-9,
+        disabled: Math.abs(t - sheet.thickness) < 1e-9,
+        apply: (d) => sheet.setThickness(d, t),
+      })) }],
+    };
+  }
+
+  const palette = paletteFor(sheet.materialId) ?? [];
+  const items = [
+    {
+      id: "inherit",
+      label: sheet.inheritLabel,
+      swatch: sheet.inherited,
+      on: sheet.colour === null,
+      disabled: sheet.colour === null,
+      apply: (d) => sheet.setColour(d, null),
+    },
+    ...palette.map((c) => ({
+      id: c.id,
+      label: c.name,
+      swatch: c.hex,
+      on: String(sheet.colour).toLowerCase() === c.hex.toLowerCase(),
+      disabled: String(sheet.colour).toLowerCase() === c.hex.toLowerCase(),
+      apply: (d) => sheet.setColour(d, c.hex),
+    })),
+  ];
+  return {
+    kind: "page", page, title: `${name} · colour`, back: true,
+    groups: [{ name: null, items: [back] }, { name: palette.length ? "The range" : null, items }],
+  };
 }
 
 /**
@@ -84,10 +207,8 @@ function edgeMenu(design, derived, key) {
  * clicking the front cladding and adding a doubler adds it to the front, which
  * is the only thing "add a doubler here" can mean.
  */
-function panelMenu(design, derived, index) {
-  const row = derived.rows.find((r) => r.panelIndex === index);
-  if (!row) return null;
-  const { face, layer } = row;
+function panelMenu(design, row) {
+  const { face, layer, panelIndex: index } = row;
   const name = FACE_LABEL[face];
 
   const layers = ADDABLE.map((l) => {
@@ -128,12 +249,35 @@ function panelMenu(design, derived, index) {
     },
   ];
 
+  // §59 What the board itself is. Three pages rather than three lists, since
+  // between them they are twenty-six things and this is a menu.
+  const sheet = sheetOf(design, row);
+  const material = sheet ? materialById(sheet.materialId) : null;
+  const palette = sheet ? paletteFor(sheet.materialId) : null;
+  const colourNow = sheet?.colour
+    ? colourName(sheet.materialId, sheet.colour) ?? String(sheet.colour).toLowerCase()
+    : sheet?.inheritLabel.toLowerCase();
+  const board = sheet ? [
+    { id: "board", label: "Sheet", note: material.name, into: "board" },
+    { id: "thickness", label: "Thickness", note: `${fmt(sheet.thickness)} mm`, into: "thickness" },
+    {
+      id: "colour", label: "Colour", note: colourNow, swatch: sheet.colour ?? sheet.inherited,
+      into: "colour",
+      // A sheet sold in one colour has no range to choose from. The inspector
+      // can still paint it any hex somebody likes; a menu cannot hold a colour
+      // picker, and pretending otherwise is a page with one line on it.
+      disabled: !palette,
+      why: palette ? null : `${material.name.toLowerCase()} comes as it comes — paint it in the inspector`,
+    },
+  ] : [];
+
   return {
     kind: "panel",
     title: `${name} ${LAYER_LABEL[layer].toLowerCase()}`,
     face,
     layer,
     groups: [
+      { name: "This board", items: board },
       { name: "On this face", items: layers },
       { name: "Prominence", items: prominence },
       { name: null, items: [{ id: "inspect", label: "Open the inspector", inspect: index }] },

@@ -12,6 +12,18 @@ import { edgePasses, showsFaces, needsDepth, EDGE_COLOUR } from "../three/edges.
 import { edgeProxies, pickableEdges, pickRadius, hintSize } from "../three/edgePick.js";
 import { toThree } from "../three/panelGeometry.js";
 import { panelColour, SELECT_EMISSIVE, ACCENT } from "../three/palette.js";
+
+/**
+ * §59 How far a hovered panel is lifted, against the 1 a selected one gets.
+ *
+ * Enough to see which board the pointer is on, not so much that hovering looks
+ * like having chosen. The two have to be told apart at a glance, because one
+ * of them survives the pointer moving away.
+ */
+const HOVER_LIFT = 0.34;
+
+/** §59 The colour of an edge that is merely under the pointer. */
+const HINT = "#9fb3c8";
 import { lineWidthFor, nearFar, sceneRadius } from "../three/lines.js";
 import { makeCamera, frameParallel, parallelPlanes, panBy } from "../three/camera.js";
 
@@ -77,7 +89,7 @@ export const VIEW_PRESETS = {
 
 const POLAR_MIN = 0.06, POLAR_MAX = Math.PI - 0.06;
 
-export default function Viewport({ derived, style, colourByFace, explode, parallel = false, selected, onSelect, hovered, hidden, camera, solids, edgeTool, onEdgePick, onContext, drivers = true }) {
+export default function Viewport({ derived, style, colourByFace, explode, parallel = false, selected, onSelect, hovered, onHover, hidden, camera, solids, edgeTool, onEdgePick, onContext, drivers = true }) {
   const host = useRef(null);
   const gl = useRef(null);
 
@@ -119,6 +131,8 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
       // under the pointer. Kept on `state` so the pointer handlers, which are
       // installed once, can see the current set without being rebuilt.
       edgeProxies: [], edgeHover: null, onEdgePick: null, edgeTool: null,
+      // §59 What the pointer is over, and the panel materials to lift for it.
+      faceHover: null, hovered: null, panelMats: [], onHover: null,
       // §17 Every fat-line material in the scene. They are sized in the shader
       // from a resolution they are told, so a resize has to tell them.
       lineMaterials: [], radius: 1 };
@@ -201,6 +215,29 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
       const hit = rayAt(e).intersectObjects(state.edgeProxies, false)[0];
       return hit ? hit.object.userData.edgeKey : null;
     };
+    /**
+     * §59 Light the panel under the pointer, in place.
+     *
+     * Selection wins: a panel that is both selected and hovered is selected,
+     * and lifting it further would say the pointer had done something.
+     */
+    state.paintHover = () => {
+      const lit = state.faceHover ?? state.hovered;
+      for (let i = 0; i < state.panelMats.length; i++) {
+        const mat = state.panelMats[i];
+        if (!mat) continue;
+        const level = state.selected === i ? 1 : i === lit ? HOVER_LIFT : 0;
+        if (mat.emissiveIntensity === level) continue;
+        mat.emissive.set(level ? SELECT_EMISSIVE : 0x000000);
+        mat.emissiveIntensity = level;
+      }
+    };
+
+    /** The panel under the pointer, or null. */
+    const panelAt = (e) => {
+      const hit = rayAt(e).intersectObjects(state.picks, false)[0];
+      return hit ? hit.object.userData.index : null;
+    };
     /** The edge the *armed tool* would take, which is a narrower question. */
     const edgeUnder = (e) => {
       if (!state.edgeTool) return null;
@@ -210,12 +247,19 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
 
     const move = (e) => {
       if (!drag) {
-        // §15 Highlight what a click would land on. Only while the tool is
-        // armed: without it the pointer is for turning the box, and an edge
-        // lighting up under it would be an invitation to nothing.
-        const key = edgeUnder(e);
+        // §59 Highlight what is under the pointer — which is what a right-click
+        // would act on, edge before face. §15 lit an edge only while a tool was
+        // armed, and that was right when a click was the only thing that could
+        // reach one; now that §58's menu can, an edge that never shows itself
+        // is a menu nobody knows to open.
+        const key = edgeAt(e);
+        const index = key == null ? panelAt(e) : null;
         if (key !== state.edgeHover) { state.edgeHover = key; state.drawEdgeHint?.(); invalidate(); }
-        el.style.cursor = key ? "pointer" : "";
+        if (index !== state.faceHover) { state.faceHover = index; state.paintHover?.(); invalidate(); }
+        state.onHover?.(key ? { kind: "edge", key } : index != null ? { kind: "panel", index } : null);
+        // The pointer cursor still means "a click here does something", which
+        // is only true where the armed tool would take the edge.
+        el.style.cursor = edgeUnder(e) ? "pointer" : "";
         return;
       }
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
@@ -264,6 +308,12 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
       state.onContext(hit ? { kind: "panel", index: hit.object.userData.index } : null,
         { x: e.clientX, y: e.clientY });
     };
+    const leave = () => {
+      if (state.edgeHover != null) { state.edgeHover = null; state.drawEdgeHint?.(); invalidate(); }
+      if (state.faceHover != null) { state.faceHover = null; state.paintHover?.(); invalidate(); }
+      state.onHover?.(null);
+    };
+    el.addEventListener("pointerleave", leave);
     el.addEventListener("contextmenu", context);
     el.addEventListener("pointerdown", down);
     el.addEventListener("pointermove", move);
@@ -275,6 +325,7 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
 
     return () => {
       ro.disconnect();
+      el.removeEventListener("pointerleave", leave);
       el.removeEventListener("contextmenu", context);
       el.removeEventListener("pointerdown", down);
       el.removeEventListener("pointermove", move);
@@ -335,10 +386,15 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
       if (state.edgeHint) { state.scene.remove(state.edgeHint); state.edgeHint = null; }
       const proxy = state.edgeHover ? byKey.get(state.edgeHover) : null;
       if (!proxy) return;
+      // §59 Accent where a click would land — the armed tool can take this edge
+      // — and a quieter grey where the hint only says "this is the edge you are
+      // on, and a right-click can do something with it".
+      const armed = Boolean(state.edgeAllowed?.[state.edgeHover]?.ok);
       const bar = new THREE.Mesh(
         new THREE.BoxGeometry(...hintSize(proxy, r)),
         new THREE.MeshBasicMaterial({
-          color: new THREE.Color(ACCENT), transparent: true, opacity: 0.9,
+          color: new THREE.Color(armed ? ACCENT : HINT), transparent: true,
+          opacity: armed ? 0.9 : 0.55,
           // Over the box rather than in it: the edge being offered is the point,
           // and half of it disappearing behind a panel would only confuse.
           depthTest: false,
@@ -367,6 +423,8 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
       c.traverse?.((o) => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
     }
     state.picks = [];
+    state.panelMats = [];
+    state.selected = selected;
     state.lineMaterials = [];
     // Exploding the box moves panels away from its centre, so the far plane
     // has to know about it as well as the box's own size.
@@ -386,7 +444,7 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
       // Material colouring is per panel: a Valchromat cladding reads differently
       // from the birch carcass behind it.
       const colour = colourByFace ? panelColour(panel) : specFor(panel).colour;
-      const isSel = selected === index, isHov = hovered === index;
+      const isSel = selected === index;
 
       const mat = new THREE.MeshStandardMaterial({
         color: new THREE.Color(colour),
@@ -412,6 +470,10 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
       const showFaces = showsFaces(style);
       const mesh = new THREE.Mesh(geom, mat);
       mesh.userData.index = index;
+      // §59 Kept by index so hovering can lift one panel's emissive in place.
+      // Rebuilding every mesh because the pointer crossed a face is a remesh
+      // per mouse move, and the cut list's own hover was doing exactly that.
+      state.panelMats[index] = mat;
       if (!showFaces) { mat.colorWrite = false; }
       mesh.visible = showFaces || needsDepth(style);
       root.add(mesh);
@@ -451,8 +513,12 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
         return g;
       };
 
-      if (edgePasses(style, { accent: isSel || isHov }).length) {
-        addEdges(state, root, edgeGeometry(), index, style, isSel || isHov);
+      // §59 Selection accents the outline; hover no longer does. Accenting a
+      // hovered panel's edges meant rebuilding every mesh in the box each time
+      // the pointer crossed a face — and the lift on the face itself says the
+      // same thing more quietly, which is what a hover should say.
+      if (edgePasses(style, { accent: isSel }).length) {
+        addEdges(state, root, edgeGeometry(), index, style, isSel);
       }
     });
 
@@ -481,7 +547,29 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
     }
 
     state.invalidate?.();
-  }, [derived, style, colourByFace, explode, selected, hovered, onSelect, solids, drivers]);
+    // §59 The hover the pointer or the cut list had, put back on the panels the
+    // rebuild has just replaced.
+    state.paintHover?.();
+  }, [derived, style, colourByFace, explode, selected, onSelect, solids, drivers]);
+
+  /**
+   * §59 Hover, on its own effect and without a rebuild.
+   *
+   * `hovered` comes from the cut list and `faceHover` from the pointer, and
+   * both used to be in the panel-rebuilding effect's dependencies — so running
+   * a mouse across the box, or down the cut list, remeshed every panel in it.
+   */
+  useEffect(() => {
+    const state = gl.current;
+    if (!state) return;
+    state.hovered = hovered ?? null;
+    state.paintHover?.();
+    state.invalidate?.();
+  }, [hovered]);
+
+  // §59 Reported on its own too: what the pointer is over changes far more
+  // often than what the box is.
+  useEffect(() => { if (gl.current) gl.current.onHover = onHover; }, [onHover]);
 
   // §51 Swap the projection without touching anything else: the orbit, the
   // target and the scene are all where they were, so the box does not move —

@@ -18,7 +18,8 @@ vi.mock("../src/occt/client.js", async () => {
   return stubKernel().module;
 });
 
-import App from "../src/ui/App.jsx";
+import App, { hoverNote } from "../src/ui/App.jsx";
+import { DEFAULT_DESIGN, derive } from "../src/ui/design.js";
 import { ACCENT, REBATE } from "../src/three/palette.js";
 
 beforeAll(() => {
@@ -911,6 +912,28 @@ describe("the app", () => {
     fireEvent.click(screen.getByLabelText("Raise Left doubler"));
     expect(screen.getByLabelText("Doubler preset").value).toBe("custom");
     expect(screen.getByLabelText("Preset").value).toBe("fb");
+  });
+
+  // ------------------------------------------------------- §59 what is under it
+
+  it("names what the pointer is on, and says it can be acted on", () => {
+    // The 3D hit-testing needs a canvas, so the line itself is tested here:
+    // given what the view reports, this is what the app says about it.
+    const derived = derive(DEFAULT_DESIGN);
+    const row = derived.rows.find((r) => r.face === "front" && r.layer === "shell");
+
+    const panel = hoverNote({ kind: "panel", index: row.panelIndex }, derived);
+    expect(panel).toContain(row.id);
+    expect(panel).toContain("Front Carcass");
+    expect(panel).toContain("right-click");
+
+    const edge = hoverNote({ kind: "edge", key: "front|left" }, derived);
+    expect(edge).toBe("Front / Left edge — right-click to treat it");
+
+    // Nothing under the pointer is nothing to say.
+    expect(hoverNote(null, derived)).toBeNull();
+    expect(hoverNote({ kind: "panel", index: 99 }, derived)).toBeNull();
+    expect(hoverNote({ kind: "edge", key: "front|nonsense" }, derived)).toBeNull();
   });
 
   it("reports the volume closure as exact", () => {
