@@ -1,5 +1,9 @@
 # UX review — Sheet Box Designer
 
+> **Status.** The plan in section 4 has been carried out; §60 of `claude.md`
+> records what changed and why. The findings below describe the app as it was
+> at 52ca1ed and are kept as the reasoning behind the changes.
+
 Reviewed on 2026-09-03 against `main` at 52ca1ed. I read every file in
 `src/ui/` and `src/styles.css`, then drove the built app in Chromium at
 1600, 1280, 1000 and 820 px wide, through all four modes, with the inspector

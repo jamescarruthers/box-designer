@@ -9,7 +9,9 @@
   --line-2: #3a4652;
   --ink: #dfe6ee;
   --ink-2: #94a3b1;
-  --ink-3: #64727f;
+  /* §60 Lifted from #64727f, which was 3.4 : 1 on the sidebar and read as
+     decoration. This is 5.1 : 1 on the darkest panel it sits on. */
+  --ink-3: #8a98a5;
   --accent: #e8703a;
   --accent-dim: #b8541f;
   --rebate: #3fb6c4;
@@ -50,6 +52,13 @@ button, input, select { font: inherit; font-variant-numeric: tabular-nums; color
 }
 
 .brand { padding: 12px 14px 10px; border-bottom: 1px solid var(--line); }
+.brand-row { display: flex; align-items: center; justify-content: space-between; }
+.help-button {
+  background: transparent; border: 1px solid var(--line-2); color: var(--ink-2);
+  width: 20px; height: 20px; border-radius: 50%; cursor: pointer; padding: 0; line-height: 1;
+  margin-bottom: 8px;
+}
+.help-button:hover { color: var(--accent); border-color: var(--accent); }
 .brand h1 {
   margin: 0 0 8px; font-size: 12px; font-weight: 600;
   letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-2);
@@ -67,11 +76,23 @@ button, input, select { font: inherit; font-variant-numeric: tabular-nums; color
   margin: 0 0 8px; font-size: 10px; font-weight: 600;
   letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-3);
 }
+/* §60 A group that folds: its title is the button, and looks like the title. */
+.group h2 .fold {
+  background: transparent; border: 0; padding: 0; margin: 0; cursor: pointer;
+  font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit;
+  display: flex; align-items: center; gap: 6px; width: 100%; text-align: left;
+}
+.group h2 .fold:hover { color: var(--ink); }
+.group.folded h2 { margin-bottom: 0; }
+.fold-mark { color: var(--ink-3); font-size: 9px; width: 8px; }
 .group-body { display: flex; flex-direction: column; gap: 7px; }
 .note { margin: 0 0 6px; font-size: 10.5px; line-height: 1.4; color: var(--ink-3); }
 .group-body .note { margin: 2px 0 0; }
 
 .field { display: grid; grid-template-columns: 88px 1fr; align-items: center; gap: 8px; }
+.field .row-3 { min-width: 0; }
+.field .row-3 .field { grid-template-columns: 12px 1fr; gap: 3px; }
+.field .row-3 input[type="number"] { padding-right: 6px; }
 .field > span:first-child { color: var(--ink-2); font-size: 11px; }
 .input-wrap { position: relative; display: flex; align-items: center; }
 .input-wrap em { position: absolute; right: 7px; font-style: normal; color: var(--ink-3); font-size: 10px; }
@@ -166,15 +187,24 @@ input:focus, select:focus { outline: 1px solid var(--accent); border-color: var(
 .reinf input { width: 100%; }
 
 .edge-grid { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
-.edge-row { display: grid; grid-template-columns: 1fr 74px 50px 20px; gap: 5px; align-items: center; }
+/* §60 The sidebar's list is a record: the edge, what it has, and the way back. */
+.edge-row { display: grid; grid-template-columns: 1fr auto 20px; gap: 5px; align-items: center; }
+.edge-what { color: var(--ink-2); font-size: 10.5px; }
 .edge-key { font-size: 10px; color: var(--ink-2); display: flex; flex-direction: column; }
-.edge-key em { font-style: normal; color: var(--ink-3); font-size: 9px; }
+.edge-key em { font-style: normal; color: var(--ink-3); font-size: 10px; }
 .edge-row select, .edge-row input { padding: 2px 5px; font-size: 10.5px; }
 
-.side-foot { padding: 10px 14px; border-top: 1px solid var(--line); display: flex; gap: 6px; }
+.side-foot { padding: 8px 14px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.side-foot-row { display: flex; gap: 6px; align-items: center; }
+.side-foot-row .spacer { flex: 1; }
+.side-foot .autosave { color: var(--ink-3); font-size: 10.5px; }
+.side-foot button:disabled { opacity: 0.4; cursor: default; }
+.side-foot button:disabled:hover { color: var(--ink-2); border-color: var(--line-2); }
+/* §60 Reset asks. The question takes the row the button was on. */
+.reset-confirm { display: flex; gap: 6px; align-items: center; color: var(--warning); flex-wrap: wrap; }
 .side-foot button {
   background: var(--bg-3); border: 1px solid var(--line-2); color: var(--ink-2);
-  padding: 4px 10px; border-radius: 2px; cursor: pointer;
+  padding: 4px 8px; border-radius: 2px; cursor: pointer; white-space: nowrap;
 }
 .side-foot button:hover { color: var(--accent); border-color: var(--accent); }
 
@@ -409,14 +439,6 @@ table.cuts .chip, .by-material .chip {
 .rank-summary li + li::before { content: "›"; color: var(--ink-3); margin: 0 5px; }
 .rank-summary .swatch { width: 7px; height: 7px; margin-right: 4px; }
 
-/* §15 The armed edge tool, and what it is waiting for. */
-.edge-arm {
-  position: absolute; left: 14px; bottom: 14px;
-  padding: 5px 10px; border-radius: 5px;
-  background: rgba(232, 112, 58, 0.16); border: 1px solid var(--accent);
-  color: var(--ink); font-size: 12px; display: flex; gap: 10px; align-items: center;
-}
-.chip-group.edge-tools button.on { background: var(--accent); color: #14181d; }
 
 /* A field whose value does not apply — a tube's length with no tube fitted. */
 .field.disabled { opacity: 0.45; }
@@ -459,7 +481,7 @@ table.cuts .chip, .by-material .chip {
 .fitting-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
 .fitting-grid .field { grid-template-columns: 52px 1fr; gap: 4px; }
 .fitting-grid .field > span:first-child { font-size: 10px; }
-.fitting .note { margin: 5px 0 0; font-size: 9.5px; }
+.fitting .note { margin: 5px 0 0; font-size: 10px; }
 /* §33 How deep each hole goes. Selects rather than numbers, so they need the
    room a number field does not. */
 .fitting-depth { margin-top: 5px; }
@@ -474,7 +496,7 @@ table.cuts .chip, .by-material .chip {
 .fitting-flare .segmented button { padding: 2px 4px; font-size: 10px; }
 /* §34 Reads like the fitting's own note, but it is about the control above it
    rather than about the fitting, so it sits with the flare row. */
-.flare-note { margin: 4px 0 0; font-size: 9.5px; color: var(--ink-3); }
+.flare-note { margin: 4px 0 0; font-size: 10px; color: var(--ink-3); }
 .inspector .fitting-flare { grid-template-columns: 1fr; gap: 3px; }
 
 /* §19 The rendered view: a canvas, and as little else as the job allows. */
@@ -568,12 +590,12 @@ table.cuts .chip, .by-material .chip {
 }
 .context-menu > header {
   padding: 5px 8px 6px; color: var(--ink-3); letter-spacing: 0.06em;
-  text-transform: uppercase; font-size: 9.5px; border-bottom: 1px solid var(--line);
+  text-transform: uppercase; font-size: 10px; border-bottom: 1px solid var(--line);
 }
 .menu-group { padding: 4px 0; }
 .menu-group + .menu-group { border-top: 1px solid var(--line); }
 .menu-group h4 {
-  margin: 2px 8px 3px; font-size: 9.5px; font-weight: 400; letter-spacing: 0.06em;
+  margin: 2px 8px 3px; font-size: 10px; font-weight: 400; letter-spacing: 0.06em;
   text-transform: uppercase; color: var(--ink-3);
 }
 .context-menu button {
@@ -597,5 +619,71 @@ table.cuts .chip, .by-material .chip {
 .selection.hovering { color: var(--ink-3); }
 /* The reason a thing is refused is worth reading, so it is on the sheet rather
    than in a tooltip somebody has to hover to find. */
-.context-menu .note { display: block; font-size: 9.5px; color: var(--ink-3); }
+.context-menu .note { display: block; font-size: 10px; color: var(--ink-3); }
 .context-menu .note.why { color: var(--warning); opacity: 0.85; }
+
+/* ------------------------------------------------------------ §60 view menu */
+
+.menu-host { position: relative; }
+.popover {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 30; min-width: 300px;
+  background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 3px;
+  box-shadow: 0 10px 34px rgb(0 0 0 / 0.55); padding: 8px 10px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.popover-row { display: grid; grid-template-columns: 72px 1fr; align-items: center; gap: 8px; }
+.popover-label { color: var(--ink-2); font-size: 11px; }
+.popover .segmented { flex-wrap: wrap; }
+.popover .segmented button { flex: 1 1 auto; white-space: nowrap; }
+
+/* ------------------------------------------------------------ §60 help */
+
+.help-backdrop {
+  position: fixed; inset: 0; z-index: 50; background: rgb(0 0 0 / 0.5);
+  display: grid; place-items: center; padding: 20px;
+}
+.help {
+  width: min(640px, 100%); max-height: 100%; display: flex; flex-direction: column;
+  background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 4px;
+  box-shadow: 0 16px 48px rgb(0 0 0 / 0.6);
+}
+.help > header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; border-bottom: 1px solid var(--line);
+}
+.help > header h2 { margin: 0; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-2); }
+.help-body { overflow: auto; padding: 6px 16px 16px; font-size: 12px; line-height: 1.55; color: var(--ink); }
+.help-body h3 { margin: 14px 0 4px; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-3); }
+.help-body p { margin: 0 0 8px; }
+
+/* ------------------------------------------------- §60 settings in their modes */
+
+.cut-settings {
+  display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
+  padding: 6px 11px; border-bottom: 1px solid var(--line); background: var(--bg-2);
+}
+.cut-settings .field { grid-template-columns: auto 1fr; gap: 6px; }
+.cut-settings .field select { width: 132px; }
+.cut-settings .field input { width: 90px; }
+.cut-settings .check { font-size: 11px; }
+
+.sheet-controls {
+  display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
+  padding: 6px 12px; border-bottom: 1px solid var(--line); background: var(--bg-2);
+}
+.sheet-controls .field { grid-template-columns: auto 1fr; gap: 6px; }
+.sheet-controls .field input { width: 90px; }
+.sheet-controls .check { font-size: 11px; }
+.sheet-controls .chip-group.explode { border: 0; background: transparent; backdrop-filter: none; padding: 0; }
+
+/* §60 The rest of a driver's numbers, folded until wanted. */
+.fitting-more { margin-top: 5px; }
+.fitting-more summary {
+  cursor: pointer; color: var(--ink-2); font-size: 10.5px; padding: 3px 0;
+  list-style: none; display: flex; align-items: center; gap: 5px;
+}
+.fitting-more summary::-webkit-details-marker { display: none; }
+.fitting-more summary::before { content: "▸"; color: var(--ink-3); font-size: 9px; }
+.fitting-more[open] summary::before { content: "▾"; }
+.fitting-more summary:hover { color: var(--accent); }
+.fitting-more .fitting-grid { margin-top: 3px; }

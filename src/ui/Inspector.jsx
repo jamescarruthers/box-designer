@@ -63,7 +63,7 @@ export default function Inspector({ design, set, derived, row, colourByFace, onS
       </header>
 
       <div className="inspector-body">
-        <Group title="Blank">
+        <Group title="Blank" id="blank">
           <dl className="readout">
             <div><dt>Cut</dt><dd>{fmt(row.length)} × {fmt(row.width)} × {fmt(row.thickness)}</dd></div>
             <div><dt>Area</dt><dd>{(row.area / 1e6).toFixed(3)} m²</dd></div>
@@ -75,8 +75,8 @@ export default function Inspector({ design, set, derived, row, colourByFace, onS
 
         <Sheet design={design} set={set} row={row} />
 
-        <Group title="Layers on this face"
-          note="Cladding lies outside the carcass and grows the box. A doubler lies inside and eats the cavity, and lagging lines it.">
+        <Group title="Layers on this face" id="layers"
+          note="Cladding goes outside and grows the box. A doubler goes inside and eats the cavity.">
           <ul className="layer-list">
             {LAYER_ORDER.map((l) => {
               const here = onThisFace.find((r) => r.layer === l);
@@ -116,10 +116,9 @@ export default function Inspector({ design, set, derived, row, colourByFace, onS
           </ul>
         </Group>
 
-        <Group title="Prominence"
-          note={`Rank decides which panel runs past which at every corner. Moving this face resizes the ones it meets, and changes no internal dimension.${
-            orderLayer === "shell" ? "" :
-            ` This is the ${LAYER_LABEL[orderLayer].toLowerCase()}s' own order, which the rest of the box does not follow.`}`}>
+        <Group title="Prominence" id="prominence"
+          note={orderLayer === "shell" ? null
+            : `The ${LAYER_LABEL[orderLayer].toLowerCase()}s' own order, which the rest of the box does not follow.`}>
           <div className="rank-row">
             <span className="rank">{rank}</span>
             <span className="name">{rankNote(rank)}</span>
@@ -132,20 +131,18 @@ export default function Inspector({ design, set, derived, row, colourByFace, onS
           </div>
         </Group>
 
-        <Group title="Edges of this face"
-          note="The four edges this face is one side of. A bevel needs one panel to run the whole edge; a mitre needs both to meet along it.">
+        <Group title="Edges of this face" id="edges">
           <FaceEdges design={design} set={set} derived={derived} face={face} />
         </Group>
 
         {/* §47 Beside the edges, because a rebate is the other way of joining
             this board to the ones around it. */}
-        <Group title="Rebate"
-          note="The sides of this board that are let into the panels beside them. The board grows by the depth on each side chosen, and a groove is cut in whatever it runs into.">
+        <Group title="Rebate" id="rebate"
+          note="Sides let into the panels beside this board, by this depth.">
           <Rebate design={design} set={set} derived={derived} row={row} />
         </Group>
 
-        <Group title="Fittings on this face"
-          note="Cut through every panel on the face, positioned on the outermost one.">
+        <Group title="Fittings on this face" id="fittings">
           <FittingList design={design} set={set} derived={derived} face={face} />
         </Group>
       </div>
@@ -237,9 +234,8 @@ function Sheet({ design, set, row }) {
   if (layer === "shell") {
     const uniform = !design.perFaceThickness;
     return (
-      <Group title="Sheet"
-        note={uniform ? "The carcass is one sheet. Changing this face's thickness sets it for this face alone and leaves the others where they are." : null}>
-        <p className="note">{materialById(design.material).name}, the project sheet.</p>
+      <Group title="Sheet" id="sheet"
+        note={`${materialById(design.material).name}, the project sheet. A thickness set here is this face's own.`}>
         <Num label="Thickness" suffix="mm" step={0.5}
           aria={`${label} thickness`} list={`th-${design.material}`}
           value={uniform ? design.thickness : design.thicknessBy[face]}
@@ -259,7 +255,7 @@ function Sheet({ design, set, row }) {
   // bitumen, and no birch ply among them.
   const sheets = layer === "lagging" ? LAGGINGS : MATERIALS;
   return (
-    <Group title="Sheet" note={`This ${name.toLowerCase()} carries its own sheet.`}>
+    <Group title="Sheet" id="sheet" note={`This ${name.toLowerCase()} has its own sheet.`}>
       <label className="field">
         <span>Sheet</span>
         <select value={entry.material} aria-label={`${name} ${label} material`}

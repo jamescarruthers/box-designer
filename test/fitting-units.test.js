@@ -39,7 +39,7 @@ describe("§20 a position given as a proportion", () => {
   it("stays put when the box changes size, which is the point of it", () => {
     const centred = driver({ units: "ratio", at: { a: 50, b: 50 } });
     const middleOf = (litres) => {
-      const design = { ...DEFAULT_DESIGN, start: { ...DEFAULT_DESIGN.start, litres }, fittings: [centred] };
+      const design = { ...DEFAULT_DESIGN, start: { ...DEFAULT_DESIGN.start, mode: "volume", litres }, fittings: [centred] };
       const d = derive(design);
       const panel = d.fittingPanels.front;
       const [p] = faceAxes("front");

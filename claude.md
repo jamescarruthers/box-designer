@@ -4017,3 +4017,123 @@ What each page writes follows §47's rules rather than flattening them:
 
 Colours are shown as swatches beside their names, because "Green Mint" is not a
 shade anybody can picture.
+
+
+---
+
+## §60 The interface, cut back
+
+A review of the app as it stood at §59 (`docs/ux-review.md`) found that it
+had grown by addition: every new idea got a surface of its own and the old
+surfaces stayed. One decision — what to do to an edge — could be made in five
+places. Two hundred and sixty words of grey help text sat between the fields.
+The chip bar over the 3D view was nineteen buttons in eight groups. The screen
+said "B-Rep, 72 triangles, 1187 ms, one thread" at all times. And a click on
+the box changed the design with no way back.
+
+What follows is what was done about it. Almost all of it is removal and
+relocation; the model, the solver and the drawing did not change.
+
+### Undo
+
+The design is a history rather than a value: a past, a present and a future.
+`useHistory` wraps it, `set` pushes, Ctrl+Z and Ctrl+Shift+Z (or Ctrl+Y) walk
+it, and two buttons under the sidebar do the same for the mouse. Storage still
+holds the present, so a reload opens on the box as it was left; the history
+is in memory for the session.
+
+Typing is coalesced: a change within 400 ms of the last one that touches the
+**same top-level fields** of the design merges into it, so "163.5" is one step
+and not five. A change to different fields is its own step however soon it
+comes, and a reset or a file opened is always a step of its own. Two hundred
+steps are kept.
+
+With undo in place, Reset can be a real button: it asks once, in the row it
+sits on, and then it is undoable anyway. "Save" and "Open…" became "Save file"
+and "Open file…", beside a note that the box is saved in the browser as you go,
+because two kinds of saving with one word between them was a question at every
+visit.
+
+### One surface per decision
+
+- **The edge tools are gone.** Arming a treatment from the chip bar and then
+  aiming at a one-pixel edge was a mode, and the banner that said the mode was
+  on was drawn under the selection readout in the same corner. §58's menu on
+  the edge and §47's inspector both do the job without a mode. The viewport
+  keeps its edge proxies for the right button and the hover, and a left-click
+  selects a panel and nothing else.
+- **The sidebar's per-edge list is gone.** A select to name an edge, then a row
+  to treat it, was a way of pointing at something with words when the thing is
+  on the screen. The sidebar sets all twelve edges at once and keeps a *record*
+  of the ones that differ, each with the way back to square, and one link to
+  mitre the largest ring. Choosing a uniform treatment ends the per-edge work;
+  changing the radius changes every bevel.
+- **The Render view's own chips for drivers and projection are gone**; it
+  shares the 3D view's View menu, which shows only the sections it has a use
+  for.
+
+### The chip bar
+
+Three things: a **View** menu, the four camera presets, and the explode. The
+menu holds the render style, the colouring, the projection and whether the
+drivers are drawn — the things that are set once and left. It closes on
+Escape, on a click elsewhere, and on the window losing focus, like the
+context menu.
+
+### Telemetry is a developer's
+
+Which engine drew the box, the triangle count, the time and the thread count
+are answers to questions nobody designing a box asks. They are shown only when
+the page is opened with `?debug`, along with the Analytic/OpenCASCADE switch in
+both views and the "Closure: exact" line in the cut list's totals. What the
+user is told is the three things that matter: the kernel is still building,
+it failed and an approximation is up (with a way to try again), or a panel
+would not cut and is drawn approximately.
+
+### Settings in the mode they change
+
+The sidebar is on screen in every mode, and half of what was in it changed one
+mode only. The **Drawing** group — section on or off, where it cuts, the
+insulation, the exploded isometric — is a row above the sheet now. **Kerf**,
+**stock size** and **grain lock** are a row above the cut list. The sidebar is
+five groups: Size, Material, Prominence, Panels, Edges.
+
+### Words
+
+Every note under a group is one line or none. The rules they carried — why an
+edge stays square, what a mitre needs, what a rebate does — are in a **Help**
+page opened from the sidebar's header, once, for whoever wants them. The
+controls say what they will take by being enabled or not, which they already
+did.
+
+The grey the notes are set in, `--ink-3`, was 3.4 : 1 against the sidebar,
+under the 4.5 : 1 that WCAG AA asks of text. It is 5.1 : 1 now on the darkest
+panel it sits on, and nothing in the app is set under 10 px.
+
+### The inspector
+
+Its groups fold, and the fold is remembered in the browser per group. All open
+to begin with: nothing is hidden from somebody who has not asked. A driver's
+twenty numbers are two tiers — the seven that place it (position, cutout,
+frame, PCD, bolts, bolt size, displacement) in view, and the mounting and
+behind-the-baffle figures under a `<details>` fold, in the document either way
+so a datasheet can still be typed straight in. The sidebar's summary of the
+box shows a line only where there is something on it; five lines of "None"
+under six chips said less than the chips did.
+
+### Defaults
+
+- **Dimensions, not a volume.** A box is three lengths to most people. The
+  default sizes are what 12 litres at 1 : 1.25 : 1.6 came to, so the default
+  box is the box it always was, and the volume way in is one click away.
+- **By material, not by face.** The first screen is a plywood box, not a
+  purple, green and blue one. Face colours are in the View menu for telling
+  panels apart, and the cut list's swatches follow the same switch.
+- The two starting-point controls are labelled: *Sizes are* internal or
+  external; *Given as* dimensions or a volume.
+
+### What stayed
+
+Click-to-inspect, the right-click menu with its "why not" text, the hover
+line, the three-column cut list, the drawing sheet, the folded prominence
+summary and "Runs past all five". These were the right shape.

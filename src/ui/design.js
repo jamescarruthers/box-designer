@@ -17,10 +17,14 @@ export const DEFAULT_MATERIAL = "birch";
 
 export const DEFAULT_DESIGN = {
   title: "SHEET BOX",
+  // §60 Sizes, not a volume: a box is three lengths to most people, and the
+  // volume-and-proportion way in is one step away for the ones it is for.
+  // These three are what 12 litres at 1 : 1.25 : 1.6 came to, so the default
+  // box is the box it always was.
   start: {
     basis: "internal",
-    mode: "volume",
-    size: { x: 300, y: 375, z: 480 },
+    mode: "dimensions",
+    size: { x: 182, y: 227, z: 291 },
     litres: 12,
     ratio: { ...DEFAULT_RATIO },
   },

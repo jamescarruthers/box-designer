@@ -398,7 +398,7 @@ describe("§47 panel controls live in the inspector", () => {
       .toMatch(/Let in 8 mm on left, right, top, bottom/);
     fireEvent.click(screen.getByLabelText("Front rebate all sides"));
     expect(container.querySelector(".rebate .note").textContent).toMatch(/No sides chosen/);
-    expect(container.querySelector(".panel-summary").textContent).toMatch(/RebatedNone/);
+    expect(container.querySelector(".panel-summary")?.textContent ?? "").not.toMatch(/Rebated/);
   });
 
   it("offers no rebate on a lining, and says why", () => {

@@ -38,8 +38,9 @@ beforeAll(() => {
   global.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
   Element.prototype.setPointerCapture = () => {};
 });
-beforeEach(() => { localStorage.clear(); calls.length = 0; });
-afterEach(cleanup);
+// §60 The toggle and the readout are the developer's, behind `?debug`.
+beforeEach(() => { localStorage.clear(); calls.length = 0; window.history.replaceState({}, "", "/?debug"); });
+afterEach(() => { cleanup(); window.history.replaceState({}, "", "/"); });
 
 const quiet = () => vi.spyOn(console, "error").mockImplementation(() => {});
 const kernelOn = () => fireEvent.click(screen.getByRole("button", { name: "OpenCASCADE" }));

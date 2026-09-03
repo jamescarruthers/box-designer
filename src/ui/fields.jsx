@@ -7,16 +7,46 @@
 // difference shows up as "the colour picker behaves differently over here",
 // which is a bug nobody can name.
 
-import React from "react";
+import React, { useState } from "react";
 import { paletteFor, colourName, materialById, MATERIALS, LAGGINGS } from "../model/constants.js";
 import { panelColour } from "../three/palette.js";
 
-export function Group({ title, note, children }) {
+/** §60 Where the folds are kept between visits. */
+export const FOLD_KEY = "sheet-box-designer/folds/1";
+
+const readFolds = () => {
+  try { return JSON.parse(localStorage.getItem(FOLD_KEY) ?? "{}") ?? {}; } catch { return {}; }
+};
+const writeFold = (id, open) => {
+  try { localStorage.setItem(FOLD_KEY, JSON.stringify({ ...readFolds(), [id]: open })); } catch { /* fine */ }
+};
+
+/**
+ * A titled group of controls.
+ *
+ * §60 Given an `id`, it folds: the title is a button, the fold is remembered
+ * in the browser under that id, and a group that was closed last time opens
+ * closed. Open by default, so nothing is hidden from somebody who has not
+ * asked for it to be.
+ */
+export function Group({ title, note, children, id = null }) {
+  const [open, setOpen] = useState(() => (id ? readFolds()[id] !== false : true));
+  const toggle = () => { setOpen(!open); if (id) writeFold(id, !open); };
   return (
-    <section className="group">
-      <h2>{title}</h2>
-      {note ? <p className="note">{note}</p> : null}
-      <div className="group-body">{children}</div>
+    <section className={open ? "group" : "group folded"}>
+      <h2>
+        {id ? (
+          <button type="button" className="fold" aria-expanded={open} onClick={toggle}>
+            <span className="fold-mark" aria-hidden="true">{open ? "▾" : "▸"}</span>{title}
+          </button>
+        ) : title}
+      </h2>
+      {open ? (
+        <>
+          {note ? <p className="note">{note}</p> : null}
+          <div className="group-body">{children}</div>
+        </>
+      ) : null}
     </section>
   );
 }

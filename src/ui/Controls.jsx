@@ -1,4 +1,4 @@
-// §7 Control groups: starting point, material, prominence, edge treatment, drawing.
+// §7 Control groups: starting point, material, prominence, panels, edges.
 //
 // §47 The sidebar is about the box and the inspector is about one board, and
 // nothing is in both. What was here a face at a time — a panel's thickness, its
@@ -6,33 +6,38 @@
 // is in the inspector now, where the panel it belongs to is the thing on the
 // screen. What is left is a summary: what the box carries and where, with every
 // entry a way into the panel that owns it.
+//
+// §60 And only what is true of the box in every mode. What the drawing shows
+// is set on the drawing; how the sheets are cut is set on the cut list. The
+// rules that used to be paragraphs between the fields are in Help, once.
 
 import React, { useState } from "react";
-import { FACES, FACE_LABEL, LAYER_LABEL, MATERIALS, PROMINENCE_PRESETS, EDGES, edgeAxis, materialById } from "../model/constants.js";
+import { FACES, FACE_LABEL, LAYER_LABEL, MATERIALS, PROMINENCE_PRESETS, materialById } from "../model/constants.js";
 import { ROUND_STEPS } from "../model/solver.js";
 import { setIn, setProjectMaterial, setProjectThickness, setEdgeTreatment, treatedEdges,
   layerOrder, layerPreset, ownOrder, setLayerOrder, setOwnProminence } from "./design.js";
-import { largestBevel, largestBevelAt } from "../model/bevel.js";
+import { largestBevel } from "../model/bevel.js";
 import { readRebateKey, rebateLabel } from "../model/rebate.js";
 import { Group, Num, Colour, Segmented, FaceSwatch, StockThicknesses } from "./fields.jsx";
 import { fmt } from "../cutlist/cutlist.js";
 
 export default function Controls({ design, set, derived, colourByFace, onInspect }) {
   const s = design.start;
-  const cuttable = Object.values(derived.fullLength).filter(Boolean).length;
-  const mitrable = Object.values(derived.mitrable).filter((c) => c.ok).length;
-  const ring = derived.mitreRing.length;
-  // §15 Only what has been done to the box. Twelve rows of "Square" was a list
-  // of everything that could happen, which is not a list of anything.
-  const applied = treatedEdges(design);
   return (
     <div className="controls">
       <StockThicknesses />
-      <Group title="Starting point">
-        <Segmented ariaLabel="Basis" value={s.basis} onChange={(v) => set(setIn(design, ["start", "basis"], v))}
-          options={[{ id: "internal", name: "Internal" }, { id: "external", name: "External" }]} />
-        <Segmented ariaLabel="Mode" value={s.mode} onChange={(v) => set(setIn(design, ["start", "mode"], v))}
-          options={[{ id: "dimensions", name: "Dimensions" }, { id: "volume", name: "Volume" }]} />
+      <Group title="Size">
+        {/* §60 Labelled: "Internal" on its own does not say internal to what. */}
+        <div className="field">
+          <span>Sizes are</span>
+          <Segmented ariaLabel="Basis" value={s.basis} onChange={(v) => set(setIn(design, ["start", "basis"], v))}
+            options={[{ id: "internal", name: "Internal" }, { id: "external", name: "External" }]} />
+        </div>
+        <div className="field">
+          <span>Given as</span>
+          <Segmented ariaLabel="Mode" value={s.mode} onChange={(v) => set(setIn(design, ["start", "mode"], v))}
+            options={[{ id: "dimensions", name: "Dimensions" }, { id: "volume", name: "Volume" }]} />
+        </div>
         {s.mode === "dimensions" ? (
           <>
             <Num label="Width" suffix="mm" value={s.size.x} onChange={(v) => set(setIn(design, ["start", "size", "x"], v))} />
@@ -42,12 +47,14 @@ export default function Controls({ design, set, derived, colourByFace, onInspect
         ) : (
           <>
             <Num label="Volume" suffix="l" step={0.5} value={s.litres} onChange={(v) => set(setIn(design, ["start", "litres"], v))} />
-            <div className="row-3">
-              <Num label="W" value={s.ratio.x} step={0.05} onChange={(v) => set(setIn(design, ["start", "ratio", "x"], v))} />
-              <Num label="D" value={s.ratio.y} step={0.05} onChange={(v) => set(setIn(design, ["start", "ratio", "y"], v))} />
-              <Num label="H" value={s.ratio.z} step={0.05} onChange={(v) => set(setIn(design, ["start", "ratio", "z"], v))} />
+            <div className="field">
+              <span>Proportion</span>
+              <div className="row-3">
+                <Num label="W" value={s.ratio.x} step={0.05} onChange={(v) => set(setIn(design, ["start", "ratio", "x"], v))} />
+                <Num label="D" value={s.ratio.y} step={0.05} onChange={(v) => set(setIn(design, ["start", "ratio", "y"], v))} />
+                <Num label="H" value={s.ratio.z} step={0.05} onChange={(v) => set(setIn(design, ["start", "ratio", "z"], v))} />
+              </div>
             </div>
-            <p className="note">Proportion. 1 : 1.25 : 1.6 keeps the axial modes apart.</p>
           </>
         )}
         {/* §16 One rounding, on the envelope, before anything is measured from
@@ -92,12 +99,6 @@ export default function Controls({ design, set, derived, colourByFace, onInspect
             {MATERIALS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </label>
-        <label className="field">
-          <span>Stock</span>
-          <select value={design.stockIndex} onChange={(e) => set({ ...design, stockIndex: Number(e.target.value) })}>
-            {derived.material.stock.map((st, i) => <option key={i} value={i}>{st[0]} × {st[1]}</option>)}
-          </select>
-        </label>
         <Num label="Thickness" suffix="mm" step={0.5} value={design.thickness}
           list={`th-${derived.material.id}`}
           onChange={(v) => set(setProjectThickness(design, v))} />
@@ -115,16 +116,10 @@ export default function Controls({ design, set, derived, colourByFace, onInspect
           on="perPanelColour" by="colourBy" uniform={design.colour ?? materialById(design.material).colour}
           label="colour" undo="Back to one colour"
           set={set} format={() => null} />
-        <Num label="Kerf" suffix="mm" step={0.1} value={design.kerf} onChange={(v) => set({ ...design, kerf: v })} />
-        <label className="check">
-          <input type="checkbox" checked={design.grainLocked}
-            onChange={(e) => set({ ...design, grainLocked: e.target.checked })} />
-          <span>Lock grain along length, where the sheet has one</span>
-        </label>
       </Group>
 
       <Group title="Prominence"
-        note="A rank over all six faces. Reordering changes every panel size and no internal dimension — it is a joinery choice, not a tuning knob.">
+        note="Which panel runs past which at each corner. Changes panel sizes, never internal sizes.">
         <Prominence design={design} set={set} colourByFace={colourByFace} />
       </Group>
 
@@ -132,153 +127,87 @@ export default function Controls({ design, set, derived, colourByFace, onInspect
           them. The controls that add and change them are in the inspector:
           they are about one board, and the sidebar is about the box. */}
       <Group title="Panels"
-        note="Everything about one board — its sheet, thickness and colour, the cladding, doubler or lagging on its face, its rebate and its fittings — is in the inspector. Open one from here, or click a panel in the box. Right-click a face or an edge in the box for what can be done to it there.">
+        note="Open a panel here or click it in the box. Right-click a panel or an edge in the box for a menu.">
         <PanelSummary design={design} derived={derived} onInspect={onInspect} colourByFace={colourByFace} />
       </Group>
 
-      <Group title="Edge treatment" note="Cut from the outer face after assembly. Blank sizes are unchanged.">
-        <p className="note">{cuttable} of 12 edges run the full length of one panel. The rest stay square: a bevel would stop against the side of the next panel.</p>
-        <Segmented ariaLabel="Treatment" value={design.edge.type}
-          onChange={(v) => set(setIn(design, ["edge", "type"], v))}
-          options={[{ id: "none", name: "Square" }, { id: "chamfer", name: "Chamfer" }, { id: "fillet", name: "Fillet" }]} />
-        {/* §26 Capped at the thinnest wall on the box: a bevel bigger than the
-            material it is cut from is not a bevel, and letting one be typed
-            only moved the failure into the kernel. */}
-        <Num label="Radius" suffix="mm" step={0.5} value={design.edge.radius}
-          max={largestBevel(derived.sol.board ?? derived.sol.wall)}
-          onChange={(v) => set(setIn(design, ["edge", "radius"], v))} />
-        <p className="note">Up to {fmt(largestBevel(derived.sol.board ?? derived.sol.wall))} mm: a bevel has to leave material behind it, and this applies to every edge, so the thinnest wall sets the limit.</p>
-        <label className="check">
-          <input type="checkbox" checked={design.edge.perEdge}
-            onChange={(e) => set(setIn(design, ["edge", "perEdge"], e.target.checked))} />
-          <span>Per edge</span>
-        </label>
-        {design.edge.perEdge ? (
-          <>
-            <p className="note">
-              Click an edge in the 3D view with a treatment armed to add one here.
-              {" "}{mitrable} of 12 can take a mitre: the two panels have to meet along the whole
-              edge and be the same thickness, and a panel takes mitres on opposite sides, not
-              adjacent ones — so choosing one closes others off.
-              {ring > 0 ? (
-                <> <button type="button" className="linkish"
-                  onClick={() => set(setIn(design, ["edge", "by"], mitreAll(design, derived)))}>
-                  Mitre a ring of {ring}
-                </button></>
-              ) : null}
-            </p>
-            <label className="field">
-              <span>Add an edge</span>
-              <select value="" aria-label="Add an edge treatment"
-                onChange={(e) => { if (e.target.value) set(addEdge(design, derived, e.target.value)); }}>
-                <option value="">Choose an edge…</option>
-                {EDGES.filter((k) => !applied.some(([a]) => a === k)).map((k) => (
-                  <option key={k} value={k}
-                    disabled={!derived.fullLength[k] && !derived.mitrable[k]?.ok}>
-                    {k.replace("|", " / ")}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {applied.length === 0 ? (
-              <p className="note empty">Every edge is square.</p>
-            ) : (
-              <div className="edge-grid">
-                {applied.map(([k, cur]) => {
-                  const canBevel = derived.fullLength[k];
-                  const canMitre = derived.mitrable[k]?.ok;
-                  return (
-                    <div className="edge-row" key={k}>
-                      <span className="edge-key">{k.replace("|", " / ")}
-                        <em>{edgeNote(k, canBevel, canMitre, derived)}</em></span>
-                      <select value={cur.type} aria-label={`${k} treatment`}
-                        onChange={(e) => set(setEdgeTreatment(design, k, e.target.value, cur.radius))}>
-                        <option value="none">Square</option>
-                        <option value="chamfer" disabled={!canBevel}>Chamfer</option>
-                        <option value="fillet" disabled={!canBevel}>Fillet</option>
-                        <option value="mitre" disabled={!canMitre}>Mitre</option>
-                      </select>
-                      <input type="number" min="0" step="0.5" value={cur.radius ?? design.edge.radius}
-                        disabled={cur.type === "mitre"}
-                        max={largestBevelAt(derived.sol.board ?? derived.sol.wall, k)}
-                        aria-label={`${k} radius`}
-                        onChange={(e) => set(setEdgeTreatment(design, k, cur.type,
-                          Math.min(Number(e.target.value) || 0, largestBevelAt(derived.sol.board ?? derived.sol.wall, k))))} />
-                      <button type="button" className="drop" aria-label={`Square ${k}`}
-                        title="Back to square"
-                        onClick={() => set(setEdgeTreatment(design, k, "none"))}>×</button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </>
-        ) : null}
-      </Group>
-
-      <Group title="Drawing" note="Section A–A is cut on a vertical plane and viewed from the left. Move it for a port or an off-centre brace.">
-        {/* §32 What goes on the sheet. §38 The isometric keeps its column
-            either way now; what dropping the section frees is the height its
-            own row was taking, which every view on the sheet shares. */}
-        <label className="check">
-          <input type="checkbox" checked={derived.drawing.section}
-            onChange={(e) => set(setIn(design, ["drawing", "section"], e.target.checked))} />
-          <span>Section A–A</span>
-        </label>
-        <label className="check">
-          <input type="checkbox" checked={derived.drawing.insulation}
-            onChange={(e) => set(setIn(design, ["drawing", "insulation"], e.target.checked))} />
-          <span>Acoustic insulation</span>
-        </label>
-        {/* §38 The isometric comes apart. It is the one view that shows the
-            whole box, so it is the one worth pulling open — a laminated wall
-            explains itself in an exploded picture the way no elevation can. */}
-        <div className="chip-group explode">
-          <label htmlFor="iso-explode">Explode isometric</label>
-          <input id="iso-explode" type="range" min="0" max="120" step="5"
-            value={derived.drawing.explode}
-            onChange={(e) => set(setIn(design, ["drawing", "explode"], Number(e.target.value)))} />
-          <output>{derived.drawing.explode}</output>
-        </div>
-        <Num label="Section at x" suffix="mm" step={1} value={Math.round(derived.sectionAt * 10) / 10}
-          disabled={!derived.drawing.section}
-          onChange={(v) => set({ ...design, sectionAt: v })} />
-        <button type="button" className="linkish" disabled={!derived.drawing.section}
-          onClick={() => set({ ...design, sectionAt: null })}>
-          Centre the section plane
-        </button>
+      <Group title="Edges" note="Cut from the outer face after assembly. Blank sizes do not change.">
+        <Edges design={design} set={set} derived={derived} />
       </Group>
     </div>
   );
 }
 
 /**
- * §15 The treatment a newly added edge starts with: whatever the uniform
- * setting is if that edge can take it, else the only thing it can take. Adding
- * an edge and being told it cannot have what it was given would be a poor
- * welcome.
+ * §60 All twelve edges at once, and a list of any that differ.
+ *
+ * The sidebar used to offer a second, per-edge way of doing what a right-click
+ * on the edge does — a select to add an edge, then a row to treat it. That
+ * was a list of names for things that are on the screen. What is left here is
+ * the uniform treatment, and a record of the edges that have been treated one
+ * at a time, each with the way back to square.
  */
-function addEdge(design, derived, key) {
-  const canBevel = derived.fullLength[key];
-  const wanted = design.edge.type !== "none" && canBevel ? design.edge.type : null;
-  const type = wanted ?? (canBevel ? "fillet" : "mitre");
-  return setEdgeTreatment(design, key, type, design.edge.radius);
+function Edges({ design, set, derived }) {
+  const walls = derived.sol.board ?? derived.sol.wall;
+  const most = largestBevel(walls);
+  const ring = derived.mitreRing.length;
+  const perEdge = design.edge.perEdge;
+  const applied = perEdge ? treatedEdges(design) : [];
+
+  // The uniform control means all twelve: choosing it ends any per-edge work.
+  const setAll = (type) => set({ ...design, edge: { ...design.edge, type, perEdge: false, by: {} } });
+  // The radius is the radius of every bevel, the per-edge ones included.
+  const setRadius = (radius) => {
+    const by = Object.fromEntries(Object.entries(design.edge.by).map(([k, v]) =>
+      [k, v.type === "mitre" ? v : { ...v, radius }]));
+    set({ ...design, edge: { ...design.edge, radius, by } });
+  };
+
+  return (
+    <>
+      <div className="field">
+        <span>All edges</span>
+        <Segmented ariaLabel="Treatment" value={perEdge ? "custom" : design.edge.type}
+          onChange={setAll}
+          options={[{ id: "none", name: "Square" }, { id: "chamfer", name: "Chamfer" }, { id: "fillet", name: "Fillet" }]} />
+      </div>
+      {/* §26 Capped at the thinnest wall on the box: a bevel bigger than the
+          material it is cut from is not a bevel, and letting one be typed
+          only moved the failure into the kernel. */}
+      <Num label="Radius" suffix="mm" step={0.5} value={design.edge.radius} max={most}
+        onChange={setRadius} />
+      <p className="note">Up to {fmt(most)} mm, the thinnest wall.
+        {ring > 0 ? (
+          <> <button type="button" className="linkish"
+            onClick={() => set(setIn(design, ["edge", "by"], mitreAll(design, derived)))}>
+            Mitre a ring of {ring}
+          </button></>
+        ) : null}
+      </p>
+      {perEdge ? (
+        <div className="edge-grid">
+          {applied.length === 0 ? <p className="note empty">Every edge is square.</p> : null}
+          {applied.map(([k, cur]) => (
+            <div className="edge-row" key={k}>
+              <span className="edge-key">{k.replace("|", " / ")}</span>
+              <span className="edge-what">{edgeWord(cur)}</span>
+              <button type="button" className="drop" aria-label={`Square ${k}`}
+                title="Back to square"
+                onClick={() => set(setEdgeTreatment(design, k, "none"))}>×</button>
+            </div>
+          ))}
+          <button type="button" className="linkish" onClick={() => setAll("none")}>
+            Back to one treatment
+          </button>
+        </div>
+      ) : null}
+    </>
+  );
 }
 
-/**
- * What is available on one edge, and why the rest is not.
- *
- * The reason is cut to its first clause: the full one explains the rule as well
- * as the case, and five lines of rule under one row buried the row. The rule is
- * in the note above the list, where it is said once.
- */
-function edgeNote(key, canBevel, canMitre, derived) {
-  const brief = (why) => String(why ?? "").split(" — ")[0];
-  if (canBevel && canMitre) return `runs ${edgeAxis(key)}`;
-  if (canBevel) return `bevel only — ${brief(derived.mitrable[key].why)}`;
-  if (canMitre) return "mitre only — no one panel runs this edge";
-  return "broken by other panels";
-}
+/** One edge's treatment, in the cut list's words. */
+const edgeWord = (t) => (t.type === "mitre" ? "mitre"
+  : t.type === "fillet" ? `fillet R${fmt(t.radius)}` : `chamfer ${fmt(t.radius)}`);
 
 /**
  * §12 The largest ring of mitres this box can take, mitred; everything else
@@ -311,14 +240,12 @@ function Prominence({ design, set, colourByFace }) {
       <OrderPicker design={design} set={set} colourByFace={colourByFace} layer="shell" />
       {doublers.length || own ? (
         <div className="layer-prominence">
-          <p className="note">
-            The doublers are laid out inside the carcass, and which of them runs past
-            which at a corner is asked again there.{" "}
-            {doublers.length < 2 ? "With one doubler there is nothing for it to run past yet." : ""}
-          </p>
-          <Segmented ariaLabel="Doubler prominence" value={own ? "own" : "follow"}
-            onChange={(v) => set(setOwnProminence(design, "doubler", v === "own"))}
-            options={[{ id: "follow", name: "As the carcass" }, { id: "own", name: "Their own order" }]} />
+          <div className="field">
+            <span>Doublers</span>
+            <Segmented ariaLabel="Doubler prominence" value={own ? "own" : "follow"}
+              onChange={(v) => set(setOwnProminence(design, "doubler", v === "own"))}
+              options={[{ id: "follow", name: "As the carcass" }, { id: "own", name: "Their own order" }]} />
+          </div>
           {own ? (
             <OrderPicker design={design} set={set} colourByFace={colourByFace} layer="doubler" />
           ) : null}
@@ -403,25 +330,28 @@ function OrderPicker({ design, set, colourByFace, layer }) {
  *
  * A summary and not a control: nothing here edits anything, so there is one
  * place to change a board and it is the place where the board is on screen.
+ * §60 A line that would say "None" is not shown: five rows of nothing under
+ * six chips said less than the chips did on their own.
  */
 function PanelSummary({ design, derived, onInspect, colourByFace }) {
   const indexOf = (layer, face) =>
     derived.rows.find((r) => r.layer === layer && r.face === face)?.panelIndex;
   const open = (layer, face) => { const i = indexOf(layer, face); if (i != null) onInspect(i); };
 
-  const layerRow = (layer) => {
+  const layerRows = ["cladding", "doubler", "lagging"].map((layer) => {
     const faces = FACES.filter((f) => design[layer]?.[f]);
+    if (!faces.length) return null;
     return (
       <div key={layer}>
         <dt>{LAYER_LABEL[layer]}</dt>
-        <dd>{faces.length ? faces.map((f) => (
+        <dd>{faces.map((f) => (
           <button type="button" className="linkish" key={f}
             aria-label={`Open the ${FACE_LABEL[f]} ${LAYER_LABEL[layer].toLowerCase()}`}
             onClick={() => open(layer, f)}>{FACE_LABEL[f]}</button>
-        )) : <span className="none">None</span>}</dd>
+        ))}</dd>
       </div>
     );
-  };
+  }).filter(Boolean);
 
   // §46 A rebate names a board, so the summary names it the same way the
   // warnings do — "Top doubler", not "Top".
@@ -440,29 +370,35 @@ function PanelSummary({ design, derived, onInspect, colourByFace }) {
           </button>
         ))}
       </div>
-      <dl className="readout panel-summary">
-        {["cladding", "doubler", "lagging"].map(layerRow)}
-        <div>
-          <dt>Rebated</dt>
-          <dd>{rebates.length ? rebates.map(({ key, layer, face }) => (
-            <button type="button" className="linkish" key={key}
-              aria-label={`Open the rebated ${rebateLabel(layer, face)}`}
-              onClick={() => open(layer, face)}>{rebateLabel(layer, face)}</button>
-          )) : <span className="none">None</span>}</dd>
-        </div>
-        <div>
-          <dt>Fittings</dt>
-          <dd>{fittings.length ? fittings.map((f, i) => (
-            <button type="button" className="linkish" key={f.id ?? i}
-              aria-label={`Open the panel fitting ${i + 1} is on`}
-              onClick={() => {
-                const panel = derived.fittingPanels?.[f.face];
-                const row = derived.rows.find((r) => r.panel === panel);
-                if (row) onInspect(row.panelIndex); else open("shell", f.face);
-              }}>{FACE_LABEL[f.face]} {f.type}</button>
-          )) : <span className="none">None</span>}</dd>
-        </div>
-      </dl>
+      {layerRows.length || rebates.length || fittings.length ? (
+        <dl className="readout panel-summary">
+          {layerRows}
+          {rebates.length ? (
+            <div>
+              <dt>Rebated</dt>
+              <dd>{rebates.map(({ key, layer, face }) => (
+                <button type="button" className="linkish" key={key}
+                  aria-label={`Open the rebated ${rebateLabel(layer, face)}`}
+                  onClick={() => open(layer, face)}>{rebateLabel(layer, face)}</button>
+              ))}</dd>
+            </div>
+          ) : null}
+          {fittings.length ? (
+            <div>
+              <dt>Fittings</dt>
+              <dd>{fittings.map((f, i) => (
+                <button type="button" className="linkish" key={f.id ?? i}
+                  aria-label={`Open the panel fitting ${i + 1} is on`}
+                  onClick={() => {
+                    const panel = derived.fittingPanels?.[f.face];
+                    const row = derived.rows.find((r) => r.panel === panel);
+                    if (row) onInspect(row.panelIndex); else open("shell", f.face);
+                  }}>{FACE_LABEL[f.face]} {f.type}</button>
+              ))}</dd>
+            </div>
+          ) : null}
+        </dl>
+      ) : null}
     </>
   );
 }

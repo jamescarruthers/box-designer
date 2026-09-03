@@ -76,6 +76,17 @@ function addFitting(face, type) {
     { target: { value: type } });
 }
 
+/** §60 The view menu holds the render style, colouring and projection. It
+ *  stays open while the 3D view is out of sight, so this opens it only if it
+ *  is not open already. */
+const openView = () => {
+  if (!screen.queryByRole("group", { name: "View" })) fireEvent.click(screen.getByRole("button", { name: "View ▾" }));
+};
+
+/** §60 Put the developer's controls and readouts back for one test. */
+const debugOn = () => window.history.replaceState({}, "", "/?debug");
+afterEach(() => window.history.replaceState({}, "", "/"));
+
 const errors = [];
 const originalError = console.error;
 console.error = (...a) => { errors.push(a.join(" ")); originalError(...a); };
@@ -110,6 +121,7 @@ describe("the app", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
     const before = [...container.querySelectorAll("table.cuts tbody tr")].map((r) => r.textContent);
 
+    fireEvent.click(screen.getByRole("button", { name: "Volume" }));
     fireEvent.change(screen.getByLabelText("Volume"), { target: { value: "40" } });
     const after = [...container.querySelectorAll("table.cuts tbody tr")].map((r) => r.textContent);
     expect(after).not.toEqual(before);
@@ -169,6 +181,8 @@ describe("the app", () => {
 
   it("§16 rounds the sizes to whole millimetres, and back again on request", () => {
     const { container } = render(<App />);
+    // A volume is the way in that produces sizes with something to round.
+    fireEvent.click(screen.getByRole("button", { name: "Volume" }));
     fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
     const sizes = () => [...container.querySelectorAll("table.cuts tbody tr")]
       .flatMap((r) => [...r.querySelectorAll(".num")].slice(0, 2).map((c) => c.textContent));
@@ -180,7 +194,7 @@ describe("the app", () => {
     expect(sizes().some((v) => v.includes("."))).toBe(true);
 
     // And it is the envelope that moved, not the panels against each other.
-    expect(within(container.querySelector(".totals")).getByText("exact")).toBeTruthy();
+    expect(container.querySelector(".messages .error")).toBeNull();
   });
 
   it("§16 pays for a round size in capacity, by a little", () => {
@@ -197,8 +211,7 @@ describe("the app", () => {
 
   it("§18 colours the sheet from its own range, and one panel apart from it", () => {
     const { container } = render(<App />);
-    fireEvent.change(screen.getByLabelText("Stock").closest(".group").querySelector("select"),
-      { target: { value: "valchromat" } });
+    fireEvent.change(screen.getByLabelText("Sheet"), { target: { value: "valchromat" } });
 
     // Valchromat is the one sheet with names for its colours.
     const named = screen.getByLabelText("Sheet colour name");
@@ -211,8 +224,8 @@ describe("the app", () => {
     fireEvent.change(screen.getByLabelText("Front colour name"), { target: { value: "#da646c" } });
 
     // The part templates are drawn in whichever colouring is on, so with
-    // material colouring they are drawn in the colours the panels are made of.
-    fireEvent.click(screen.getByRole("button", { name: "Material" }));
+    // material colouring — §60 the default — they are drawn in the colours the
+    // panels are made of.
     fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
     const fills = [...container.querySelectorAll(".parts figure svg > rect")]
       .map((e) => e.getAttribute("fill"));
@@ -223,7 +236,7 @@ describe("the app", () => {
 
   it("§18 drops the colours when the sheet changes, rather than keeping a stale one", () => {
     const { container } = render(<App />);
-    const sheetSelect = screen.getByLabelText("Stock").closest(".group").querySelector("select");
+    const sheetSelect = screen.getByLabelText("Sheet");
     fireEvent.change(sheetSelect, { target: { value: "valchromat" } });
     fireEvent.change(screen.getByLabelText("Sheet colour name"), { target: { value: "#da646c" } });
     expect(screen.getByLabelText("Sheet colour").value).toBe("#da646c");
@@ -272,10 +285,18 @@ describe("the app", () => {
 
   it("carries the face swatch into the cut list, and drops it when face colouring is off", () => {
     const { container } = render(<App />);
+    // §60 The box opens in the colours it is made of; face colours are a
+    // choice, made in the view menu.
+    fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
+    expect(container.querySelectorAll("table.cuts .swatch")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "3D view" }));
+    openView();
+    fireEvent.click(screen.getByRole("button", { name: "By face" }));
     fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
     expect(container.querySelectorAll("table.cuts .swatch").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "3D view" }));
-    fireEvent.click(screen.getByRole("button", { name: "Material" }));
+    openView();
+    fireEvent.click(screen.getByRole("button", { name: "By material" }));
     fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
     expect(container.querySelectorAll("table.cuts .swatch")).toHaveLength(0);
     expect(container.querySelectorAll(".prominence .swatch")).toHaveLength(0);
@@ -294,6 +315,7 @@ describe("the app", () => {
   it("cycles the render styles and the view presets without error", () => {
     errors.length = 0;
     const { container } = render(<App />);
+    openView();
     for (const s of ["Shaded", "Wireframe", "Wireframe, hidden removed", "Shaded + hidden edges"])
       fireEvent.click(screen.getByRole("button", { name: s }));
     for (const p of ["iso", "front", "top", "right"])
@@ -307,6 +329,7 @@ describe("the app", () => {
     const { container } = render(<App />);
     const chip = (name) => within(container.querySelector(".pane-view .chips"))
       .getByRole("button", { name });
+    openView();
     // Perspective to begin with: a picture of the box from somewhere.
     expect(chip("Perspective").getAttribute("aria-pressed")).toBe("true");
     expect(chip("Parallel").getAttribute("aria-pressed")).toBe("false");
@@ -333,8 +356,9 @@ describe("the app", () => {
 
   it("§47 adds a cladding side from the face it goes on, inheriting the project sheet", () => {
     const { container } = render(<App />);
-    const summary = () => container.querySelector(".panel-summary").textContent;
-    expect(summary()).toMatch(/CladdingNone/);
+    const summary = () => container.querySelector(".panel-summary")?.textContent ?? "";
+    // §60 Nothing to say is nothing said: no line of "None".
+    expect(summary()).toBe("");
 
     addLayer("Front", "cladding");
     // The sidebar says what the box carries; the panel itself is in the
@@ -369,10 +393,10 @@ describe("the app", () => {
   it("removes an added side", () => {
     const { container } = render(<App />);
     addLayer("Back", "doubler");
-    const summary = () => container.querySelector(".panel-summary").textContent;
+    const summary = () => container.querySelector(".panel-summary")?.textContent ?? "";
     expect(summary()).toMatch(/DoublerBack/);
     fireEvent.click(screen.getByLabelText("Remove the Back doubler"));
-    expect(summary()).toMatch(/DoublerNone/);
+    expect(summary()).not.toMatch(/Doubler/);
   });
 
   it("moves the carcass to a new sheet's standard thickness", () => {
@@ -382,52 +406,45 @@ describe("the app", () => {
     expect(screen.getByLabelText("Thickness").value).toBe("19");
   });
 
-  it("§12 mitres one edge from the per-edge control, and says so in the cut list", () => {
+  it("§12 mitres one edge from the panel's inspector, and says so in the cut list", () => {
     const { container } = render(<App />);
-    fireEvent.click(screen.getByLabelText("Per edge"));
-    // §15 The list holds what has been done to the box, so an edge is added to
-    // it before it can be given anything — from here, or by clicking it in 3D.
-    fireEvent.change(screen.getByLabelText("Add an edge treatment"), { target: { value: "front|left" } });
-    const select = screen.getByLabelText("front|left treatment");
+    // §60 One edge is treated from the panel it belongs to, or from the menu on
+    // the edge itself; the sidebar sets all twelve and records what differs.
+    open("Front carcass");
+    const select = screen.getByLabelText("Front left edge treatment");
     expect([...select.options].find((o) => o.value === "mitre").disabled).toBe(false);
     fireEvent.change(select, { target: { value: "mitre" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
     expect(container.textContent).toContain("45°");
-    expect(within(container.querySelector(".totals")).getByText("exact")).toBeTruthy();
+    expect(container.querySelector(".messages .error")).toBeNull();
   });
 
   it("§12 will not offer a mitre on an edge the panels cannot both run", () => {
     render(<App />);
-    fireEvent.click(screen.getByLabelText("Per edge"));
-    const blocked = ["front|top", "front|bottom", "back|top", "back|bottom"]
-      .map((k) => {
-        fireEvent.change(screen.getByLabelText("Add an edge treatment"), { target: { value: k } });
-        return screen.getByLabelText(`${k} treatment`);
-      })
+    open("Front carcass");
+    const blocked = ["top", "bottom"]
+      .map((across) => screen.getByLabelText(`Front ${across} edge treatment`))
       .filter((s) => [...s.options].find((o) => o.value === "mitre").disabled);
     expect(blocked.length).toBeGreaterThan(0);
   });
 
-  it("§15 arms an edge tool from the viewport, and lists only what has been done", () => {
+  it("§15 lists in the sidebar only what has been done to the edges", () => {
     const { container } = render(<App />);
-    fireEvent.click(screen.getByLabelText("Per edge"));
     // Twelve rows of "Square" was a list of everything that could happen, which
-    // is a list of nothing.
-    expect(container.querySelectorAll(".edge-row")).toHaveLength(0);
-    expect(container.querySelector(".edge-grid")).toBeNull();
+    // is a list of nothing. §60 And there is no tool to arm: the edge is
+    // treated from its panel or its own menu.
+    const rows = () => container.querySelectorAll(".controls .edge-row");
+    expect(rows()).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: "Fillet an edge" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Fillet an edge" }));
-    expect(container.querySelector(".edge-arm").textContent).toContain("click an edge");
-    // Armed is a state of the pointer, not of the box: nothing is cut yet.
-    expect(container.querySelectorAll(".edge-row")).toHaveLength(0);
-
-    fireEvent.change(screen.getByLabelText("Add an edge treatment"), { target: { value: "front|left" } });
-    expect(container.querySelectorAll(".edge-row")).toHaveLength(1);
-    expect(screen.getByLabelText("front|left treatment").value).toBe("fillet");
+    open("Front carcass");
+    fireEvent.change(screen.getByLabelText("Front left edge treatment"), { target: { value: "fillet" } });
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0].textContent).toMatch(/front \/ left.*fillet R12/);
 
     fireEvent.click(screen.getByLabelText("Square front|left"));
-    expect(container.querySelectorAll(".edge-row")).toHaveLength(0);
+    expect(rows()).toHaveLength(0);
   });
 
   it("§10 turns a port's tube off from the control", () => {
@@ -618,6 +635,11 @@ describe("the app", () => {
     render(<App />);
     expect(screen.getByLabelText("Thickness").value).toBe("21");
 
+    // §60 Reset asks first. "Keep" leaves the box alone.
+    fireEvent.click(screen.getByRole("button", { name: "Reset…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Keep" }));
+    expect(screen.getByLabelText("Thickness").value).toBe("21");
+    fireEvent.click(screen.getByRole("button", { name: "Reset…" }));
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
     expect(screen.getByLabelText("Thickness").value).toBe("18");
     cleanup();
@@ -702,7 +724,7 @@ describe("the app", () => {
       .map((el) => el.textContent).filter((t) => /Rebate/.test(t));
     expect(notes).toHaveLength(4);
     expect(notes[0]).toMatch(/Rebate 6 × 18/);
-    expect(within(container.querySelector(".totals")).getByText("exact")).toBeTruthy();
+    expect(container.querySelector(".messages .error")).toBeNull();
   });
 
   it("§47 changes the depth, and takes the rebate away by clearing the sides", () => {
@@ -720,7 +742,7 @@ describe("the app", () => {
     // the panel simply stops being a rebated panel.
     fireEvent.click(screen.getByLabelText("Front rebate left"));
     expect(container.querySelector(".rebate .note").textContent).toMatch(/No sides chosen/);
-    expect(container.querySelector(".panel-summary").textContent).toMatch(/RebatedNone/);
+    expect(container.querySelector(".panel-summary")?.textContent ?? "").not.toMatch(/Rebated/);
     expect(screen.getByLabelText("Front rebate depth").disabled).toBe(true);
   });
 
@@ -790,7 +812,7 @@ describe("the app", () => {
     const cells = [...container.querySelectorAll("table.cuts tbody tr")]
       .map((r) => r.children[at].textContent);
     expect(cells.filter(Boolean)).toHaveLength(4);
-    expect(within(container.querySelector(".totals")).getByText("exact")).toBeTruthy();
+    expect(container.querySelector(".messages .error")).toBeNull();
   });
 
   it("§14 offers a DXF of the sheet layouts", () => {
@@ -807,7 +829,7 @@ describe("the app", () => {
   it("saves the design to a file named after the box", async () => {
     render(<App />);
     fireEvent.change(screen.getByLabelText("Drawing title"), { target: { value: "SUBWOOFER" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save file" }));
 
     const file = await lastSaved();
     expect(file.format).toBe("sheet-box-designer/design");
@@ -848,11 +870,11 @@ describe("the app", () => {
     render(<App />);
     fireEvent.change(screen.getByLabelText("Drawing title"), { target: { value: "ROUND TRIP" } });
     addLayer("Front", "doubler");
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save file" }));
     const first = await lastSaved();
 
     await openFile("round-trip.json", JSON.stringify(first));
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save file" }));
     expect(await lastSaved()).toEqual(first);
   });
 
@@ -936,7 +958,8 @@ describe("the app", () => {
     expect(hoverNote({ kind: "edge", key: "front|nonsense" }, derived)).toBeNull();
   });
 
-  it("reports the volume closure as exact", () => {
+  it("reports the volume closure as exact, to whoever asks with ?debug", () => {
+    debugOn();
     const { container } = render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "Cut list & sheets" }));
     const totals = container.querySelector(".totals");

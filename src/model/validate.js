@@ -41,7 +41,7 @@ export function validate(sol, edges, asked = edges) {
 
   if (!sol.closureExact) {
     msgs.push({ level: "error",
-      text: `Volume closure error ${sol.closure.toExponential(3)} mm³ — this is a bug, not user input.` });
+      text: `Volume closure error ${sol.closure.toExponential(3)} mm³ — please report this.` });
   }
   return msgs;
 }
