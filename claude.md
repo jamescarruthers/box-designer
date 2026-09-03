@@ -4137,3 +4137,29 @@ under six chips said less than the chips did.
 Click-to-inspect, the right-click menu with its "why not" text, the hover
 line, the three-column cut list, the drawing sheet, the folded prominence
 summary and "Runs past all five". These were the right shape.
+
+
+---
+
+## §61 The orientation cube
+
+A box seen from an odd angle is six planes of one colour, and which of them is
+the front is not a thing the eye can tell. The presets say "front" and "right"
+in words; the cube says it on the box.
+
+A small cube in the bottom right of the 3D view, drawn into the same canvas
+after the box from its own scene and orthographic camera, clipped to its
+corner with a scissor. Its camera copies the orbit's azimuth and polar angle
+and nothing else, so it turns as the box turns and never zooms or pans away.
+Each face carries its name — FRONT, BACK, LEFT, RIGHT, TOP, BOTTOM — as a
+canvas texture in the app's own type. Initials were considered and rejected:
+Back and Bottom share one.
+
+Faces sit in `BoxGeometry`'s material order (+x, −x, +y, −y, +z, −z), which in
+three's frame (§4: x right, y up, z towards the viewer) is right, left, top,
+bottom, front, back. Clicking a face turns the box to look at it, by the same
+spherical frame the presets use; the top and bottom come square-on with the
+front at the foot of the screen, as the plan is drawn on the sheet. Over the
+cube the pointer is a pointer and nothing on the box is hovered.
+
+The kernel's note moved to the top right to leave the corner free.

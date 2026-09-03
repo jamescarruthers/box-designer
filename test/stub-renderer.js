@@ -7,6 +7,13 @@
  * stub that only accepts orders passes every test until the day the code asks
  * one question, and then fails every test at once.
  */
+// §61 jsdom has no 2D canvas either, and says so on the console every time
+// one is asked for. The orientation cube asks six times per mount. Answered
+// with null here, quietly, which the cube takes as "no text, plain faces".
+if (typeof HTMLCanvasElement !== "undefined") {
+  HTMLCanvasElement.prototype.getContext = () => null;
+}
+
 export class StubRenderer {
   static renders = 0;
 
@@ -29,4 +36,10 @@ export class StubRenderer {
 
   render() { StubRenderer.renders++; }
   dispose() {}
+
+  /** §61 The corner pass the orientation cube is drawn in. */
+  setScissorTest() {}
+  setScissor() {}
+  setViewport() {}
+  clearDepth() {}
 }

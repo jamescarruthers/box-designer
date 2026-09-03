@@ -26,6 +26,7 @@ const HOVER_LIFT = 0.34;
 const HINT = "#9fb3c8";
 import { lineWidthFor, nearFar, sceneRadius } from "../three/lines.js";
 import { makeCamera, frameParallel, parallelPlanes, panBy } from "../three/camera.js";
+import { makeGizmo, gizmoRect, gizmoNdc, faceOfNormal, viewOf } from "../three/gizmo.js";
 
 /** §4 The two depth comparisons the edge passes use. */
 const DEPTH_FUNC = { "less-equal": THREE.LessEqualDepth, greater: THREE.GreaterDepth };
@@ -126,6 +127,10 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
     const root = new THREE.Group();
     scene.add(root);
 
+    // §61 The orientation cube, in its own scene with its own camera, drawn
+    // into a corner of the same canvas after the box.
+    const gizmo = makeGizmo();
+
     const state = { renderer, scene, camera, target, sph, root, picks: [], raf: 0, needs: true,
       // §58 The edges: invisible proxies to hit, and the key under the
       // pointer. Kept on `state` so the pointer handlers, which are installed
@@ -135,7 +140,9 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
       faceHover: null, hovered: null, panelMats: [], onHover: null,
       // §17 Every fat-line material in the scene. They are sized in the shader
       // from a resolution they are told, so a resize has to tell them.
-      lineMaterials: [], radius: 1 };
+      lineMaterials: [], radius: 1,
+      // §61 The cube and where it is drawn, in CSS pixels from the bottom left.
+      gizmo, gizmoRect: gizmoRect(1, 1) };
     gl.current = state;
 
     const place = () => {
@@ -186,6 +193,22 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
       }
       place();
       renderer.render(scene, state.camera);
+
+      // §61 The cube, over the box in the bottom right. Its camera copies the
+      // orbit's angles and nothing else, so it turns as the box turns and never
+      // zooms or pans away.
+      const rect = gizmoRect(w, h);
+      state.gizmoRect = rect;
+      gizmo.place(sph.az, sph.pol);
+      renderer.autoClear = false;
+      renderer.setScissorTest(true);
+      renderer.setViewport(rect.x, rect.y, rect.w, rect.h);
+      renderer.setScissor(rect.x, rect.y, rect.w, rect.h);
+      renderer.clearDepth();
+      renderer.render(gizmo.scene, gizmo.camera);
+      renderer.setScissorTest(false);
+      renderer.setViewport(0, 0, w, h);
+      renderer.autoClear = true;
     };
     state.render = render;
     const invalidate = () => { if (!state.raf) state.raf = requestAnimationFrame(render); };
@@ -208,6 +231,16 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
         ((e.clientX - r.left) / r.width) * 2 - 1,
         -((e.clientY - r.top) / r.height) * 2 + 1), state.camera);
       return ray;
+    };
+    /** §61 The face of the orientation cube under the pointer, or null. */
+    const gizmoFaceAt = (e) => {
+      const r = el.getBoundingClientRect();
+      const ndc = gizmoNdc(e.clientX - r.left, e.clientY - r.top, state.gizmoRect, r.height);
+      if (!ndc) return null;
+      ray.setFromCamera(new THREE.Vector2(ndc[0], ndc[1]), gizmo.camera);
+      const hit = ray.intersectObject(gizmo.cube, false)[0];
+      if (!hit?.face) return null;
+      return faceOfNormal([hit.face.normal.x, hit.face.normal.y, hit.face.normal.z]);
     };
     /** The edge the pointer is over, whatever any tool thinks of it. */
     const edgeAt = (e) => {
@@ -243,8 +276,12 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
         // §59 Highlight what is under the pointer — which is what a right-click
         // would act on, edge before face. An edge that never shows itself is a
         // menu nobody knows to open.
-        const key = edgeAt(e);
-        const index = key == null ? panelAt(e) : null;
+        // §61 Over the cube, nothing on the box is hovered and the cursor
+        // says a click will do something.
+        const onGizmo = gizmoFaceAt(e) != null;
+        el.style.cursor = onGizmo ? "pointer" : "";
+        const key = onGizmo ? null : edgeAt(e);
+        const index = key == null && !onGizmo ? panelAt(e) : null;
         if (key !== state.edgeHover) { state.edgeHover = key; state.drawEdgeHint?.(); invalidate(); }
         if (index !== state.faceHover) { state.faceHover = index; state.paintHover?.(); invalidate(); }
         state.onHover?.(key ? { kind: "edge", key } : index != null ? { kind: "panel", index } : null);
@@ -276,6 +313,15 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
     // business (§58): the armed edge tool that used to take the click here is
     // gone, along with the mode it put the pointer into.
     const pick = (e) => {
+      // §61 A click on the cube turns the box to that face and selects nothing.
+      const face = gizmoFaceAt(e);
+      if (face) {
+        const [az, pol] = viewOf(face, { polarMin: POLAR_MIN, polarMax: POLAR_MAX });
+        sph.az = az;
+        sph.pol = pol;
+        invalidate();
+        return;
+      }
       const hit = rayAt(e).intersectObjects(state.picks, false)[0];
       state.onSelect?.(hit ? hit.object.userData.index : null);
     };
@@ -319,6 +365,7 @@ export default function Viewport({ derived, style, colourByFace, explode, parall
       el.removeEventListener("pointercancel", up);
       el.removeEventListener("wheel", wheel);
       cancelAnimationFrame(state.raf);
+      gizmo.dispose();
       renderer.dispose();
       el.removeChild(renderer.domElement);
       gl.current = null;
