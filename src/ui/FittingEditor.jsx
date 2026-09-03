@@ -109,6 +109,12 @@ export function FittingEditor({ fitting: f, index, edit, remove, derived, onFace
   const mostFlare = flaredAs ? largestFlare(flaredAs, panelThickness(inner)) : 0;
   // §20 Switching units moves the number, not the fitting.
   const setUnits = (units) => edit({ units, at: convertAt(f, panel, units) });
+  // §62 A position past the edge of the panel is not a position on it. The
+  // field is bounded by the panel along each axis — the whole of it, since the
+  // clearance a fitting needs depends on numbers that are still being typed
+  // and the message says when it runs off.
+  const bound = (axis) => (ratio ? [0, 100] : panel ? panel.box[axis] : [0, undefined]);
+  const [pLo, pHi] = bound(p), [qLo, qHi] = bound(q);
   return (
     <div className="fitting">
       <div className="fitting-head">
@@ -131,8 +137,10 @@ export function FittingEditor({ fitting: f, index, edit, remove, derived, onFace
       </div>
       <div className="fitting-grid">
         <Num label={`At ${p}`} aria={`Fitting ${n} at ${p}`} suffix={ratio ? "%" : "mm"}
+          min={pLo} max={pHi}
           value={round(f.at.a)} onChange={(v) => edit({ at: { ...f.at, a: v } })} />
         <Num label={`At ${q}`} aria={`Fitting ${n} at ${q}`} suffix={ratio ? "%" : "mm"}
+          min={qLo} max={qHi}
           value={round(f.at.b)} onChange={(v) => edit({ at: { ...f.at, b: v } })} />
         {f.type === "driver" ? (
           <>

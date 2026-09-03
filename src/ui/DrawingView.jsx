@@ -64,8 +64,9 @@ export default function DrawingView({ derived, design, set, debug = false }) {
               onChange={(e) => set(setIn(design, ["drawing", "section"], e.target.checked))} />
             <span>Section A–A</span>
           </label>
+          {/* §62 Within the box: a plane past the end of it cuts nothing. */}
           <Num label="Section at x" suffix="mm" step={1} value={Math.round(derived.sectionAt * 10) / 10}
-            disabled={!drawing.section}
+            disabled={!drawing.section} max={derived.sol.E.x}
             onChange={(v) => set({ ...design, sectionAt: v })} />
           <button type="button" className="linkish" disabled={!drawing.section}
             onClick={() => set({ ...design, sectionAt: null })}>

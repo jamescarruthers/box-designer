@@ -24,7 +24,8 @@ import App, { solidNote } from "../src/ui/App.jsx";
 import { initialHistory, push, undo, redo, HISTORY_LIMIT } from "../src/ui/history.js";
 import { isDebug } from "../src/ui/debug.js";
 import { engineNote } from "../src/ui/DrawingView.jsx";
-import { DEFAULT_DESIGN } from "../src/ui/design.js";
+import { DEFAULT_DESIGN, derive, rebateOffer, setLayerOrder, setEdgeTreatment, setRebateSides } from "../src/ui/design.js";
+import { PROMINENCE_PRESETS } from "../src/model/constants.js";
 
 beforeAll(() => {
   global.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
@@ -304,5 +305,86 @@ describe("§60 help, folds and the fitting editor", () => {
     for (const note of container.querySelectorAll(".group > .note")) {
       expect(words(note), note.textContent).toBeLessThanOrEqual(24);
     }
+  });
+});
+
+describe("§62 a control does not offer what the model would refuse", () => {
+  const sidesWrap = PROMINENCE_PRESETS.find((p) => p.id === "sides").order;
+  const wrapped = setLayerOrder(DEFAULT_DESIGN, "shell", sidesWrap);
+
+  it("offers no side of a panel that runs past its neighbours", () => {
+    const offer = rebateOffer(DEFAULT_DESIGN, derive(DEFAULT_DESIGN), "shell", "front");
+    for (const side of ["left", "right", "top", "bottom"]) {
+      expect(offer.sides[side].ok).toBe(false);
+      expect(offer.sides[side].why).toMatch(/runs past/);
+    }
+    expect(offer.maxDepth).toBeNull();
+  });
+
+  it("offers every side of a panel let in by the ones around it, to a depth shy of them", () => {
+    const offer = rebateOffer(wrapped, derive(wrapped), "shell", "front");
+    for (const side of ["left", "right", "top", "bottom"]) expect(offer.sides[side].ok).toBe(true);
+    // The carcass is 18 mm, so the deepest groove is 17.5.
+    expect(offer.maxDepth).toBe(17.5);
+  });
+
+  it("closes a side whose joint is mitred, and says so", () => {
+    // Plinth & lid: the front sits inside all four of its neighbours, and its
+    // joint with the left runs the same length on both, so it can be mitred.
+    const plinth = setLayerOrder(DEFAULT_DESIGN, "shell", PROMINENCE_PRESETS.find((p) => p.id === "plinth").order);
+    const mitred = setEdgeTreatment(plinth, "front|left", "mitre");
+    expect(derive(mitred).requestedMitres["front|left"]).toBeTruthy();
+    const offer = rebateOffer(mitred, derive(mitred), "shell", "front");
+    expect(offer.sides.left.ok).toBe(false);
+    expect(offer.sides.left.why).toMatch(/mitred/);
+    expect(offer.sides.right.ok).toBe(true);
+  });
+
+  it("keeps a chosen side on when the box changes under it, with the reason", () => {
+    const chosen = setRebateSides(wrapped, "front", { left: true });
+    const back = setLayerOrder(chosen, "shell", PROMINENCE_PRESETS[0].order);
+    const offer = rebateOffer(back, derive(back), "shell", "front");
+    expect(offer.sides.left.on).toBe(true);
+    expect(offer.sides.left.ok).toBe(false);
+    expect(offer.sides.left.why).toMatch(/runs past/);
+  });
+
+  it("disables the buttons in the inspector, and All chooses only what is open", () => {
+    render(<App />);
+    const preset = [...document.querySelectorAll("label.field")]
+      .find((l) => l.textContent.startsWith("Preset")).querySelector("select");
+    fireEvent.change(preset, { target: { value: "plinth" } });
+    open("Front carcass");
+    // Mitre the left joint from the inspector: that side closes.
+    fireEvent.change(screen.getByLabelText("Front left edge treatment"), { target: { value: "mitre" } });
+    expect(screen.getByLabelText("Front rebate left").disabled).toBe(true);
+    expect(screen.getByLabelText("Front rebate right").disabled).toBe(false);
+    // §43 And the top and bottom, since growing the front that way would
+    // stretch the mitre. The reasons are on the sheet, one line each.
+    expect(screen.getByLabelText("Front rebate top").disabled).toBe(true);
+    expect(screen.getByLabelText("Front rebate top").title).toMatch(/mitre longer/);
+    fireEvent.click(screen.getByLabelText("Front rebate all sides"));
+    expect(document.querySelector(".rebate .note").textContent).toMatch(/Let in 6 mm on right\./);
+    // No warning: nothing was asked for that could not be done.
+    expect(document.querySelector(".messages .warning")).toBeNull();
+    // And the depth cannot be typed through the board beside it.
+    fireEvent.change(screen.getByLabelText("Front rebate depth"), { target: { value: "40" } });
+    expect(screen.getByLabelText("Front rebate depth").value).toBe("17.5");
+  });
+
+  it("bounds the section plane to the box", () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Drawing" }));
+    fireEvent.change(screen.getByLabelText("Section at x"), { target: { value: "900" } });
+    expect(screen.getByLabelText("Section at x").value).toBe("218");
+  });
+
+  it("bounds a fitting's position to its panel", () => {
+    render(<App />);
+    open("Front carcass");
+    fireEvent.change(screen.getByLabelText("Add a fitting to the front"), { target: { value: "driver" } });
+    fireEvent.change(screen.getByLabelText("Fitting 1 at x"), { target: { value: "900" } });
+    expect(screen.getByLabelText("Fitting 1 at x").value).toBe("218");
+    expect(screen.getByLabelText("Fitting 1 at x").getAttribute("min")).toBe("0");
   });
 });
