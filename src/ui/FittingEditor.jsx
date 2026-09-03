@@ -143,46 +143,9 @@ export function FittingEditor({ fitting: f, index, edit, remove, derived, onFace
                 somebody can correct instead of a gap they have to guess at. */}
             <Num label="Frame ⌀" aria={`Fitting ${n} outer`} suffix="mm" step={0.5}
               value={round(driverOuter(f))} onChange={(v) => edit({ outer: v })} />
-            {/* §31 The frame's own plate, which a datasheet's depth is measured
-                from the front of. */}
-            <Num label="Frame thick" aria={`Fitting ${n} thick`} suffix="mm" step={0.5}
-              value={round(driverThick(f))} onChange={(v) => edit({ thick: v })} />
             <Num label="PCD" aria={`Fitting ${n} pcd`} suffix="mm" step={0.5} value={f.pcd} onChange={(v) => edit({ pcd: v })} />
             <Num label="Bolts" aria={`Fitting ${n} bolts`} value={f.bolts} min={2} onChange={(v) => edit({ bolts: Math.max(2, Math.round(v)) })} />
             <Num label="Bolt ⌀" aria={`Fitting ${n} boltHole`} suffix="mm" step={0.5} value={f.boltHole} onChange={(v) => edit({ boltHole: v })} />
-            {/* §36 How deep the mounting holes are drilled, from the mounting
-                face. Offered filled in with the depth of a hole that goes
-                right through what §33 lets it through, so a datasheet's screw
-                length is typed over a number; anything shorter is a blind hole
-                for a screw or an insert, and typing the through depth back
-                stores "through" rather than that number, so it stays a through
-                hole if the panel is made thicker. */}
-            <Num label="Bolt deep" aria={`Fitting ${n} boltDeep`} suffix="mm" step={0.5}
-              value={round(boltThrough > 0 ? Math.min(f.boltDeep ?? boltThrough, boltThrough) : (f.boltDeep ?? 0))}
-              max={boltThrough || undefined}
-              onChange={(v) => edit({ boltDeep: v >= boltThrough - 1e-9 ? null : v })} />
-            {/* §24 Behind the baffle. Depth is overall and measured from the
-                mounting face, which is how a datasheet gives it. */}
-            <Num label="Depth" aria={`Fitting ${n} depth`} suffix="mm" step={0.5}
-              value={round(driverDepth(f))} onChange={(v) => edit({ depth: v })} />
-            <Num label="Magnet ⌀" aria={`Fitting ${n} magnet`} suffix="mm" step={0.5}
-              value={round(driverMagnet(f))} onChange={(v) => edit({ magnet: v })} />
-            <Num label="Magnet deep" aria={`Fitting ${n} magnetDepth`} suffix="mm" step={0.5}
-              value={round(driverMagnetDepth(f))} onChange={(v) => edit({ magnetDepth: v })} />
-            {/* §27 Surround to dust cap. Deep on a pro woofer, shallow on a
-                shielded full-range — a proportion of the cutout is a fair
-                guess and never the number. */}
-            {/* §31 What the hole is cut to clear. Bigger than the cutout is a
-                driver that does not go in, and the messages say so rather than
-                the drawing quietly squeezing it through. */}
-            <Num label="Basket ⌀" aria={`Fitting ${n} basket`} suffix="mm" step={0.5}
-              value={round(driverBasket(f))} onChange={(v) => edit({ basket: v })} />
-            <Num label="Cone deep" aria={`Fitting ${n} coneDepth`} suffix="mm" step={0.5}
-              value={round(driverCone(f))} onChange={(v) => edit({ coneDepth: v })} />
-            {/* §31 Where the cone ends: it stops at the coil former, and the
-                dust cap covers the junction. */}
-            <Num label="Voice coil ⌀" aria={`Fitting ${n} vc`} suffix="mm" step={0.5}
-              value={round(driverVoiceCoil(f))} onChange={(v) => edit({ vc: v })} />
             {/* §28 The volume this driver takes out of the box by standing
                 in it — the number that makes the net volume real. Deliberately
                 not labelled Vd: that is Sd × Xmax, the air the cone sweeps
@@ -194,15 +157,6 @@ export function FittingEditor({ fitting: f, index, edit, remove, derived, onFace
               suffix="l" step={0.01}
               value={Math.round(driverDisplacement(f) / 1e4) / 100}
               onChange={(v) => edit({ displaces: v * 1e6 })} />
-            {/* §29 The back of the hole, where the cone's rear wave leaves.
-                Square-edged it is a short tube of baffle in the way of it; the
-                radius is capped at what that panel can take and at the bolt
-                circle, so what the control offers is always a shape the kernel
-                will cut. */}
-            <Num label="Flare R" aria={`Fitting ${n} flare`} suffix="mm" step={0.5}
-              value={round(flare.radius)} max={mostFlare}
-              disabled={flare.type === "none"}
-              onChange={(v) => edit({ flare: { ...flare, radius: v } })} />
           </>
         ) : (
           <>
@@ -233,6 +187,53 @@ export function FittingEditor({ fitting: f, index, edit, remove, derived, onFace
           ) : null}
         </div>
       ) : null}
+      {/* §60 The rest of a driver's numbers: what is behind the baffle and how
+          it is held on. Most drivers are placed with the six above; these are
+          folded until they are wanted, and stay in the document either way. */}
+      {f.type === "driver" ? (
+        <details className="fitting-more">
+          <summary>Mounting and behind the baffle</summary>
+          <div className="fitting-grid">
+            {/* §31 The frame's own plate, which a datasheet's depth is measured
+                from the front of. */}
+            <Num label="Frame thick" aria={`Fitting ${n} thick`} suffix="mm" step={0.5}
+              value={round(driverThick(f))} onChange={(v) => edit({ thick: v })} />
+            {/* §36 How deep the mounting holes are drilled, from the mounting
+                face. Offered filled in with the depth of a hole that goes
+                right through what §33 lets it through, so a datasheet's screw
+                length is typed over a number; anything shorter is a blind hole
+                for a screw or an insert, and typing the through depth back
+                stores "through" rather than that number, so it stays a through
+                hole if the panel is made thicker. */}
+            <Num label="Bolt deep" aria={`Fitting ${n} boltDeep`} suffix="mm" step={0.5}
+              value={round(boltThrough > 0 ? Math.min(f.boltDeep ?? boltThrough, boltThrough) : (f.boltDeep ?? 0))}
+              max={boltThrough || undefined}
+              onChange={(v) => edit({ boltDeep: v >= boltThrough - 1e-9 ? null : v })} />
+            {/* §24 Behind the baffle. Depth is overall and measured from the
+                mounting face, which is how a datasheet gives it. */}
+            <Num label="Depth" aria={`Fitting ${n} depth`} suffix="mm" step={0.5}
+              value={round(driverDepth(f))} onChange={(v) => edit({ depth: v })} />
+            <Num label="Magnet ⌀" aria={`Fitting ${n} magnet`} suffix="mm" step={0.5}
+              value={round(driverMagnet(f))} onChange={(v) => edit({ magnet: v })} />
+            <Num label="Magnet deep" aria={`Fitting ${n} magnetDepth`} suffix="mm" step={0.5}
+              value={round(driverMagnetDepth(f))} onChange={(v) => edit({ magnetDepth: v })} />
+            {/* §31 What the hole is cut to clear. Bigger than the cutout is a
+                driver that does not go in, and the messages say so rather than
+                the drawing quietly squeezing it through. */}
+            <Num label="Basket ⌀" aria={`Fitting ${n} basket`} suffix="mm" step={0.5}
+              value={round(driverBasket(f))} onChange={(v) => edit({ basket: v })} />
+            {/* §27 Surround to dust cap. Deep on a pro woofer, shallow on a
+                shielded full-range — a proportion of the cutout is a fair
+                guess and never the number. */}
+            <Num label="Cone deep" aria={`Fitting ${n} coneDepth`} suffix="mm" step={0.5}
+              value={round(driverCone(f))} onChange={(v) => edit({ coneDepth: v })} />
+            {/* §31 Where the cone ends: it stops at the coil former, and the
+                dust cap covers the junction. */}
+            <Num label="Voice coil ⌀" aria={`Fitting ${n} vc`} suffix="mm" step={0.5}
+              value={round(driverVoiceCoil(f))} onChange={(v) => edit({ vc: v })} />
+          </div>
+        </details>
+      ) : null}
       {f.type === "driver" ? (
         <div className="fitting-flare">
           <span className="flare-label">Inside the cutout</span>
@@ -244,6 +245,14 @@ export function FittingEditor({ fitting: f, index, edit, remove, derived, onFace
               radius: flare.radius > 0 ? Math.min(flare.radius, mostFlare) : Math.min(6, mostFlare),
             } })}
             options={[{ id: "none", name: "Square" }, { id: "chamfer", name: "Chamfer" }, { id: "fillet", name: "Fillet" }]} />
+          {/* §29 The back of the hole, where the cone's rear wave leaves.
+              Square-edged it is a short tube of baffle in the way of it; the
+              radius is capped at what that panel can take, so what the
+              control offers is always a shape the kernel will cut. */}
+          <Num label="Flare R" aria={`Fitting ${n} flare`} suffix="mm" step={0.5}
+            value={round(flare.radius)} max={mostFlare}
+            disabled={flare.type === "none"}
+            onChange={(v) => edit({ flare: { ...flare, radius: v } })} />
         </div>
       ) : null}
       {/* §34 Which of the two limits applies is worth saying, because it is

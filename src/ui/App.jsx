@@ -1,32 +1,27 @@
 import React, { useMemo, useState, useRef, useCallback, useEffect, Suspense, lazy } from "react";
 import Controls from "./Controls.jsx";
-import Viewport, { RENDER_STYLES, VIEW_PRESETS } from "./Viewport.jsx";
+import Viewport, { VIEW_PRESETS } from "./Viewport.jsx";
+import ViewMenu from "./ViewMenu.jsx";
 import CutListView from "./CutListView.jsx";
 import Inspector from "./Inspector.jsx";
 import DrawingView from "./DrawingView.jsx";
+import Help from "./Help.jsx";
 // §19 Loaded when the mode is opened. Physical materials and the environment
 // prefilter pull in a good deal of three that the other modes never touch, and
 // the app has to open on a slow connection.
 const RenderView = lazy(() => import("./RenderView.jsx"));
-import { DEFAULT_DESIGN, derive, setEdgeTreatment } from "./design.js";
+import { DEFAULT_DESIGN, derive } from "./design.js";
 import ContextMenu from "./ContextMenu.jsx";
 import { contextMenu } from "./menu.js";
 import { loadDesign, saveDesign, forgetDesign } from "./storage.js";
 import { designFileText, designFileName, readDesignFile, openedNote, readFile, download,
   FILE_ACCEPT, FILE_TYPE } from "./file.js";
 import { useKernelSolids } from "./useKernelSolids.js";
+import { useHistory } from "./history.js";
+import { isDebug } from "./debug.js";
 import { kernelProgress } from "../occt/kernel.js";
 import { fmt } from "../cutlist/cutlist.js";
 import { FACE_LABEL } from "../model/constants.js";
-
-/** §15 The treatments a click can apply. Mitre is here too: without it there
- *  would be no way to reach one once the list shows only what has been set. */
-export const EDGE_TOOLS = [
-  { id: "none", name: "Square" },
-  { id: "chamfer", name: "Chamfer" },
-  { id: "fillet", name: "Fillet" },
-  { id: "mitre", name: "Mitre" },
-];
 
 const MODES = [
   { id: "view", name: "3D view" },
@@ -35,13 +30,20 @@ const MODES = [
   { id: "drawing", name: "Drawing" },
 ];
 
+/** Whether a key press landed in something that edits text of its own. */
+const inField = (el) => el instanceof HTMLElement
+  && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable);
+
 export default function App() {
-  // §13 Opened from storage, saved on every change. Read once, lazily, so the
-  // parse happens before the first render rather than as a second one.
-  const [design, setDesign] = useState(loadDesign);
+  // §13 Opened from storage, saved on every change. §60 Kept as a history, so
+  // a change is a step that can be taken back. Read once, lazily, so the parse
+  // happens before the first render rather than as a second one.
+  const [design, setDesign, history] = useHistory(loadDesign);
   const [mode, setMode] = useState("view");
   const [style, setStyle] = useState("shaded-edges");
-  const [colourByFace, setColourByFace] = useState(true);
+  // §60 The box is drawn in what it is made of. Face colours tell the panels
+  // apart, which is a thing to switch on when it is wanted.
+  const [colourByFace, setColourByFace] = useState(false);
   const [explode, setExplode] = useState(0);
   // §51 One box, one way of looking at it: the 3D view and the rendered view
   // share how far it is pulled apart and whether it is drawn in perspective.
@@ -67,10 +69,9 @@ export default function App() {
   // to be the default. The kernel is not a second opinion any more; it is the
   // one that models what is being made, and the ring stacks are what is on
   // screen while it loads and what is left if it cannot.
+  //
+  // §60 The switch is a developer's, and is shown only with `?debug`.
   const [solidEngine, setSolidEngine] = useState("kernel");
-  // §15 The armed edge tool, or null for none. Not part of the design: it is
-  // what the pointer is for at this moment, not something about the box.
-  const [edgeTool, setEdgeTool] = useState(null);
   // A stall terminates the worker, so trying again is a real thing to do rather
   // than a hopeful one — and switching the engine off and on again to get it is
   // a trick you have to know.
@@ -87,7 +88,12 @@ export default function App() {
   // The panel half feeds the `hovered` the cut list already shares, so hovering
   // a board in the box lights its row in the list and the other way about.
   const [hoverTarget, setHoverTarget] = useState(null);
+  // §60 Reset asks before it wipes the box, and help is a page rather than a
+  // paragraph under every field.
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [help, setHelp] = useState(false);
   const fileInput = useRef(null);
+  const debug = isDebug();
 
   const derived = useMemo(() => {
     try { return { ok: true, ...derive(design) }; }
@@ -97,6 +103,22 @@ export default function App() {
   // Saved after the render that used it, so a design that cannot be solved is
   // still kept — you can reload and carry on fixing it rather than losing it.
   useEffect(() => { saveDesign(design); }, [design]);
+
+  // §60 Undo and redo from the keyboard. Not while a field has the focus: the
+  // field's own undo is the one wanted there, and it already writes back into
+  // the design as it goes.
+  useEffect(() => {
+    const key = (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      if (inField(e.target)) return;
+      const k = e.key.toLowerCase();
+      if (k === "z" && e.shiftKey) { e.preventDefault(); history.redo(); }
+      else if (k === "z") { e.preventDefault(); history.undo(); }
+      else if (k === "y") { e.preventDefault(); history.redo(); }
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [history]);
 
   // §52 Out to a file, and back in from one. The design in the file is the
   // design in storage: opening one is the same act as reloading the tab, so it
@@ -111,13 +133,21 @@ export default function App() {
     if (!file) return;
     try {
       const read = readDesignFile(await readFile(file));
-      setDesign(read.design);
+      setDesign(read.design, { step: true });
       setSelected(null);
       setFileNote({ ok: true, text: openedNote(file.name, read) });
     } catch (e) {
       setFileNote({ ok: false, text: e?.message ?? String(e) });
     }
-  }, []);
+  }, [setDesign]);
+
+  // Forgets as well as resets: a design kept between visits that you cannot
+  // get rid of is a trap, not a convenience. §60 Asked first, and undoable
+  // after — the history still holds the box that was there.
+  const reset = useCallback(() => {
+    forgetDesign(); setDesign(DEFAULT_DESIGN, { step: true });
+    setSelected(null); setFileNote(null); setConfirmReset(false);
+  }, [setDesign]);
 
   // §58 A right-click on the box. A miss closes whatever was open rather than
   // leaving a menu hanging over nothing.
@@ -133,7 +163,7 @@ export default function App() {
     setMenu(null);
     if (item.inspect != null) { setSelected(item.inspect); return; }
     if (item.apply) setDesign((d) => item.apply(d));
-  }, []);
+  }, [setDesign]);
 
   const onHover = useCallback((t) => {
     setHoverTarget(t);
@@ -141,9 +171,6 @@ export default function App() {
   }, []);
 
   const onSelect = useCallback((i) => setSelected((cur) => (cur === i ? null : i)), []);
-  const onEdgePick = useCallback((key) => {
-    setDesign((d) => setEdgeTreatment(d, key, edgeTool, d.edge.radius));
-  }, [edgeTool]);
   const kernelSolids = useKernelSolids(derived.ok ? derived : null,
     derived.ok && solidEngine === "kernel", attempt);
 
@@ -154,6 +181,7 @@ export default function App() {
   const errors = derived.messages.filter((m) => m.level === "error");
   const warnings = derived.messages.filter((m) => m.level === "warning");
   const selectedRow = derived.rows.find((r) => r.panelIndex === selected);
+  const solidState = solidEngine === "kernel" ? solidNote(kernelSolids, debug) : null;
 
   return (
     // §21 Three columns while a panel is selected: the project on the left, the
@@ -163,7 +191,11 @@ export default function App() {
     <div className={selectedRow ? "app inspecting" : "app"}>
       <aside className="side">
         <header className="brand">
-          <h1>Sheet Box Designer</h1>
+          <div className="brand-row">
+            <h1>Sheet Box Designer</h1>
+            <button type="button" className="help-button" aria-label="Help" title="How the box is made"
+              onClick={() => setHelp(true)}>?</button>
+          </div>
           <input className="title-input" value={design.title} aria-label="Drawing title"
             onChange={(e) => setDesign({ ...design, title: e.target.value.toUpperCase() })} />
         </header>
@@ -174,18 +206,35 @@ export default function App() {
         <Controls design={design} set={setDesign} derived={derived} colourByFace={colourByFace}
           onInspect={setSelected} />
         <footer className="side-foot">
-          {/* Forgets as well as resets: a design kept between visits that you
-              cannot get rid of is a trap, not a convenience. */}
-          <button type="button" onClick={() => {
-            forgetDesign(); setDesign(DEFAULT_DESIGN); setSelected(null); setFileNote(null);
-          }}>Reset</button>
-          {/* §52 The design as a file: the way to keep two boxes, to send one to
-              somebody, or to put one in a repository beside its drawings. The
-              input is hidden and driven by the button, because a bare file input
-              is the one control in a browser nobody can style and everybody
-              recognises as an afterthought. */}
-          <button type="button" onClick={() => fileInput.current?.click()}>Open…</button>
-          <button type="button" onClick={saveToDisk}>Save</button>
+          <div className="side-foot-row">
+            <button type="button" onClick={history.undo} disabled={!history.canUndo}
+              title="Ctrl+Z">Undo</button>
+            <button type="button" onClick={history.redo} disabled={!history.canRedo}
+              title="Ctrl+Shift+Z">Redo</button>
+            <span className="spacer" />
+            {/* §52 The design as a file: the way to keep two boxes, to send one
+                to somebody, or to put one in a repository beside its drawings.
+                The input is hidden and driven by the button, because a bare
+                file input is the one control in a browser nobody can style and
+                everybody recognises as an afterthought. §60 Named as files,
+                because the box is also saved as you go. */}
+            <button type="button" onClick={() => fileInput.current?.click()}>Open file…</button>
+            <button type="button" onClick={saveToDisk}>Save file</button>
+          </div>
+          <div className="side-foot-row">
+            {confirmReset ? (
+              <span className="reset-confirm" role="alert">
+                Start again from the default box?
+                <button type="button" onClick={reset}>Reset</button>
+                <button type="button" onClick={() => setConfirmReset(false)}>Keep</button>
+              </span>
+            ) : (
+              <>
+                <button type="button" onClick={() => setConfirmReset(true)}>Reset…</button>
+                <span className="autosave">Saved in this browser as you go</span>
+              </>
+            )}
+          </div>
           <input ref={fileInput} type="file" accept={FILE_ACCEPT} className="hidden-file"
             aria-label="Open a design file"
             onChange={(e) => { openFromDisk(e.target.files?.[0]); e.target.value = ""; }} />
@@ -216,54 +265,17 @@ export default function App() {
               parallel={parallel}
               selected={selected} hovered={hovered} onSelect={onSelect} hidden={mode !== "view"} camera={camera}
               solids={solidEngine === "kernel" ? kernelSolids.solids : null}
-              edgeTool={edgeTool} onEdgePick={onEdgePick} onContext={onContext}
+              onContext={onContext}
               onHover={onHover} drivers={showDrivers} />
+            {/* §60 Three things: how to look, where from, and how far apart. */}
             <div className="chips">
-              <div className="chip-group">
-                {RENDER_STYLES.map((s) => (
-                  <button key={s.id} type="button" className={style === s.id ? "on" : ""}
-                    onClick={() => setStyle(s.id)}>{s.name}</button>
-                ))}
-              </div>
-              <div className="chip-group">
-                <button type="button" className={colourByFace ? "on" : ""} onClick={() => setColourByFace(true)}>By face</button>
-                <button type="button" className={colourByFace ? "" : "on"} onClick={() => setColourByFace(false)}>Material</button>
-              </div>
-              <div className="chip-group">
-                <button type="button" className={showDrivers ? "on" : ""}
-                  aria-pressed={showDrivers}
-                  onClick={() => setShowDrivers(!showDrivers)}>Drivers</button>
-              </div>
+              <ViewMenu style={style} onStyle={setStyle}
+                colourByFace={colourByFace} onColourByFace={setColourByFace}
+                parallel={parallel} onParallel={setParallel}
+                drivers={showDrivers} onDrivers={setShowDrivers} />
               <div className="chip-group">
                 {Object.keys(VIEW_PRESETS).map((p) => (
                   <button key={p} type="button" onClick={() => setCamera({ preset: p, nonce: Date.now() })}>{p}</button>
-                ))}
-              </div>
-              {/* §51 The same two projections the rendered view offers, and the
-                  same setting behind them. A parallel view is the one to judge
-                  a proportion in: two panels the same size are drawn the same
-                  size, with nothing to allow for. */}
-              <div className="chip-group">
-                <button type="button" className={parallel ? "" : "on"} aria-pressed={!parallel}
-                  onClick={() => setParallel(false)}>Perspective</button>
-                <button type="button" className={parallel ? "on" : ""} aria-pressed={parallel}
-                  onClick={() => setParallel(true)}>Parallel</button>
-              </div>
-              <div className="chip-group">
-                <button type="button" className={solidEngine === "analytic" ? "on" : ""}
-                  onClick={() => setSolidEngine("analytic")}>Analytic</button>
-                <button type="button" className={solidEngine === "kernel" ? "on" : ""}
-                  onClick={() => setSolidEngine("kernel")}>OpenCASCADE</button>
-              </div>
-              {/* §15 Arm a treatment, then click an edge to apply it. Named
-                  apart from the uniform treatment buttons in the controls:
-                  these arm the pointer rather than setting the whole box. */}
-              <div className="chip-group edge-tools">
-                {EDGE_TOOLS.map((t) => (
-                  <button key={t.id} type="button" className={edgeTool === t.id ? "on" : ""}
-                    aria-label={`${t.name} an edge`}
-                    title={`${t.name}: click an edge to apply`}
-                    onClick={() => setEdgeTool(edgeTool === t.id ? null : t.id)}>{t.name}</button>
                 ))}
               </div>
               <div className="chip-group explode">
@@ -272,17 +284,18 @@ export default function App() {
                   onChange={(e) => setExplode(Number(e.target.value))} />
                 <output>{explode}</output>
               </div>
+              {debug ? (
+                <div className="chip-group">
+                  <button type="button" className={solidEngine === "analytic" ? "on" : ""}
+                    onClick={() => setSolidEngine("analytic")}>Analytic</button>
+                  <button type="button" className={solidEngine === "kernel" ? "on" : ""}
+                    onClick={() => setSolidEngine("kernel")}>OpenCASCADE</button>
+                </div>
+              ) : null}
             </div>
-            {edgeTool ? (
-              <div className="edge-arm">
-                {EDGE_TOOLS.find((t) => t.id === edgeTool).name} — click an edge
-                {edgeTool === "none" || edgeTool === "mitre" ? "" : ` at R${fmt(design.edge.radius)}`}
-                <button type="button" className="linkish" onClick={() => setEdgeTool(null)}>done</button>
-              </div>
-            ) : null}
-            {solidEngine === "kernel" ? (
+            {solidState ? (
               <div className="solid-state">
-                {solidNote(kernelSolids)}
+                {solidState}
                 {kernelSolids.status === "failed" ? (
                   <button type="button" className="linkish"
                     onClick={() => setAttempt((n) => n + 1)}>Try again</button>
@@ -304,8 +317,9 @@ export default function App() {
 
           {mode === "cuts" ? (
             <div className="pane pane-cuts">
-              <CutListView derived={derived} title={design.title} colourByFace={colourByFace}
-                selected={selected} hovered={hovered} onSelect={onSelect} onHover={setHovered} />
+              <CutListView derived={derived} design={design} set={setDesign} colourByFace={colourByFace}
+                selected={selected} hovered={hovered} onSelect={onSelect} onHover={setHovered}
+                debug={debug} />
             </div>
           ) : null}
 
@@ -323,7 +337,9 @@ export default function App() {
           ) : null}
 
           {mode === "drawing" ? (
-            <div className="pane pane-drawing"><DrawingView derived={derived} design={design} /></div>
+            <div className="pane pane-drawing">
+              <DrawingView derived={derived} design={design} set={setDesign} debug={debug} />
+            </div>
           ) : null}
         </div>
 
@@ -343,6 +359,8 @@ export default function App() {
         <Inspector design={design} set={setDesign} derived={derived} row={selectedRow}
           colourByFace={colourByFace} onSelect={setSelected} onClose={() => setSelected(null)} />
       ) : null}
+
+      {help ? <Help onClose={() => setHelp(false)} /> : null}
 
       {/* §58 Last in the tree, so it is over everything without a z-index race. */}
       {menu ? (
@@ -372,30 +390,39 @@ export function hoverNote(target, derived) {
   return null;
 }
 
-function solidNote(k) {
+/**
+ * What to say about the kernel, if anything.
+ *
+ * §60 Three states are the user's: it is still building, it failed, or a panel
+ * would not cut and is drawn from the ring stack instead. Ready is nothing to
+ * say. With `?debug` the old line is back — which engine, how many triangles,
+ * how long, and whether it ran threaded, which is the answer to why a Pages
+ * deployment is slower than a local one: GitHub Pages cannot send COOP and
+ * COEP, so the service worker is the only thing supplying them and it can
+ * quietly fail.
+ */
+export function solidNote(k, debug = false) {
   if (k.status === "loading") return `${kernelProgress(k.progress)}…`;
-  if (k.status === "refreshing") return "remeshing…";
-  if (k.status === "failed") return `${k.error?.message ?? "kernel unavailable"} — showing the ring-stack solids`;
+  if (k.status === "refreshing") return debug ? "remeshing…" : null;
+  if (k.status === "failed") {
+    return debug
+      ? `${k.error?.message ?? "kernel unavailable"} — showing the ring-stack solids`
+      : `${k.error?.message ?? "The precise model would not build"} — showing an approximation`;
+  }
   if (k.status === "ready") {
-    // Says which it was, both ways round. "Threads unavailable" is the answer
-    // to why a Pages deployment is slower than a local one, and there is no
-    // way to see it otherwise: GitHub Pages cannot send COOP and COEP, so the
-    // service worker is the only thing supplying them and it can quietly fail.
     const how = k.threaded ? "threaded" : k.isolated ? "one thread" : "one thread, not isolated";
-    const note = `B-Rep, ${k.triangles} triangles, ${k.ms} ms, ${how}`;
+    const note = debug ? `B-Rep, ${k.triangles} triangles, ${k.ms} ms, ${how}` : null;
     // §25 A panel the kernel would not build is drawn from the ring stack
     // instead. Said plainly, and only when it happened: the box is on screen
     // either way, and which panel it was is what somebody needs to know.
     const refused = k.refused ?? [];
     if (!refused.length) return note;
     const which = refused.map((r) => FACE_LABEL[r.face] ?? r.face).join(", ");
-    // §26 And why, in the kernel's own words where it gave any: the build
-    // carries the exception-message helper now, so a refusal can say what it
-    // objected to instead of printing the address of the objection.
+    // §26 And why, in the kernel's own words where it gave any.
     const why = refused.find((r) => typeof r.failed === "string" && r.failed)?.failed;
-    return `${note} · ${refused.length} panel${refused.length === 1 ? "" : "s"} `
-      + `(${which}) would not cut — ring stack for ${refused.length === 1 ? "it" : "those"}`
+    return `${note ? `${note} · ` : ""}${refused.length} panel${refused.length === 1 ? "" : "s"} `
+      + `(${which}) would not cut — drawn approximately`
       + (why ? `: ${why}` : "");
   }
-  return "";
+  return null;
 }

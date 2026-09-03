@@ -55,15 +55,18 @@ A–A, plan from above and a true isometric projection. Hidden line removal is
 exact — every panel projects to a rectangle, so visibility is a containment test
 with no tolerance anywhere. SVG export.
 
-**Two engines, in both views.** The 3D view and the drawing each have an
-Analytic/OpenCASCADE toggle, and each reports which drew what is on screen.
+**Two engines.** The analytic one — exact rectangle arithmetic, no tolerance
+anywhere — draws the box and the sheet on the first paint. A trimmed OpenCASCADE
+build (3.5 MB gzipped, threaded) then takes over in both views and redraws from
+real B-Rep solids, which cuts the holes, knows a tangential edge from a sharp
+one and can show the blend where two fillets meet. They agree exactly on the
+verified fixtures. If the kernel fails the analytic drawing stays up and says
+so. Open the app with `?debug` for the engine switch and the timings. See
+`occt/README.md` and §11 of the specification.
 
-**Two drawing engines.** The analytic one — exact rectangle arithmetic, no
-tolerance anywhere — draws the sheet on the first paint. Switching to
-OpenCASCADE fetches a trimmed OCCT build (3.5 MB gzipped, threaded) and redraws
-from real B-Rep solids, which knows a tangential edge from a sharp one and can
-show the blend where two fillets meet. They agree exactly on the verified
-fixtures. See `occt/README.md` and §11 of the specification.
+**Undo.** Every change to the design is a step: Ctrl+Z and Ctrl+Shift+Z, or
+the buttons under the sidebar. The design is also saved in the browser as you
+go, and can be saved to and opened from a file.
 
 ## Layout
 
@@ -73,7 +76,7 @@ src/three/      panel solids, the face palette
 src/cutlist/    cut list, CSV, shelf nesting
 src/drawing/    projections, hidden line removal, section, isometric, the sheet
 src/occt/       the OpenCASCADE adapter: solids, HLR, merging
-src/ui/         the three modes and the controls
+src/ui/         the four modes, the controls, the inspector and the menus
 occt/           the kernel build definition
 public/occt/    the built kernel, served as static files
 test/           the suite from §9 of the specification

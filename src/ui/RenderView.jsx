@@ -30,6 +30,7 @@ import { loadPathTracer, START_SAMPLES } from "../render/pathtrace.js";
 import { driverBody, driverMaterial, placeDriver, driversOn } from "../three/driver.js";
 import { boardMaps, boxUV, textureFor, TINT_ONE } from "../three/texture.js";
 import { makeCamera, frameParallel, parallelPlanes, panBy } from "../three/camera.js";
+import ViewMenu from "./ViewMenu.jsx";
 
 const POLAR_MIN = 0.12, POLAR_MAX = Math.PI / 2 - 0.02;   // never below the floor
 
@@ -693,22 +694,12 @@ export default function RenderView({ derived, design, solids, hidden, camera: ke
           </button>
           <button type="button" onClick={save}>Save PNG</button>
         </div>
-        {onDrivers ? (
-          <div className="chip-group">
-            <button type="button" className={drivers ? "on" : ""} aria-pressed={drivers}
-              onClick={() => onDrivers(!drivers)}>Drivers</button>
-          </div>
-        ) : null}
         {/* §51 A photograph of a box is a box seen from somewhere, and the far
             end is smaller than the near one. A parallel picture is the box
-            itself — worth having where the picture is what gets judged. */}
-        {onParallel ? (
-          <div className="chip-group">
-            <button type="button" className={parallel ? "" : "on"} aria-pressed={!parallel}
-              onClick={() => onParallel(false)}>Perspective</button>
-            <button type="button" className={parallel ? "on" : ""} aria-pressed={parallel}
-              onClick={() => onParallel(true)}>Parallel</button>
-          </div>
+            itself — worth having where the picture is what gets judged.
+            §60 In the same menu the 3D view keeps it in. */}
+        {onDrivers || onParallel ? (
+          <ViewMenu parallel={parallel} onParallel={onParallel} drivers={drivers} onDrivers={onDrivers} />
         ) : null}
         {onExplode ? (
           <div className="chip-group explode">

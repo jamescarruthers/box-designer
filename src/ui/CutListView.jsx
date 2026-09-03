@@ -1,4 +1,8 @@
 // §7 Cut list & sheets: three columns read against each other, never behind tabs.
+//
+// §60 How the sheets are cut — the stock size, the kerf, whether the grain is
+// locked — is set here, over the layouts it changes, rather than in the sidebar
+// in every mode.
 
 import React from "react";
 import { fmt, cutListCsv } from "../cutlist/cutlist.js";
@@ -10,12 +14,14 @@ import { panelBlank } from "../model/solver.js";
 import { sheetYield } from "../cutlist/nest.js";
 import { sheetsDxf } from "../cutlist/dxf.js";
 import { download, slug } from "./file.js";
+import { Num } from "./fields.jsx";
 
 const Swatch = ({ row, on }) => on
   ? <i className="swatch" style={{ background: panelColour(row.panel) }} /> : null;
 
-export default function CutListView({ derived, title, colourByFace, selected, hovered, onSelect, onHover }) {
+export default function CutListView({ derived, design, set, colourByFace, selected, hovered, onSelect, onHover, debug = false }) {
   const { rows, sheets, totals } = derived;
+  const title = design?.title ?? "box";
   const longest = Math.max(...rows.map((r) => r.length), 1);
 
   const rowProps = (r) => ({
@@ -82,7 +88,8 @@ export default function CutListView({ derived, title, colourByFace, selected, ho
           <div><dt>Parts</dt><dd>{totals.parts}</dd></div>
           <div><dt>Area</dt><dd>{totals.area.toFixed(3)} m²</dd></div>
           <div><dt>Sheets</dt><dd>{totals.sheets}</dd></div>
-          <div><dt>Closure</dt><dd className={totals.closure === "exact" ? "ok" : "bad"}>{totals.closure}</dd></div>
+          {/* §60 A test invariant, kept on screen for whoever is testing. */}
+          {debug ? <div><dt>Closure</dt><dd className={totals.closure === "exact" ? "ok" : "bad"}>{totals.closure}</dd></div> : null}
         </dl>
       </section>
 
@@ -125,6 +132,23 @@ export default function CutListView({ derived, title, colourByFace, selected, ho
             onClick={() => download(sheetsDxf(sheets), `${slug(title)}-sheets.dxf`,
               "application/dxf")}>Export DXF</button>
         </header>
+        {set ? (
+          <div className="cut-settings">
+            <label className="field">
+              <span>Stock</span>
+              <select value={design.stockIndex} aria-label="Stock"
+                onChange={(e) => set({ ...design, stockIndex: Number(e.target.value) })}>
+                {derived.material.stock.map((st, i) => <option key={i} value={i}>{st[0]} × {st[1]}</option>)}
+              </select>
+            </label>
+            <Num label="Kerf" suffix="mm" step={0.1} value={design.kerf} onChange={(v) => set({ ...design, kerf: v })} />
+            <label className="check">
+              <input type="checkbox" checked={design.grainLocked}
+                onChange={(e) => set({ ...design, grainLocked: e.target.checked })} />
+              <span>Lock grain along length</span>
+            </label>
+          </div>
+        ) : null}
         <div className="scroll">
           {sheets.map((sh) => (
             <figure key={sh.index} className="sheet">
