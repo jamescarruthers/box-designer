@@ -35,7 +35,8 @@ note.
 **3D view.** Panel solids built as a ring stack from the outer surface inward,
 with every triangle oriented outward against the panel centroid. Four Fusion-360
 render styles, colour by material or by face, explode, click to select, and a
-hand-rolled orbit camera that survives a switch to another mode.
+hand-rolled orbit camera that survives a switch to another mode. An orientation
+cube in the corner names the faces and turns the box to one when clicked.
 
 **Materials.** The carcass sets the project sheet. Cladding and doublers are
 added a side at a time from a dropdown, each inheriting that sheet and then
