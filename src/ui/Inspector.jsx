@@ -29,7 +29,7 @@ import {
 } from "../model/rebate.js";
 import {
   setFaceThickness, setFaceColour, moveFace, addPanel, removePanel, editPanel,
-  setEdgeTreatment, authoredEdge, setRebateSides, setRebateDepth, layerOrder, ownOrder,
+  setEdgeTreatment, authoredEdge, setRebateSides, setRebateDepth, layerOrder, ownOrder, rebateOffer,
 } from "./design.js";
 
 
@@ -158,8 +158,13 @@ export default function Inspector({ design, set, derived, row, colourByFace, onS
  * screen, so the control is four buttons and a number — and a rebate exists
  * because a side is chosen rather than because it was added to a list.
  *
- * What was cut and what was refused are both shown, because a rebate asked for
- * on four sides and cut on two has to account for the other two.
+ * §62 A side the board cannot be let into is not offered. §42 let every side
+ * be chosen and refused it afterwards with a warning, which is a control that
+ * says yes and then no. Each side is tried before it is shown, the ones that
+ * would be refused are disabled with the reason beside them, and the depth is
+ * capped shy of the board it would be cut into. A side that is chosen and has
+ * since become impossible — the prominence changed under it — stays on so it
+ * can be taken off, and says why it is not cut.
  */
 function Rebate({ design, set, derived, row }) {
   const { face, layer } = row;
@@ -171,31 +176,57 @@ function Rebate({ design, set, derived, row }) {
   const rebate = design.rebate?.[key];
   const sides = rebateSides(face);
   const chosen = rebate?.sides ?? {};
-  const all = sides.every((g) => chosen[g]);
+  const offer = rebateOffer(design, derived, layer, face);
+  const possible = sides.filter((g) => offer.sides[g].ok);
+  const all = possible.length > 0 && possible.every((g) => chosen[g]);
   const depth = rebate?.depth ?? DEFAULT_REBATE_DEPTH;
   const cut = derived.rebated?.[key]?.sides ?? [];
+  // The refusals of sides that were chosen, in the form the warnings use.
   const refused = rebateProblems(derived.rebateRejected).filter((p) => p.key === key);
+  // And of the sides that are not offered, grouped by reason and cut to its
+  // first clause: the whole sentence is on the button.
+  const brief = (why) => String(why ?? "").split(" — ")[0];
+  const closed = new Map();
+  for (const g of sides) {
+    const o = offer.sides[g];
+    if (o.on || o.ok) continue;
+    (closed.get(brief(o.why)) ?? closed.set(brief(o.why), []).get(brief(o.why))).push(g);
+  }
   const put = (next) => set(setRebateSides(design, key, next));
   return (
     <div className="rebate">
       <div className="chip-group">
-        <button type="button" className={all ? "on" : ""}
+        <button type="button" className={all ? "on" : ""} disabled={!possible.length}
           aria-label={`${label} rebate all sides`}
-          onClick={() => put(all ? {} : Object.fromEntries(sides.map((g) => [g, true])))}>All</button>
-        {sides.map((g) => (
-          <button type="button" key={g} className={chosen[g] ? "on" : ""}
-            aria-label={`${label} rebate ${g}`}
-            onClick={() => put({ ...chosen, [g]: !chosen[g] })}>{FACE_LABEL[g]}</button>
-        ))}
+          title={possible.length ? undefined : "No side of this board can be let in"}
+          onClick={() => put(all ? {} : Object.fromEntries(possible.map((g) => [g, true])))}>All</button>
+        {sides.map((g) => {
+          const o = offer.sides[g];
+          return (
+            <button type="button" key={g} className={chosen[g] ? "on" : ""}
+              disabled={!o.on && !o.ok}
+              aria-label={`${label} rebate ${g}`}
+              title={o.why ?? undefined}
+              onClick={() => put({ ...chosen, [g]: !chosen[g] })}>{FACE_LABEL[g]}</button>
+          );
+        })}
       </div>
       <Num label="Depth" suffix="mm" step={0.5} value={depth} disabled={!rebate}
+        max={offer.maxDepth ?? undefined}
         aria={`${label} rebate depth`}
         onChange={(v) => set(setRebateDepth(design, key, v))} />
       {cut.length ? (
         <p className="note">
           Let in {fmt(depth)} mm on {cut.map((g) => FACE_LABEL[g].toLowerCase()).join(", ")}.
         </p>
-      ) : refused.length ? null : <p className="note">No sides chosen: this board stops where the panels beside it start.</p>}
+      ) : refused.length ? null : possible.length
+        ? <p className="note">No sides chosen: this board stops where the panels beside it start.</p>
+        : null}
+      {[...closed].map(([why, bad]) => (
+        <p className="note" key={why}>
+          {bad.map((g) => FACE_LABEL[g]).join(", ")}: {why}.
+        </p>
+      ))}
       {refused.map(({ sides: bad, why }) => (
         <p className="note bad" key={why}>
           {bad.length ? `${bad.map((g) => FACE_LABEL[g]).join(", ")}: ` : ""}{why}.

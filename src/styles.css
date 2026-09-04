@@ -257,6 +257,9 @@ input:focus, select:focus { outline: 1px solid var(--accent); border-color: var(
 }
 .chip-group button:hover { color: var(--ink); }
 .chip-group button.on { background: var(--accent); color: #14181d; font-weight: 600; }
+/* §62 A chip that is not offered: dimmed, and a hover does nothing to it. */
+.chip-group button:disabled { opacity: 0.35; cursor: default; }
+.chip-group button:disabled:hover { color: var(--ink-3); }
 .chip-group.explode { align-items: center; gap: 7px; padding: 2px 8px; color: var(--ink-3); font-size: 10.5px; }
 .chip-group.explode input { accent-color: var(--accent); width: 108px; }
 .chip-group.explode output { min-width: 22px; text-align: right; color: var(--ink); }

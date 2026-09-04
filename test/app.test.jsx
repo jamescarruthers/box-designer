@@ -705,14 +705,19 @@ describe("the app", () => {
     // into — and the control says exactly that when there is not.
     open("Front carcass");
     const note = () => container.querySelector(".rebate .note").textContent;
-    expect(note()).toMatch(/No sides chosen/);
-
-    fireEvent.click(screen.getByLabelText("Front rebate all sides"));
-    expect(note()).toMatch(/prominence order/);
+    // §62 Under front & back wrap the front runs past everything, so no side
+    // is offered: the buttons are off and the reason is on the sheet.
+    for (const g of ["left", "right", "top", "bottom"]) {
+      expect(screen.getByLabelText(`Front rebate ${g}`).disabled).toBe(true);
+    }
+    expect(screen.getByLabelText("Front rebate all sides").disabled).toBe(true);
+    expect(note()).toMatch(/runs past the panels beside it/);
 
     const preset = [...container.querySelectorAll("label.field")]
       .find((l) => l.textContent.startsWith("Preset")).querySelector("select");
     fireEvent.change(preset, { target: { value: "sides" } });
+    expect(note()).toMatch(/No sides chosen/);
+    fireEvent.click(screen.getByLabelText("Front rebate all sides"));
     expect(note()).toMatch(/Let in 6 mm on left, right, top, bottom/);
     // And the sidebar's summary of the box names the board that carries it.
     expect(container.querySelector(".panel-summary").textContent).toMatch(/RebatedFront/);

@@ -1,10 +1,11 @@
 // The design state, and everything derived from it.
 
-import { EDGES, FACES, FACE_LABEL, MATERIALS, LAGGINGS, PROMINENCE_PRESETS, DEFAULT_KERF, rankFromOrder, materialById, paletteFor } from "../model/constants.js";
+import { EDGES, FACES, FACE_LABEL, MATERIALS, LAGGINGS, PROMINENCE_PRESETS, DEFAULT_KERF, AXIS, rankFromOrder, materialById, paletteFor } from "../model/constants.js";
 import { solve, wallOf, boardOf, fillFaces, skinOf, boxVolume, panelThickness, DEFAULT_RATIO, DEFAULT_ROUND } from "../model/solver.js";
 import { uniformEdges, edgeOwners, noEdges, fullLengthEdges, applicableEdges, partialEdgeIssues, panelBevels } from "../model/bevel.js";
 import { mitreCheck, resolveMitres, applyMitres, mitreIssues, mitreLoss } from "../model/mitre.js";
-import { applyRebates, panelVolume, panelSolidVolume, notchNote, notchSpec, rebateSides, newRebate, rebateProblems, rebateLabel } from "../model/rebate.js";
+import { applyRebates, panelVolume, panelSolidVolume, notchNote, notchSpec, rebateSides, newRebate, rebateProblems, rebateLabel,
+  rebateKey, rebateSlab, overlaps, REBATABLE } from "../model/rebate.js";
 import { validate } from "../model/validate.js";
 import { fittingOwners, innermostOn, fittingIssues, fittingNote, hasTube, resolveFittings,
   driverDisplacement, portDisplacement, hasDisplacement, cutoutFlare, largestFlare,
@@ -479,6 +480,9 @@ export function derive(design) {
 
   // §42 And then the rebates, which are cut into the panels as the mitres left
   // them: a panel let into a mitred surround is let into the mitred boxes.
+  // §62 The panels as they stood before, kept so a control can ask what a
+  // rebate *would* do without doing it.
+  sol.beforeRebates = sol.panels;
   const { applied: rebated, rejected: rebateRejected } = applyRebatesInto(sol, design.rebate);
 
   // What the control may still offer. Mitres interact — one can grow a panel
@@ -646,6 +650,58 @@ export function derive(design) {
   return { sol, edges, requestedEdges, fullLength, mitrable, requestedMitres, mitreRing, owners, material, rows, sheets, totals, messages,
     sheet, sectionAt, drawing, specFor, fittings, fittingPanels, fittingsOn, bevelsOf, tubesOn,
     rebated, rebateRejected };
+}
+
+/**
+ * §62 What a rebate control may offer, side by side.
+ *
+ * The sides of a panel are not all rebatable: a side the panel already runs
+ * past has nothing to rebate into, a mitred joint cannot take one, and the
+ * board beside it sets how deep. §42 refused these after the fact, with a
+ * warning; this asks first, by trying each side against the same code that
+ * cuts it, so the control can refuse the side before it is chosen.
+ *
+ * Returns `{ sides: { [side]: { on, ok, why } }, maxDepth }`. A side that is
+ * chosen is reported as it stands (cut, or refused with the reason); a side
+ * that is not is reported as it would stand if it were added now.
+ */
+export function rebateOffer(design, derived, layer, face) {
+  const key = rebateKey(layer, face);
+  const cur = design.rebate?.[key] ?? newRebate();
+  const base = derived.sol.beforeRebates ?? derived.sol.panels;
+  const panel = base.find((p) => p.face === face && p.layer === layer);
+  const chosenNow = cur.sides ?? {};
+  const sides = {};
+  for (const side of rebateSides(face)) {
+    if (chosenNow[side]) {
+      const cut = derived.rebated?.[key]?.sides?.includes(side);
+      const why = cut ? null
+        : derived.rebateRejected?.get(`${key}|${side}`) ?? derived.rebateRejected?.get(key) ?? null;
+      sides[side] = { on: true, ok: !why, why };
+      continue;
+    }
+    const trial = { ...design.rebate, [key]: { ...cur, sides: { ...chosenNow, [side]: true } } };
+    const { rejected } = applyRebates(base, trial);
+    const why = rejected.get(`${key}|${side}`) ?? rejected.get(key) ?? null;
+    sides[side] = { on: false, ok: !why, why };
+  }
+  // How deep a rebate can go: shy of the thinnest board any offered side
+  // would be let into. A probe a hair deep finds the boards without being
+  // refused for its depth.
+  let thinnest = Infinity;
+  if (panel) {
+    for (const side of rebateSides(face)) {
+      if (!sides[side].ok) continue;
+      const slab = rebateSlab(panel, side, 0.01);
+      const axis = AXIS[side][0];
+      for (const p of base) {
+        if (p === panel || !REBATABLE.includes(p.layer) || !overlaps(p.box, slab)) continue;
+        thinnest = Math.min(thinnest, p.box[axis][1] - p.box[axis][0]);
+      }
+    }
+  }
+  const maxDepth = Number.isFinite(thinnest) ? Math.max(0.5, Math.floor((thinnest - 0.5) * 2) / 2) : null;
+  return { sides, maxDepth };
 }
 
 export const setIn = (obj, path, value) => {

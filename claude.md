@@ -4163,3 +4163,36 @@ front at the foot of the screen, as the plan is drawn on the sheet. Over the
 cube the pointer is a pointer and nothing on the box is hovered.
 
 The kernel's note moved to the top right to leave the corner free.
+
+
+---
+
+## §62 Not offered, rather than refused
+
+§42 let any side of a panel be chosen for a rebate and refused the ones it
+could not cut with a warning under the box. That is a control that says yes
+and then no, and the answer to "why did only two sides happen" was in a list
+of warnings. The same shape was looked for elsewhere.
+
+**The rebate** now asks before it offers. `rebateOffer` tries each side of the
+panel against the code that cuts it — the full set of rebates, so a doubler's
+depends on the carcass's as it does when cut — and the inspector disables the
+sides that would be refused, with the reason on the button and, cut to its
+first clause, on the sheet. "All" chooses only the sides that are open and is
+off when none is. The depth is capped shy of the thinnest board any open side
+would be let into. A side that is chosen and has since become impossible (the
+prominence changed under it) stays on so it can be taken off, and says why it
+is not cut; the warning stays for that case and for a file that arrives
+carrying one. `derive` keeps the panels as they stood before the rebates for
+the trial to run against.
+
+**The section plane** is bounded by the box: a plane past its end cuts
+nothing. **A fitting's position** is bounded by the panel it is on, in either
+unit. Its size against the panel is still a message, not a bound: those
+numbers come off a datasheet, and a driver that does not fit the box is a
+thing to be told rather than a value to be quietly clamped.
+
+What was already the right shape and stayed: the edge treatments (§15, §58),
+which disable what an edge cannot take and say why; the prominence moves at
+either end of the order; the fitting depths, which offer only the layers there
+are; the bevel radius and the flare, capped at the board.
